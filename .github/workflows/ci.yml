@@ -32,7 +32,7 @@ jobs:
     # it queues until it expires.
     runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-22.04' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # The drift check compares against the last release tag, and a
           # shallow clone has no tags - it would pass by finding nothing.
@@ -60,8 +60,8 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
 
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -101,7 +101,7 @@ jobs:
           - os: ubuntu-22.04
             node: 24
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Linux webview dependencies
         if: runner.os == 'Linux'
@@ -118,8 +118,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
@@ -151,7 +151,7 @@ jobs:
     # `cargo check` only: no window, no tests, so nothing here needs macOS.
     runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-22.04' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Linux webview dependencies
         run: |
