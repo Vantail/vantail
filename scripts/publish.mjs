@@ -137,9 +137,16 @@ const runtimeVersion = flag("runtime-version", undefined);
 const projectNpmrc = join(root, ".npmrc");
 const AUTH = existsSync(projectNpmrc) ? ["--userconfig", projectNpmrc] : [];
 
-// `--access` and `--provenance` are registry.npmjs.org features; provenance
-// additionally requires a public repository. A third-party registry rejects
-// both, so they are only sent where they mean something.
+// `--access` and `--provenance` are registry.npmjs.org features, so a
+// third-party registry gets neither.
+//
+// Provenance additionally needs a CI environment npm can attest from: it
+// signs with an OIDC token, and asking for it anywhere else is a hard error
+// rather than a warning. That matters for the first publish of a package,
+// which cannot use trusted publishing and so has to happen from someone's
+// machine with a token.
+const provenance = publicNpm && process.env.GITHUB_ACTIONS === "true";
+
 const PUBLISH = [
   "publish",
   "--registry",
@@ -147,7 +154,8 @@ const PUBLISH = [
   "--tag",
   tag,
   ...AUTH,
-  ...(publicNpm ? ["--access", "public", "--provenance"] : []),
+  ...(publicNpm ? ["--access", "public"] : []),
+  ...(provenance ? ["--provenance"] : []),
 ];
 
 /** Publishing order: dependencies before the things that depend on them. */
@@ -173,8 +181,9 @@ function run(command, args, options = {}) {
 // ---------------------------------------------------------------------------
 
 console.log(`Publishing ${version}${dryRun ? " (dry run)" : ""}`);
+console.log(`Registry: ${registry}${publicNpm ? "" : " (--access off)"}`);
 console.log(
-  `Registry: ${registry}${publicNpm ? "" : " (provenance and --access off)"}`,
+  `Provenance: ${provenance ? "yes" : "no, this is not a CI runner npm can attest from"}`,
 );
 console.log(`Tag:      ${tag}\n`);
 

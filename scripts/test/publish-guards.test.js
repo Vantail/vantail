@@ -16,13 +16,20 @@ import { test } from "node:test";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const script = join(repoRoot, "scripts", "publish.mjs");
 
-/** Always a dry run: this must never be able to send anything. */
+/**
+ * Always a dry run: this must never be able to send anything.
+ *
+ * A trailing object is extra environment, for the cases where behaviour
+ * depends on it rather than on the arguments.
+ */
 function publish(...args) {
+  const extraEnv = typeof args.at(-1) === "object" ? args.pop() : {};
+
   return new Promise((resolve) => {
     execFile(
       process.execPath,
       [script, "--dry-run", ...args],
-      { cwd: repoRoot },
+      { cwd: repoRoot, env: { ...process.env, ...extraEnv } },
       (error, stdout, stderr) => {
         resolve({ code: error?.code ?? 0, output: `${stdout}${stderr}` });
       },
@@ -78,4 +85,29 @@ test("gets past the registry check for a private one", async () => {
   // it accepted the registry and moved on.
   assert.doesNotMatch(output, /Refusing to publish/);
   assert.match(output, /registry\.example\.test/);
+});
+
+/**
+ * Provenance is only possible where npm can attest from, and asking for it
+ * anywhere else is a hard error rather than a warning. The first publish of a
+ * package cannot use trusted publishing, so it happens from someone's machine
+ * with a token - and that publish must not ask for provenance.
+ */
+test("asks for provenance on CI and not on a laptop", async () => {
+  const npmjs = [
+    "--registry",
+    "https://registry.npmjs.org",
+    "--i-mean-it-publish-publicly",
+  ];
+
+  const local = await publish(...npmjs);
+  assert.doesNotMatch(
+    local.output,
+    /--provenance/,
+    "a local publish asks for provenance, which npm refuses outright",
+  );
+
+  // The same command; only the environment differs.
+  const ci = await publish(...npmjs, { GITHUB_ACTIONS: "true" });
+  assert.match(ci.output, /Provenance: yes/);
 });

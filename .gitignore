@@ -7,6 +7,12 @@ build/
 .DS_Store
 .npmrc
 
+# What a release is assembled from: native binaries downloaded from a build,
+# and the platform packages built out of them. `dist/` above does not match
+# either name, and these are megabytes of binary.
+dist-runtime/
+dist-packages/
+
 # This ships an application, not a library, and the release builds with
 # --locked. A global ignore of Cargo.lock is common and would break that
 # silently, so it is un-ignored here rather than left to each machine.

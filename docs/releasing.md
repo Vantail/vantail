@@ -117,25 +117,48 @@ What that depends on, all of which a test asserts:
 cannot be undone; the workflow passes `--i-mean-it-publish-publicly` to say so.
 
 Packages are published with [npm provenance], so anyone can verify they were
-built from this repository by this workflow.
+built from this repository by this workflow. `publish.mjs` asks for it only on
+CI: npm can only attest from an environment it recognises, and asking anywhere
+else is a hard error, which would otherwise break the one publish that has to
+happen by hand.
 
 ### Adding a package
 
-Trusted publishing is configured per package on npmjs, and the settings page
-only exists once the package does. A package that has never been published has
-to be published once with a token before it can stop using one:
+A package's **first** publish cannot be automated. Not by any route: npm has
+closed all of them, deliberately.
 
-1. Create a granular access token on npmjs with write access to the package.
-2. Publish that first version by hand with it.
-3. On npmjs, under the package's Settings, add a trusted publisher: the
-   `Vantail/vantail` repository and `release.yml` as the workflow. That one
-   entry covers both channels, since both publish from that file.
-4. Delete the token.
+- Trusted publishing needs the package to exist, because the trusted publisher
+  is configured on a settings page that only appears once it does.
+- [Staged publishing] does not fill the gap either. You cannot stage a package
+  that does not exist.
+- Tokens that bypass 2FA lose the ability to publish in January 2027, and npm
+  no longer hands them out freely.
 
-That applies to all eleven packages at the first release: the six under
-`packages/`, and the five platform packages named in
-[`platforms.json`](../packages/runtime/platforms.json). After that the token
-never comes back.
+So a new name is created once, from a logged-in session, by a person answering
+a 2FA challenge:
+
+```bash
+npm login
+node scripts/publish.mjs --packages dist-packages --i-mean-it-publish-publicly
+```
+
+npm asks for a one-time password in the terminal, and more than once, since an
+OTP expires faster than a set of tarballs uploads. `publish.mjs` runs npm with
+`stdio: "inherit"` so the prompt arrives rather than the process hanging on it.
+This is also the reason provenance is asked for only on CI: npm refuses to
+attest from a laptop, and that refusal is fatal rather than a warning.
+
+Then, on npmjs, under the package's Settings, add a trusted publisher: the
+`Vantail/vantail` repository and `release.yml` as the workflow. One entry
+covers both channels, since both publish from that file.
+
+At the first release that is eleven packages: the six under `packages/`, and
+the five platform packages named in
+[`platforms.json`](../packages/runtime/platforms.json). Afterwards it is one
+package at a time, and only when a name is genuinely new - a new platform
+target, or a new `@vantail/*`. Nothing else ever needs a human.
+
+[Staged publishing]: https://docs.npmjs.com/staged-publishing/
 
 [trusted publishing]: https://docs.npmjs.com/trusted-publishers
 [npm provenance]: https://docs.npmjs.com/generating-provenance-statements

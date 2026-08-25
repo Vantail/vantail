@@ -243,7 +243,20 @@ jobs:
       # Trusted publishing needs npm 11.5.1 or newer, and Node 22 still ships
       # npm 10. pnpm handles the install; this is the npm that publish.mjs
       # shells out to.
-      - run: npm install -g npm@latest
+      #
+      # Checked rather than assumed: too old an npm does not say so, it simply
+      # never attempts the OIDC exchange and asks for a token that does not
+      # exist. That surfaces as ENEEDAUTH at the last step, after the native
+      # builds have already run.
+      - name: Upgrade npm to one that can publish with OIDC
+        run: |
+          npm install -g npm@latest
+          version=$(npm --version)
+          echo "npm $version"
+          if [ "$(printf '11.5.1\n%s\n' "$version" | sort -V | head -1)" != "11.5.1" ]; then
+            echo "npm $version is too old to publish with OIDC; 11.5.1 is the minimum." >&2
+            exit 1
+          fi
 
       - run: pnpm install --frozen-lockfile
 
