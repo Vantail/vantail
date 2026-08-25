@@ -92,8 +92,13 @@ installable without waiting for a release.
 ```bash
 node scripts/version.mjs patch
 git commit -am "Release 0.1.1"
-git tag v0.1.1 && git push --follow-tags
+git tag -a v0.1.1 -m "Release 0.1.1"
+git push --follow-tags
 ```
+
+The tag has to be annotated. `git push --follow-tags` ignores lightweight
+ones, so `git tag v0.1.1` without `-a` pushes the commit, skips the tag, and
+starts nothing. `git push origin v0.1.1` sends either kind.
 
 Both channels come from `.github/workflows/release.yml`, which builds the
 native runtimes on their own platforms and publishes with

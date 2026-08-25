@@ -11,7 +11,7 @@
 //! nothing to say.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use base64::Engine;
@@ -66,6 +66,52 @@ struct Open {
     product_id: u16,
     device: Arc<Mutex<HidDevice>>,
     reading: Arc<AtomicBool>,
+    /// How many calls are waiting for the device.
+    ///
+    /// A plain mutex is not fair, and the read loop re-locks the moment it
+    /// lets go, so a caller racing it loses again and again: measured waits
+    /// ran to several seconds for a call that takes under a millisecond. This
+    /// is how the reader learns to stand aside.
+    waiting: Arc<Turnstile>,
+}
+
+/// Keeps the read loop from starving the calls it shares a device with.
+///
+/// A caller announces itself before blocking on the lock, so the reader can
+/// see the intent even while the caller is asleep in `lock()`.
+#[derive(Default)]
+struct Turnstile {
+    waiting: AtomicUsize,
+}
+
+impl Turnstile {
+    /// Announce a caller. The count falls again when the guard is dropped,
+    /// including if the work panics - a leaked count would stop the reader
+    /// for good.
+    fn enter(&self) -> Waiting<'_> {
+        self.waiting.fetch_add(1, Ordering::Release);
+        Waiting(self)
+    }
+
+    /// Whether the reader should stand aside rather than take the device.
+    fn busy(&self) -> bool {
+        self.waiting.load(Ordering::Acquire) > 0
+    }
+}
+
+struct Waiting<'a>(&'a Turnstile);
+
+impl Drop for Waiting<'_> {
+    fn drop(&mut self) {
+        self.0.waiting.fetch_sub(1, Ordering::Release);
+    }
+}
+
+/// Take the device for an API call, ahead of the read loop.
+fn borrow<T>(entry: &Open, work: impl FnOnce(&HidDevice) -> T) -> T {
+    let _waiting = entry.waiting.enter();
+    let device = entry.device.lock().expect("hid device poisoned");
+    work(&device)
 }
 
 /// Open devices, and the enumeration handle they came from.
@@ -202,6 +248,7 @@ fn open(rt: &Arc<Runtime>, source: &str, method: &str, params: Value) -> ApiResu
         product_id,
         device: Arc::new(Mutex::new(device)),
         reading: Arc::new(AtomicBool::new(true)),
+        waiting: Arc::new(Turnstile::default()),
     });
 
     rt.devices
@@ -221,6 +268,7 @@ fn read_loop(rt: &Arc<Runtime>, source: &str, handle: u32, entry: &Arc<Open>) {
     let source = source.to_string();
     let device = Arc::clone(&entry.device);
     let reading = Arc::clone(&entry.reading);
+    let waiting = Arc::clone(&entry.waiting);
 
     let spawned = std::thread::Builder::new()
         .name(format!("vantail-hid-{handle}"))
@@ -229,8 +277,15 @@ fn read_loop(rt: &Arc<Runtime>, source: &str, handle: u32, entry: &Arc<Open>) {
             let mut reason = "closed";
 
             while reading.load(Ordering::Relaxed) {
-                // The lock is taken per read and released between them, so a
-                // write is never stuck behind a device with nothing to say.
+                // Releasing the lock is not enough on its own: this loop takes
+                // it again immediately, and an unfair mutex hands it straight
+                // back. A call that wants the device says so, and this waits
+                // for it rather than racing.
+                if waiting.busy() {
+                    std::thread::sleep(std::time::Duration::from_micros(200));
+                    continue;
+                }
+
                 let read = {
                     let device = device.lock().expect("hid device poisoned");
                     device.read_timeout(&mut buffer, READ_TIMEOUT_MS)
@@ -302,10 +357,7 @@ fn write(rt: &Runtime, method: &str, params: Value) -> ApiResult {
     let bytes = decode(&data)?;
     let entry = require(rt, handle)?;
 
-    let written = {
-        let device = entry.device.lock().expect("hid device poisoned");
-        device.write(&bytes)
-    };
+    let written = borrow(&entry, |device| device.write(&bytes));
 
     written.map(|count| json!(count)).map_err(|e| {
         ApiError::new(
@@ -320,10 +372,7 @@ fn send_feature(rt: &Runtime, method: &str, params: Value) -> ApiResult {
     let bytes = decode(&data)?;
     let entry = require(rt, handle)?;
 
-    let sent = {
-        let device = entry.device.lock().expect("hid device poisoned");
-        device.send_feature_report(&bytes)
-    };
+    let sent = borrow(&entry, |device| device.send_feature_report(&bytes));
 
     sent.map(|()| Value::Null).map_err(|e| {
         ApiError::new(
@@ -350,10 +399,7 @@ fn get_feature(rt: &Runtime, method: &str, params: Value) -> ApiResult {
     let mut buffer = vec![0_u8; length + 1];
     buffer[0] = report_id;
 
-    let read = {
-        let device = entry.device.lock().expect("hid device poisoned");
-        device.get_feature_report(&mut buffer)
-    };
+    let read = borrow(&entry, |device| device.get_feature_report(&mut buffer));
 
     read.map(|count| json!(BASE64.encode(&buffer[..count])))
         .map_err(|e| {
@@ -389,4 +435,95 @@ fn decode(data: &str) -> Result<Vec<u8>, ApiError> {
         )));
     }
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use super::*;
+
+    /// The read loop, with the blocking read stood in for by a sleep.
+    ///
+    /// No device is involved: what is being tested is who gets the lock, and
+    /// that is decided by the turnstile rather than by hidapi.
+    fn reader(
+        device: Arc<Mutex<()>>,
+        turnstile: Arc<Turnstile>,
+        running: Arc<AtomicBool>,
+        polite: bool,
+    ) -> std::thread::JoinHandle<()> {
+        std::thread::spawn(move || {
+            while running.load(Ordering::Relaxed) {
+                if polite && turnstile.busy() {
+                    std::thread::sleep(Duration::from_micros(200));
+                    continue;
+                }
+                let _held = device.lock().expect("poisoned");
+                std::thread::sleep(Duration::from_millis(READ_TIMEOUT_MS as u64));
+            }
+        })
+    }
+
+    /// How long a caller waits for the device, worst of several attempts.
+    fn worst_wait(polite: bool) -> Duration {
+        let device = Arc::new(Mutex::new(()));
+        let turnstile = Arc::new(Turnstile::default());
+        let running = Arc::new(AtomicBool::new(true));
+
+        let handle = reader(
+            Arc::clone(&device),
+            Arc::clone(&turnstile),
+            Arc::clone(&running),
+            polite,
+        );
+
+        // Let the reader get into its loop first.
+        std::thread::sleep(Duration::from_millis(120));
+
+        let mut worst = Duration::ZERO;
+        for _ in 0..8 {
+            let start = Instant::now();
+            {
+                let _waiting = turnstile.enter();
+                let _held = device.lock().expect("poisoned");
+            }
+            worst = worst.max(start.elapsed());
+            std::thread::sleep(Duration::from_millis(5));
+        }
+
+        running.store(false, Ordering::Relaxed);
+        handle.join().expect("reader panicked");
+        worst
+    }
+
+    #[test]
+    fn a_caller_waits_no_longer_than_one_read() {
+        // The bug this guards: an unfair mutex plus a loop that re-locks
+        // immediately starved callers for seconds at a time. Bounded now by
+        // the one read that may already be in flight, with room for a slow
+        // machine on top.
+        let worst = worst_wait(true);
+
+        assert!(
+            worst < Duration::from_millis(READ_TIMEOUT_MS as u64 * 4),
+            "waited {worst:?}, which means the reader is not standing aside"
+        );
+    }
+
+    #[test]
+    fn the_count_falls_again_when_the_caller_panics() {
+        // A leaked count would stop the reader for the life of the device.
+        let turnstile = Arc::new(Turnstile::default());
+        let taken = Arc::clone(&turnstile);
+
+        let panicked = std::thread::spawn(move || {
+            let _waiting = taken.enter();
+            panic!("the work failed");
+        })
+        .join();
+
+        assert!(panicked.is_err(), "the thread was supposed to panic");
+        assert!(!turnstile.busy(), "the reader would never take the device again");
+    }
 }
