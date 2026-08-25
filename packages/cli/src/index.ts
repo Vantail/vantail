@@ -24,7 +24,7 @@ export { bundle, type BundleInput, type BundleResult } from "./bundle/index.js";
 export { buildRuntimeConfig, type RuntimeConfigInput } from "./runtime-config.js";
 
 /** Kept in step with package.json by the release script. */
-export const VERSION = "0.1.0";
+export const VERSION = "0.1.1";
 
 /** `ConfigError` is thrown from a package the CLI does not re-export. */
 export const ConfigErrorName = "ConfigError";
