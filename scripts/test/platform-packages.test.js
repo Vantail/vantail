@@ -192,7 +192,7 @@ describe("release workflow", () => {
     assert.ok(position("cli") < position("create"));
   });
 
-  it("publishes to npmjs, with a token and the intent to do it", async () => {
+  it("publishes to npmjs through OIDC, holding no token at all", async () => {
     // Everything here fails at the last step of a release, after the six
     // native builds have already run, which is the most expensive place to
     // find out.
@@ -212,14 +212,63 @@ describe("release workflow", () => {
     // publish.mjs refuses npmjs without this, on purpose.
     assert.match(publish.run, /--i-mean-it-publish-publicly/);
 
-    // A registry line without a credential publishes nothing.
+    // Trusted publishing needs npm 11.5.1, and the Node this job sets up
+    // still ships npm 10. Without the upgrade the OIDC exchange never
+    // happens and the publish asks for a token that does not exist.
+    assert.ok(
+      steps.some((step) => /npm install -g npm@/.test(step.run ?? "")),
+      "npm is not upgraded, so it is too old to publish with OIDC",
+    );
+
+    // An `_authToken` line takes precedence over the OIDC exchange, so the
+    // registry config has to stay credential-free. This is also what keeps a
+    // token from being reintroduced quietly later.
+    assert.doesNotMatch(registry.run, /_authToken/);
     for (const step of steps) {
-      if (step.run?.includes("publish.mjs") || step.run?.includes("last-runtime-version.mjs")) {
-        assert.ok(
-          step.env?.NODE_AUTH_TOKEN,
-          `${step.name} talks to the registry without a token`,
-        );
-      }
+      assert.ok(
+        !step.env?.NODE_AUTH_TOKEN && !/NPM_TOKEN/.test(JSON.stringify(step.env ?? {})),
+        `${step.name} carries an npm token; trusted publishing does not use one`,
+      );
     }
+  });
+
+  it("runs both channels from one file, because npm allows one publisher", async () => {
+    // npm permits a package exactly one trusted publisher, bound to an exact
+    // workflow filename. Splitting dev builds into a second file would mean
+    // reintroducing a token for them, so both triggers have to live here.
+    const { parse } = await import("yaml");
+    const source = await readFile(join(root, ".github/workflows/release.yml"), "utf8");
+    const workflow = parse(source);
+
+    // `on` is the YAML 1.1 boolean `true` unless quoted, which is why this
+    // reads the key rather than the word.
+    const on = workflow.on ?? workflow[true];
+    assert.deepEqual(on.push.tags, ["v*"], "tagged releases are not triggered");
+    assert.deepEqual(on.push.branches, ["main"], "pushes to main are not triggered");
+
+    const steps = workflow.jobs.publish.steps;
+
+    // A push to main must never move `latest`.
+    const publish = steps.find((step) => step.run?.includes("publish.mjs"));
+    assert.match(publish.run, /--tag dev/);
+    assert.match(
+      publish.run,
+      /outputs\.channel \}\}" = "dev"/,
+      "`--tag dev` is not guarded by the channel, so a release could ship as dev",
+    );
+
+    // The dev version is a prerelease of the next patch, set before the build
+    // so the built artefacts carry it too.
+    const bump = steps.find((step) => /version\.mjs dev/.test(step.run ?? ""));
+    assert.ok(bump, "nothing sets a prerelease version for a dev build");
+    assert.match(bump.if ?? "", /channel.*dev/);
+    assert.ok(
+      steps.indexOf(bump) < steps.findIndex((step) => step.run === "pnpm build"),
+      "the version is bumped after the build, so the artefacts carry the old one",
+    );
+
+    // Six native builds on every push to main would cost more than they are
+    // worth, so a dev build reuses the last release's binaries.
+    assert.match(workflow.jobs.publish.if, /needs\.plan\.outputs\.ready == 'true'/);
   });
 });

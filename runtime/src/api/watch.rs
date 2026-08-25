@@ -165,7 +165,7 @@ fn describe(kind: &notify::EventKind) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use std::sync::mpsc;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use super::*;
 
@@ -196,18 +196,31 @@ mod tests {
         std::thread::sleep(Duration::from_millis(500));
         std::fs::write(dir.join("note.txt"), "hello").expect("write");
 
-        let event = rx
-            .recv_timeout(Duration::from_secs(10))
-            .expect("the watcher reported nothing");
+        // FSEvents reports the directory as well as the file in it, and it is
+        // free to deliver the directory first - it usually does on macOS,
+        // since the scratch directory was created moments earlier. So this
+        // waits for the event it is about rather than assuming the first one
+        // is it. `start` forwards every path of every event, so nothing in
+        // the runtime depends on that order either.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut other = Vec::new();
+        let event = loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match rx.recv_timeout(remaining) {
+                Ok(event) => {
+                    if event
+                        .paths
+                        .iter()
+                        .any(|path| path.to_string_lossy().ends_with("note.txt"))
+                    {
+                        break event;
+                    }
+                    other.extend(event.paths);
+                }
+                Err(_) => panic!("nothing reported note.txt; only {other:?}"),
+            }
+        };
 
-        assert!(
-            event
-                .paths
-                .iter()
-                .any(|path| path.to_string_lossy().ends_with("note.txt")),
-            "reported {:?}",
-            event.paths
-        );
         assert!(
             describe(&event.kind).is_some(),
             "unmapped kind {:?}",
