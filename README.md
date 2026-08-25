@@ -507,7 +507,7 @@ noticing.
 The integration tests open real windows, so they run on macOS and Windows and
 are skipped on the Linux runner, which has no desktop session.
 
-`.github/workflows/release.yml` runs on a `v*` tag: six native runners build
+`.github/workflows/release.yml` runs on a `v*` tag: five native runners build
 the runtime, each binary is smoke-tested, and the packages are published to
 npm with provenance.
 
@@ -608,8 +608,8 @@ match the configured maximized state`. Each capability passes individually.
 scripts/build-platforms
 ```
 
-Four of the six from one Mac with Docker - both macOS architectures, both
-Linux ones. Windows needs Windows.
+Three of the five from one Mac with Docker - macOS natively, both Linux ones
+in containers. Windows needs Windows.
 
 ### Versions
 

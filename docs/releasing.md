@@ -11,7 +11,6 @@ each containing one executable:
 
 ```text
 @vantail/runtime-darwin-arm64/bin/vantail-runtime
-@vantail/runtime-darwin-x64/bin/vantail-runtime
 @vantail/runtime-win32-x64/bin/vantail-runtime.exe
 @vantail/runtime-win32-arm64/bin/vantail-runtime.exe
 @vantail/runtime-linux-x64/bin/vantail-runtime
@@ -23,7 +22,7 @@ with the Rust triple for each, and a `tier` saying how well tested it is.
 
 Each package declares `os` and `cpu` so npm installs only the one that
 matches. Applications depend on them as optional dependencies, which is why
-`npm install` downloads one binary and not six.
+`npm install` downloads one binary and not five.
 
 Build them with:
 
@@ -34,19 +33,12 @@ cargo build --release --locked --target <triple>
 ### Building them without CI
 
 ```bash
-scripts/build-platforms          # four of the six, into dist-runtime/
+scripts/build-platforms          # three of the five, into dist-runtime/
 ```
 
-Both macOS architectures and both Linux ones, from a Mac with Docker: native,
-cross-compiled, and two containers. Windows needs Windows, so a full release
-still goes through the workflow.
-
-One trap it works around, which costs an hour if you meet it cold. Homebrew's
-`cargo` shadows rustup's and does not have rustup's cross targets, so
-`cargo build --target x86_64-apple-darwin` fails with _can't find crate for
-`core`_ while `rustc --print target-libdir --target x86_64-apple-darwin` cheerfully
-prints the right path. `RUSTC` and `cargo` both have to come from the rustup
-toolchain.
+macOS natively and both Linux architectures in containers, from a Mac with
+Docker. Windows needs Windows, so a full release still goes through the
+workflow.
 
 Every target gets a **native runner** rather than cross-compilation, because
 the runtime links against the platform's webview, tray and HID libraries and
@@ -64,7 +56,7 @@ git commit -am "Release 0.2.0"
 git tag v0.2.0 && git push --follow-tags
 ```
 
-The tag starts `release.yml`, which builds all six runtimes on native
+The tag starts `release.yml`, which builds all five runtimes on native
 runners, smoke-tests each binary, packages them, and publishes. The tag has to
 match `package.json` or the publish job stops before sending anything.
 
@@ -81,7 +73,7 @@ publishing dev builds would need a token of its own, which is the thing this
 setup does not have.
 
 A dev build publishes the TypeScript alone, against the binaries the last
-release published, so a push to `main` never pays for six native builds. Three
+release published, so a push to `main` never pays for five native builds. Three
 things make that impossible, and each skips the run with a warning rather than
 failing it, because none of them is a fault in the commit that triggered it:
 
@@ -140,8 +132,8 @@ to be published once with a token before it can stop using one:
    entry covers both channels, since both publish from that file.
 4. Delete the token.
 
-That applies to all twelve packages at the first release: the six under
-`packages/`, and the six platform packages named in
+That applies to all eleven packages at the first release: the six under
+`packages/`, and the five platform packages named in
 [`platforms.json`](../packages/runtime/platforms.json). After that the token
 never comes back.
 

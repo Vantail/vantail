@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Build the runtime for every platform this machine can reach.
 #
-# Four of the six, from a Mac with Docker: both macOS architectures natively
-# and by cross-compiling, both Linux architectures in containers. Windows needs
-# Windows, so a full release still goes through CI.
+# Three of the five, from a Mac with Docker: macOS natively, both Linux
+# architectures in containers. Windows needs Windows, so a full release still
+# goes through CI.
 #
 #   scripts/build-platforms                  # into dist-runtime/
 #   scripts/build-platforms out-dir
@@ -16,26 +16,13 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 out=$(cd "$(dirname "${1:-$root/dist-runtime}")" && pwd)/$(basename "${1:-dist-runtime}")
 work=${VANTAIL_LINUX_WORK:-${TMPDIR:-/tmp}/vantail-linux}
 
-# Homebrew's cargo shadows rustup's and does not have rustup's cross targets
-# installed, so `cargo build --target x86_64-apple-darwin` fails with "can't
-# find crate for core" while rustc alone can see the target perfectly well.
-# Pinning both is what makes cross-compiling work.
-toolchain=$(rustup show active-toolchain 2>/dev/null | awk '{print $1}')
-rust_home="$HOME/.rustup/toolchains/$toolchain"
-
 say() { printf '\n== %s\n' "$1"; }
 
-mkdir -p "$out"/{aarch64-apple-darwin,x86_64-apple-darwin,aarch64-unknown-linux-gnu,x86_64-unknown-linux-gnu}
+mkdir -p "$out"/{aarch64-apple-darwin,aarch64-unknown-linux-gnu,x86_64-unknown-linux-gnu}
 
 say "macOS arm64"
 cargo build --release
 cp "$root/target/release/vantail-runtime" "$out/aarch64-apple-darwin/"
-
-say "macOS x86_64 (cross)"
-rustup target add x86_64-apple-darwin >/dev/null 2>&1 || true
-CARGO_TARGET_DIR="$work/x64-target" RUSTC="$rust_home/bin/rustc" \
-  "$rust_home/bin/cargo" build --release --target x86_64-apple-darwin
-cp "$work/x64-target/x86_64-apple-darwin/release/vantail-runtime" "$out/x86_64-apple-darwin/"
 
 # A copy, so the containers' target directories never meet the host's.
 mkdir -p "$work/src"

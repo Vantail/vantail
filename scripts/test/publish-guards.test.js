@@ -58,7 +58,7 @@ test("an empty --registry never publishes to the public one", async () => {
 
 test("the flag is what lets a release reach npmjs", async () => {
   // The release workflow passes this. If the flag ever stopped working, every
-  // release would fail at the last step, after the six native builds.
+  // release would fail at the last step, after the five native builds.
   const { output } = await publish(
     "--registry",
     "https://registry.npmjs.org",

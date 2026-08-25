@@ -65,7 +65,7 @@ for (const target of platforms.targets) {
         license: manifest.license ?? "MIT",
         repository: manifest.repository,
         // npm reads these and installs only the matching package, which is
-        // what keeps six binaries from landing on one machine.
+        // what keeps five binaries from landing on one machine.
         os: [target.platform],
         cpu: [target.arch],
         files: ["bin"],

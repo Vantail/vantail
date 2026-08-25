@@ -21,7 +21,7 @@ on:
         type: boolean
         default: true
       build_runtimes:
-        description: Force the six native builds, even if the Rust has not changed
+        description: Force the five native builds, even if the Rust has not changed
         type: boolean
         default: false
 
@@ -36,7 +36,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # The six native builds are most of what a release costs - two macOS runners
+  # The five native builds are most of what a release costs - a macOS runner
   # at ten times the Linux rate. They are only needed when the Rust has
   # actually changed, so a release that only touches TypeScript reuses the
   # binaries already published and skips them.
@@ -60,7 +60,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "${{ github.ref_type }}" = "tag" ]; then
+          # A hand-started run is a release rehearsal, not a dev build: it is
+          # how the native builds are exercised without a tag, and it defaults
+          # to publishing nothing. Treating it as a dev build would skip it
+          # entirely, since a dev build never builds runtimes.
+          if [ "${{ github.ref_type }}" = "tag" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             CHANNEL=release
           else
             CHANNEL=dev
@@ -106,7 +110,7 @@ jobs:
           fi
 
           # ---------------------------------------------------------------
-          # A release. The six native builds are most of what it costs, so
+          # A release. The five native builds are most of what it costs, so
           # they run only when the Rust has actually moved.
           # ---------------------------------------------------------------
           echo "ready=true" >> "$GITHUB_OUTPUT"
@@ -150,8 +154,6 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             runner: macos-14
-          - target: x86_64-apple-darwin
-            runner: macos-13
           - target: x86_64-pc-windows-msvc
             runner: windows-2022
           - target: aarch64-pc-windows-msvc
@@ -227,7 +229,7 @@ jobs:
       # There is no npm token. The publish authenticates with a short-lived
       # OIDC token minted from this workflow, and this is what allows minting
       # it. It also signs the provenance attestation. Without it the release
-      # fails at the last step, after the six native builds have already run.
+      # fails at the last step, after the five native builds have already run.
       id-token: write
     steps:
       - uses: actions/checkout@v5

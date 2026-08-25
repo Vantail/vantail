@@ -3,7 +3,7 @@
  * The runtime version the last release published.
  *
  * A release that changes no Rust reuses those binaries instead of rebuilding
- * six of them, so it needs to know which version to point at. `@vantail/runtime`
+ * five of them, so it needs to know which version to point at. `@vantail/runtime`
  * is the package that names them, and its `optionalDependencies` are exactly
  * that answer - more reliable than guessing a platform package, since a
  * release need not have covered every platform.

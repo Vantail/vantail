@@ -35,7 +35,7 @@ describe("platform packages", () => {
   before(async () => {
     platforms = JSON.parse(await readFile(join(root, "packages/runtime/platforms.json"), "utf8"));
 
-    // A stand-in for every target, so the script is exercised for all six
+    // A stand-in for every target, so the script is exercised for all five
     // rather than only the one this machine can build.
     const binaries = await temporary("vantail-binaries-");
     for (const target of platforms.targets) {
@@ -58,7 +58,7 @@ describe("platform packages", () => {
       const directory = join(out, target.package.replace("@vantail/", ""));
       const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
       assert.equal(manifest.name, target.package);
-      // npm reads these to install exactly one of the six.
+      // npm reads these to install exactly one of the five.
       assert.deepEqual(manifest.os, [target.platform]);
       assert.deepEqual(manifest.cpu, [target.arch]);
     }
@@ -193,7 +193,7 @@ describe("release workflow", () => {
   });
 
   it("publishes to npmjs through OIDC, holding no token at all", async () => {
-    // Everything here fails at the last step of a release, after the six
+    // Everything here fails at the last step of a release, after the five
     // native builds have already run, which is the most expensive place to
     // find out.
     const { parse } = await import("yaml");
@@ -267,8 +267,19 @@ describe("release workflow", () => {
       "the version is bumped after the build, so the artefacts carry the old one",
     );
 
-    // Six native builds on every push to main would cost more than they are
+    // Five native builds on every push to main would cost more than they are
     // worth, so a dev build reuses the last release's binaries.
     assert.match(workflow.jobs.publish.if, /needs\.plan\.outputs\.ready == 'true'/);
+
+    // A hand-started run is the only way to exercise the native builds
+    // without cutting a tag, and it is what the first release is bootstrapped
+    // from. Treated as a dev build it would skip itself, since a dev build
+    // never builds runtimes.
+    const decide = workflow.jobs.plan.steps.find((step) => step.id === "decide");
+    assert.match(
+      decide.run,
+      /workflow_dispatch" \]; then\n\s*CHANNEL=release/,
+      "a hand-started run does not take the release path, so it does nothing",
+    );
   });
 });
