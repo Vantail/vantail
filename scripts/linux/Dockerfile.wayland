@@ -1,0 +1,6 @@
+FROM vantail-linux
+# A real Wayland compositor, headless, plus XWayland - which every Wayland
+# desktop actually ships, and which the clipboard needs because arboard talks
+# X11 on Linux.
+RUN apt-get update && apt-get install -y --no-install-recommends weston xwayland \
+    && rm -rf /var/lib/apt/lists/*

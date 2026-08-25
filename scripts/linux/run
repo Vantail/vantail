@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Build and test on Linux, from anywhere Docker runs.
+#
+# There is no Linux machine in this project, and the difference between
+# "compiles for Linux" and "works on Linux" is where the bugs live - the
+# webview could not be created at all until this existed. So: a container with
+# the same libraries CI installs, a virtual display, and a window manager,
+# because maximising is something a window manager does and without one the
+# window silently never changes size.
+#
+#   scripts/linux/run                 # build, then the whole suite
+#   scripts/linux/run cargo build --release
+#   scripts/linux/run shell           # a prompt inside it
+set -euo pipefail
+
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+root=$(cd "$here/../.." && pwd)
+work=${VANTAIL_LINUX_WORK:-${TMPDIR:-/tmp}/vantail-linux}
+
+docker build -q -t vantail-linux "$here" >/dev/null
+
+# A copy, so the container's node_modules and target never meet the host's.
+mkdir -p "$work/src" "$work/target"
+rsync -a --delete \
+  --exclude node_modules --exclude target --exclude .git \
+  --exclude build --exclude .vantail --exclude dist \
+  "$root/" "$work/src/"
+
+run() {
+  docker run --rm -it \
+    -v "$work/src":/work -v "$work/target":/target -w /work \
+    -e CARGO_TARGET_DIR=/target \
+    -e VANTAIL_FORCE_INTEGRATION=1 \
+    -e VANTAIL_RUNTIME_BIN=/target/release/vantail-runtime \
+    vantail-linux "$@"
+}
+
+case "${1:-all}" in
+  shell) run bash ;;
+  wayland)
+    # X11 through Xvfb is not why build_gtk exists. This runs the same thing
+    # against a real Wayland compositor with no X server at all.
+    docker build -q -t vantail-wayland -f "$here/Dockerfile.wayland" "$here" >/dev/null
+    docker run --rm -it \
+      -v "$work/src":/work -v "$work/target":/target -w /work \
+      -e CARGO_TARGET_DIR=/target -e VANTAIL_FORCE_INTEGRATION=1 \
+      -e VANTAIL_RUNTIME_BIN=/target/release/vantail-runtime \
+      vantail-wayland bash -lc '
+        export XDG_RUNTIME_DIR=/tmp/xdg
+        mkdir -p $XDG_RUNTIME_DIR && chmod 700 $XDG_RUNTIME_DIR
+        weston --backend=headless-backend.so --width=1400 --height=1000 \
+               --socket=wayland-1 >/tmp/weston.log 2>&1 &
+        sleep 5
+        unset DISPLAY
+        export WAYLAND_DISPLAY=wayland-1 GDK_BACKEND=wayland
+        dbus-run-session -- "$@"
+      ' -- "${@:2}" ;;
+  all)
+    run bash -lc '
+      set -e
+      cargo build --release
+      pnpm install --frozen-lockfile
+      pnpm build
+      pnpm run test:packages
+      # A display and a window manager: without the latter, maximising does
+      # nothing and the window-size tests fail for a reason that is not about
+      # this code.
+      xvfb-run -a --server-args="-screen 0 1400x1000x24" dbus-run-session -- bash -c "
+        openbox 2>/dev/null &
+        sleep 2
+        node --test --test-concurrency=1 --test-timeout=240000 test/integration/*.test.js
+      "
+    ' ;;
+  *) run "$@" ;;
+esac

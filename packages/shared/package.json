@@ -1,0 +1,38 @@
+{
+  "name": "@vantail/shared",
+  "version": "0.1.0",
+  "description": "Shared types, error codes and config schema for Vantail.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Vantail/vantail.git",
+    "directory": "packages/shared"
+  },
+  "homepage": "https://github.com/Vantail/vantail",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./schema": {
+      "types": "./dist/schema.d.ts",
+      "default": "./dist/schema.js"
+    },
+    "./load": {
+      "types": "./dist/load.d.ts",
+      "default": "./dist/load.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.0.0",
+    "esbuild": "^0.28.0"
+  }
+}

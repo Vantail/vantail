@@ -1,0 +1,27 @@
+{
+  "name": "@vantail/api",
+  "version": "0.1.0",
+  "description": "The Vantail JavaScript SDK: native APIs for your application.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Vantail/vantail.git",
+    "directory": "packages/api"
+  },
+  "homepage": "https://github.com/Vantail/vantail",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

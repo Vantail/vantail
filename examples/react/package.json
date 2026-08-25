@@ -1,0 +1,27 @@
+{
+  "name": "@vantail/example-react",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vantail dev",
+    "build": "vantail build",
+    "package": "vantail package",
+    "doctor": "vantail doctor",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@vantail/api": "workspace:^",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@vantail/cli": "workspace:^",
+    "@vantail/vite": "workspace:^",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.0",
+    "typescript": "^7.0.0",
+    "vite": "^8.0.0"
+  }
+}

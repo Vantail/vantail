@@ -1,0 +1,256 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build everything but publish nothing
+        type: boolean
+        default: true
+      build_runtimes:
+        description: Force the six native builds, even if the Rust has not changed
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The six native builds are most of what a release costs - two macOS runners
+  # at ten times the Linux rate. They are only needed when the Rust has
+  # actually changed, so a release that only touches TypeScript reuses the
+  # binaries already published and skips them.
+  plan:
+    name: Plan
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-22.04' }}
+    outputs:
+      build_runtimes: ${{ steps.decide.outputs.build_runtimes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: decide
+        run: |
+          if [ "${{ inputs.build_runtimes }}" = "true" ]; then
+            echo "Asked for."
+            echo "build_runtimes=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # The tag before this one, so a tag push compares against the last
+          # release rather than against itself.
+          PREV=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)
+
+          if [ -z "$PREV" ]; then
+            echo "No earlier release, so there are no binaries to reuse."
+            echo "build_runtimes=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --quiet "$PREV..HEAD" -- runtime/src Cargo.toml Cargo.lock; then
+            echo "::notice::The runtime has not changed since $PREV. Reusing its binaries and skipping the native builds."
+            echo "build_runtimes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "The runtime has changed since $PREV."
+            echo "build_runtimes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # One job per published target. A native runner for each rather than
+  # cross-compilation, because the runtime links against the platform's
+  # webview, tray and HID libraries and cross-compiling those is a source of
+  # problems nobody needs on a release day.
+  runtime:
+    name: ${{ matrix.target }}
+    needs: plan
+    if: needs.plan.outputs.build_runtimes == 'true'
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-14
+          - target: x86_64-apple-darwin
+            runner: macos-13
+          - target: x86_64-pc-windows-msvc
+            runner: windows-2022
+          - target: aarch64-pc-windows-msvc
+            runner: windows-11-arm
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-22.04
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux webview dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libudev-dev \
+            libxdo-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+
+      # The runtime has to at least start and answer, or the binary is not
+      # worth publishing.
+      - name: Smoke test the binary
+        shell: bash
+        run: |
+          BIN="target/${{ matrix.target }}/release/vantail-runtime"
+          if [ -f "$BIN.exe" ]; then BIN="$BIN.exe"; fi
+          "$BIN" --version
+          "$BIN" --help > /dev/null
+
+      - name: Collect
+        shell: bash
+        run: |
+          mkdir -p "dist-runtime/${{ matrix.target }}"
+          cp target/${{ matrix.target }}/release/vantail-runtime* \
+             "dist-runtime/${{ matrix.target }}/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist-runtime/${{ matrix.target }}
+          if-no-files-found: error
+          retention-days: 7
+
+      # WiX only exists on Windows and only as a dotnet tool, so the .msi is
+      # the one installer that needs something installed first.
+      - name: Install WiX
+        if: runner.os == 'Windows'
+        run: dotnet tool install --global wix
+
+  publish:
+    name: Publish
+    needs: [plan, runtime]
+    # `runtime` is skipped when the Rust has not moved, and a skipped
+    # dependency would otherwise skip this too.
+    if: always() && needs.plan.result == 'success' && needs.runtime.result != 'failure' && needs.runtime.result != 'cancelled'
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-22.04' }}
+    permissions:
+      contents: write
+      # npm provenance is signed with an OIDC token from this workflow, and
+      # minting one needs this. Without it the publish fails at the last step,
+      # after the six native builds have already run.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/version.mjs --check
+      - run: pnpm build
+      - run: pnpm run test:packages
+
+      # Every artifact lands in dist-runtime/<target>/, which is the layout
+      # the packaging script expects. Nothing to download when the native
+      # builds were skipped.
+      - uses: actions/download-artifact@v4
+        if: needs.plan.outputs.build_runtimes == 'true'
+        with:
+          path: dist-runtime
+
+      - name: Confirm the tag matches the version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package version $VERSION" >&2
+            exit 1
+          fi
+
+      - name: Build platform packages
+        if: needs.plan.outputs.build_runtimes == 'true'
+        run: node scripts/build-platform-packages.mjs --binaries dist-runtime --out dist-packages --all
+
+      # Written here rather than by setup-node, and only now: `pnpm install`
+      # above resolves the @vantail packages from the workspace, and there is
+      # no reason for the token to exist on disk while it runs.
+      #
+      # `publish.mjs` passes this file to every `npm publish` as --userconfig,
+      # which is what carries the credentials into each package directory.
+      #
+      # The scope is public on npmjs, which is the only registry where
+      # `npm create @vantail` resolves without the user configuring anything
+      # first. NPM_TOKEN is an automation token from the npmjs `vantail` org.
+      - name: Point the scope at npmjs
+        run: |
+          {
+            echo "@vantail:registry=https://registry.npmjs.org"
+            echo "//registry.npmjs.org/:_authToken=\${NODE_AUTH_TOKEN}"
+          } > .npmrc
+
+      # Without new binaries, the release publishes the TypeScript alone and
+      # points at the runtime the last release published. That version has to
+      # exist, or `@vantail/runtime` would name packages nobody can install.
+      - name: Find the runtime to point at
+        id: runtime
+        if: needs.plan.outputs.build_runtimes != 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          VERSION=$(node scripts/last-runtime-version.mjs --userconfig .npmrc)
+          echo "Reusing runtime $VERSION."
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # `--i-mean-it-publish-publicly` is what gets past the script's own
+      # refusal to send anything to npmjs. A name published there by accident
+      # cannot be taken back, so the intent is stated rather than assumed.
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          ARGS="--i-mean-it-publish-publicly"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+
+          if [ "${{ needs.plan.outputs.build_runtimes }}" = "true" ]; then
+            node scripts/publish.mjs $ARGS --packages dist-packages
+          else
+            node scripts/publish.mjs $ARGS \
+              --only @vantail/shared,@vantail/api,@vantail/runtime,@vantail/vite,@vantail/cli,@vantail/create \
+              --runtime-version "${{ steps.runtime.outputs.version }}"
+          fi
+
+      - name: Remove credentials
+        if: always()
+        run: rm -f .npmrc
+
+      - name: Attach the binaries to the GitHub release
+        if: startsWith(github.ref, 'refs/tags/') && needs.plan.outputs.build_runtimes == 'true' 
+        run: |
+          cd dist-runtime
+          for target in */; do
+            tar -czf "../vantail-runtime-${target%/}.tar.gz" -C "$target" .
+          done
+          cd ..
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            vantail-runtime-*.tar.gz
+        env:
+          GH_TOKEN: ${{ github.token }}

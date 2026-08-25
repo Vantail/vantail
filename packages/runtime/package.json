@@ -1,0 +1,21 @@
+{
+  "name": "@vantail/runtime",
+  "version": "0.1.0",
+  "description": "Locates the precompiled Vantail native runtime for the current platform.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Vantail/vantail.git",
+    "directory": "packages/runtime"
+  },
+  "homepage": "https://github.com/Vantail/vantail",
+  "type": "module",
+  "files": ["dist", "platforms.json"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

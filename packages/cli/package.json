@@ -1,0 +1,40 @@
+{
+  "name": "@vantail/cli",
+  "version": "0.1.0",
+  "description": "The Vantail command line: dev, build, package.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Vantail/vantail.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/Vantail/vantail",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "vantail": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@vantail/runtime": "workspace:^",
+    "@vantail/shared": "workspace:^",
+    "@vantail/vite": "workspace:^"
+  },
+  "peerDependencies": {
+    "vite": "^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0"
+  },
+  "devDependencies": {
+    "vite": "^8.0.0"
+  }
+}

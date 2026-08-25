@@ -1,0 +1,68 @@
+[package]
+name = "vantail-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The Vantail native runtime: a thin native layer for JavaScript applications."
+
+[[bin]]
+name = "vantail-runtime"
+path = "src/main.rs"
+
+[features]
+default = ["devtools", "hid", "mdns", "network", "secrets", "updater", "watch"]
+# Ships the webview inspector. Enabled by default; whether it is actually
+# reachable is still decided by `devtools` in vantail.json.
+devtools = ["wry/devtools"]
+# The native HTTP client, for the requests a webview refuses to make.
+# Brings in TLS, which is most of the binary size it costs.
+network = ["dep:ureq"]
+# Raw HID access, for devices like a control pad.
+hid = ["dep:hidapi"]
+# Service discovery on the local network.
+mdns = ["dep:mdns-sd"]
+# Watching the filesystem for changes.
+watch = ["dep:notify"]
+# The OS credential store: Keychain, Credential Manager, Secret Service.
+secrets = ["dep:keyring"]
+# The self-updater, which downloads through the same client.
+updater = ["network", "dep:ed25519-dalek", "dep:tar", "dep:flate2"]
+
+[dependencies]
+tao = "0.37"
+wry = "0.56"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rfd = "0.17"
+arboard = "3.6"
+notify-rust = "4"
+dirs = "6"
+percent-encoding = "2"
+mime_guess = "2"
+globset = "0.4"
+interprocess = "2.4"
+base64 = "0.23"
+tray-icon = "0.24"
+muda = "0.19"
+global-hotkey = "0.8"
+png = "0.18"
+open = "5.4"
+
+hidapi = { version = "2.6", optional = true, features = ["macos-shared-device"] }
+keyring = { version = "4", optional = true }
+mdns-sd = { version = "0.21", optional = true }
+notify = { version = "8.2", optional = true }
+
+ureq = { version = "3.4", optional = true }
+ed25519-dalek = { version = "3", optional = true }
+tar = { version = "0.4", optional = true }
+flate2 = { version = "1.1", optional = true }
+
+# Sleep and wake notifications come from NSWorkspace, and there is no
+# cross-platform crate for them. Same versions tao and wry already resolve to,
+# so this adds nothing to the tree.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSApplication"] }
+objc2-foundation = { version = "0.3", features = ["NSNotification", "NSString", "NSThread"] }

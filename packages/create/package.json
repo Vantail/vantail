@@ -1,0 +1,27 @@
+{
+  "name": "@vantail/create",
+  "version": "0.1.0",
+  "description": "Scaffold a Vantail application.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Vantail/vantail.git",
+    "directory": "packages/create"
+  },
+  "homepage": "https://github.com/Vantail/vantail",
+  "type": "module",
+  "files": [
+    "dist",
+    "templates"
+  ],
+  "bin": {
+    "vantail-create": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@vantail/shared": "workspace:^"
+  }
+}

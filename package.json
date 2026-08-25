@@ -1,0 +1,38 @@
+{
+  "name": "vantail",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A thin native layer for JavaScript applications.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Vantail/vantail.git"
+  },
+  "homepage": "https://github.com/Vantail/vantail",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "packageManager": "pnpm@10.32.1",
+  "scripts": {
+    "build": "pnpm --filter \"./packages/**\" -r run build",
+    "build:runtime": "cargo build --release",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm run test:runtime && pnpm run test:packages && pnpm run test:integration",
+    "test:runtime": "cargo test",
+    "test:packages": "node --test packages/*/test/*.test.js scripts/test/*.test.js",
+    "clean": "rm -rf packages/*/dist target",
+    "test:integration": "node --test --test-concurrency=1 test/integration/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "@vantail/runtime": "workspace:*",
+    "typescript": "^7.0.0",
+    "yaml": "^2.9.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
