@@ -68,6 +68,27 @@ The tag starts `release.yml`, which builds all six runtimes on native
 runners, smoke-tests each binary, packages them, and publishes. The tag has to
 match `package.json` or the publish job stops before sending anything.
 
+## The dev channel
+
+`release.yml` also runs on every push to `main`, and publishes a prerelease of
+the next patch under the `dev` tag: `0.1.1-dev.<run number>`. The version sorts
+above the last release and below the next one, and `latest` is never moved by a
+push.
+
+Both channels live in the one file because npm allows a package exactly one
+trusted publisher, bound to an exact workflow filename. A second workflow
+publishing dev builds would need a token of its own, which is the thing this
+setup does not have.
+
+A dev build publishes the TypeScript alone, against the binaries the last
+release published, so a push to `main` never pays for six native builds. Three
+things make that impossible, and each skips the run with a warning rather than
+failing it, because none of them is a fault in the commit that triggered it:
+
+- there is no release tag yet, so there are no binaries to point at;
+- the Rust has moved since that tag, so the binaries are the wrong ones;
+- nothing that ships changed in the push.
+
 To rehearse without publishing, run the workflow by hand with `dry_run`
 enabled - or locally:
 
@@ -82,16 +103,49 @@ npm resolves those at install time. Those optional dependencies are injected
 at publish time rather than committed - in the repository they would point at
 versions that do not exist yet, and `pnpm install` would fail.
 
-Packages go to npmjs under the `@vantail` scope, authenticated with an
-automation token from that org held as the `NPM_TOKEN` secret. `publish.mjs`
-refuses npmjs unless it is told to go ahead, because a publish there cannot be
-undone; the workflow passes `--i-mean-it-publish-publicly` to say so.
+## Credentials
+
+There are none. Packages go to npmjs under the `@vantail` scope using [trusted
+publishing]: at publish time npm exchanges an OIDC token minted by this
+workflow for a short-lived registry token. Nothing long-lived is stored, and
+there is no secret to rotate or leak.
+
+What that depends on, all of which a test asserts:
+
+- `id-token: write` on the publish job, which is what allows minting the OIDC
+  token.
+- npm 11.5.1 or newer. The Node this job sets up still ships npm 10, so the
+  workflow upgrades it explicitly.
+- No `_authToken` anywhere. An auth line takes precedence over the exchange,
+  so the `.npmrc` the workflow writes carries the registry and nothing else.
+- The `repository` field in each `package.json` matching this repository,
+  which is also what provenance is checked against.
+
+`publish.mjs` refuses npmjs unless told to go ahead, because a publish there
+cannot be undone; the workflow passes `--i-mean-it-publish-publicly` to say so.
 
 Packages are published with [npm provenance], so anyone can verify they were
-built from this repository by this workflow. That needs `id-token: write` on
-the publish job, and it checks the `repository` field in each `package.json`
-against the repository the workflow ran in, so those have to agree.
+built from this repository by this workflow.
 
+### Adding a package
+
+Trusted publishing is configured per package on npmjs, and the settings page
+only exists once the package does. A package that has never been published has
+to be published once with a token before it can stop using one:
+
+1. Create a granular access token on npmjs with write access to the package.
+2. Publish that first version by hand with it.
+3. On npmjs, under the package's Settings, add a trusted publisher: the
+   `Vantail/vantail` repository and `release.yml` as the workflow. That one
+   entry covers both channels, since both publish from that file.
+4. Delete the token.
+
+That applies to all twelve packages at the first release: the six under
+`packages/`, and the six platform packages named in
+[`platforms.json`](../packages/runtime/platforms.json). After that the token
+never comes back.
+
+[trusted publishing]: https://docs.npmjs.com/trusted-publishers
 [npm provenance]: https://docs.npmjs.com/generating-provenance-statements
 
 ## How the binary is found

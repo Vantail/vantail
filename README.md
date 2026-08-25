@@ -624,6 +624,19 @@ node scripts/version.mjs --check  # fail if anything disagrees
 CI fails when something that ships has changed but the version has not, so a
 release cannot get half way and then be refused for republishing a version.
 
+A tag publishes that version as `latest`. Every push to `main` that changes
+something shippable publishes a prerelease under the `dev` tag, so `main` is
+installable without waiting for a release:
+
+```bash
+npm install @vantail/cli        # the last release
+npm install @vantail/cli@dev    # main
+```
+
+A dev build carries the last release's native runtime - it publishes the
+TypeScript only. Change the Rust and the dev build stops and asks for a
+release rather than pairing new JavaScript with an old binary.
+
 Further reading:
 
 - [docs/architecture.md](docs/architecture.md) - how a call gets from

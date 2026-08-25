@@ -1,7 +1,18 @@
 name: Release
 
+# Two channels, one workflow, on purpose. npm allows a package exactly one
+# trusted publisher, bound to an exact workflow filename, so a second file
+# publishing dev builds would need a token to go with it. Keeping both here
+# means the whole project publishes without a credential anywhere.
+#
+#   a tag       -> that version, tagged `latest`
+#   a push      -> a prerelease of the next patch, tagged `dev`
+#
+#   npm install @vantail/cli        # the last release
+#   npm install @vantail/cli@dev    # main
 on:
   push:
+    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
@@ -13,6 +24,13 @@ on:
         description: Force the six native builds, even if the Rust has not changed
         type: boolean
         default: false
+
+# A newer push to main makes an in-flight dev build pointless. A release is
+# never cancelled: it has native builds behind it and a tag that will not come
+# round again.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -26,14 +44,73 @@ jobs:
     name: Plan
     runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-22.04' }}
     outputs:
+      channel: ${{ steps.decide.outputs.channel }}
+      ready: ${{ steps.decide.outputs.ready }}
       build_runtimes: ${{ steps.decide.outputs.build_runtimes }}
     steps:
       - uses: actions/checkout@v4
         with:
+          # The last release tag is what a dev build takes its binaries from,
+          # and a shallow clone has no tags.
           fetch-depth: 0
 
       - id: decide
+        env:
+          BEFORE: ${{ github.event.before }}
         run: |
+          set -euo pipefail
+
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            CHANNEL=release
+          else
+            CHANNEL=dev
+          fi
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+
+          # ---------------------------------------------------------------
+          # A dev build ships the TypeScript against the last release's
+          # binaries. Every way that could be wrong is a reason to skip, not
+          # to fail: none of them is a fault in the commit that triggered it,
+          # and a red cross on every push is how people learn to ignore them.
+          # ---------------------------------------------------------------
+          if [ "$CHANNEL" = "dev" ]; then
+            echo "build_runtimes=false" >> "$GITHUB_OUTPUT"
+
+            TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+            if [ -z "$TAG" ]; then
+              echo "::warning::No release tag yet, so there are no native runtimes for a dev build to point at. Dev builds start after the first release."
+              echo "ready=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            if ! git diff --quiet "$TAG..HEAD" -- runtime/src Cargo.toml Cargo.lock; then
+              echo "::warning::The runtime has changed since $TAG. A dev build would pair new TypeScript with that release's binaries, so it is skipped. Cut a release to pick the change up."
+              echo "ready=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            # Nothing shippable in this push means nothing to publish. A
+            # force push or a new branch reports no useful `before`, so those
+            # go ahead rather than guess.
+            if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] \
+               && git cat-file -e "$BEFORE^{commit}" 2>/dev/null \
+               && git diff --quiet "$BEFORE..HEAD" -- packages runtime/src Cargo.toml Cargo.lock; then
+              echo "Nothing that ships changed in this push."
+              echo "ready=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            echo "Dev build against $TAG."
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # ---------------------------------------------------------------
+          # A release. The six native builds are most of what it costs, so
+          # they run only when the Rust has actually moved.
+          # ---------------------------------------------------------------
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
           if [ "${{ inputs.build_runtimes }}" = "true" ]; then
             echo "Asked for."
             echo "build_runtimes=true" >> "$GITHUB_OUTPUT"
@@ -141,14 +218,16 @@ jobs:
     name: Publish
     needs: [plan, runtime]
     # `runtime` is skipped when the Rust has not moved, and a skipped
-    # dependency would otherwise skip this too.
-    if: always() && needs.plan.result == 'success' && needs.runtime.result != 'failure' && needs.runtime.result != 'cancelled'
+    # dependency would otherwise skip this too. `ready` is what turns a push
+    # with nothing to ship into a no-op instead of a failure.
+    if: always() && needs.plan.result == 'success' && needs.plan.outputs.ready == 'true' && needs.runtime.result != 'failure' && needs.runtime.result != 'cancelled'
     runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-22.04' }}
     permissions:
       contents: write
-      # npm provenance is signed with an OIDC token from this workflow, and
-      # minting one needs this. Without it the publish fails at the last step,
-      # after the six native builds have already run.
+      # There is no npm token. The publish authenticates with a short-lived
+      # OIDC token minted from this workflow, and this is what allows minting
+      # it. It also signs the provenance attestation. Without it the release
+      # fails at the last step, after the six native builds have already run.
       id-token: write
     steps:
       - uses: actions/checkout@v4
@@ -159,8 +238,25 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # Trusted publishing needs npm 11.5.1 or newer, and Node 22 still ships
+      # npm 10. pnpm handles the install; this is the npm that publish.mjs
+      # shells out to.
+      - run: npm install -g npm@latest
+
       - run: pnpm install --frozen-lockfile
+
+      # Checked before the dev bump rewrites them, so this is still checking
+      # what the commit actually says.
       - run: node scripts/version.mjs --check
+
+      # A prerelease of the next patch, so it sorts above the last release and
+      # below the next one. The run number keeps them ordered and unique.
+      # `publish.mjs` reads the version back and tags a prerelease `dev` on its
+      # own, so `latest` is never moved by a push to main.
+      - name: Set the prerelease version
+        if: needs.plan.outputs.channel == 'dev'
+        run: node scripts/version.mjs dev "${{ github.run_number }}"
+
       - run: pnpm build
       - run: pnpm run test:packages
 
@@ -186,22 +282,20 @@ jobs:
         if: needs.plan.outputs.build_runtimes == 'true'
         run: node scripts/build-platform-packages.mjs --binaries dist-runtime --out dist-packages --all
 
-      # Written here rather than by setup-node, and only now: `pnpm install`
-      # above resolves the @vantail packages from the workspace, and there is
-      # no reason for the token to exist on disk while it runs.
-      #
       # `publish.mjs` passes this file to every `npm publish` as --userconfig,
-      # which is what carries the credentials into each package directory.
+      # which is what carries the registry into each package directory. npm
+      # reads a project `.npmrc` from the working directory only, and every
+      # publish runs with `cwd` set to a package.
+      #
+      # It holds no credential. Trusted publishing exchanges the workflow's
+      # OIDC token for a short-lived one at publish time, so there is nothing
+      # here to leak and nothing to rotate. An `_authToken` line would take
+      # precedence over that exchange, so there must not be one.
       #
       # The scope is public on npmjs, which is the only registry where
-      # `npm create @vantail` resolves without the user configuring anything
-      # first. NPM_TOKEN is an automation token from the npmjs `vantail` org.
+      # `npm create @vantail` resolves without the user configuring anything.
       - name: Point the scope at npmjs
-        run: |
-          {
-            echo "@vantail:registry=https://registry.npmjs.org"
-            echo "//registry.npmjs.org/:_authToken=\${NODE_AUTH_TOKEN}"
-          } > .npmrc
+        run: echo "@vantail:registry=https://registry.npmjs.org" > .npmrc
 
       # Without new binaries, the release publishes the TypeScript alone and
       # points at the runtime the last release published. That version has to
@@ -209,8 +303,6 @@ jobs:
       - name: Find the runtime to point at
         id: runtime
         if: needs.plan.outputs.build_runtimes != 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           VERSION=$(node scripts/last-runtime-version.mjs --userconfig .npmrc)
           echo "Reusing runtime $VERSION."
@@ -220,12 +312,16 @@ jobs:
       # refusal to send anything to npmjs. A name published there by accident
       # cannot be taken back, so the intent is stated rather than assumed.
       - name: Publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           ARGS="--i-mean-it-publish-publicly"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
             ARGS="$ARGS --dry-run"
+          fi
+
+          # Said out loud rather than left to the script's default, so a push
+          # to main can never move `latest` even if that default changes.
+          if [ "${{ needs.plan.outputs.channel }}" = "dev" ]; then
+            ARGS="$ARGS --tag dev"
           fi
 
           if [ "${{ needs.plan.outputs.build_runtimes }}" = "true" ]; then
@@ -236,7 +332,7 @@ jobs:
               --runtime-version "${{ steps.runtime.outputs.version }}"
           fi
 
-      - name: Remove credentials
+      - name: Tidy up the registry config
         if: always()
         run: rm -f .npmrc
 
