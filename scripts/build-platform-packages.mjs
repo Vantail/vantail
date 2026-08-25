@@ -30,6 +30,12 @@ const out = resolve(flag("out", "dist-packages"));
 const required = process.argv.includes("--all");
 
 const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+
+/** Where to point a reader. `repository` is an object, not a URL. */
+const home =
+  manifest.homepage ??
+  manifest.repository?.url?.replace(/^git\+/, "").replace(/\.git$/, "") ??
+  "https://github.com/Vantail/vantail";
 const platforms = JSON.parse(
   await readFile(join(root, "packages/runtime/platforms.json"), "utf8"),
 );
@@ -79,10 +85,13 @@ for (const target of platforms.targets) {
   await writeFile(
     join(directory, "README.md"),
     `# ${target.package}\n\n` +
-      `The [Vantail](${manifest.repository ?? "https://github.com/vantail/vantail"}) native ` +
-      `runtime for ${target.platform} ${target.arch}.\n\n` +
-      `You do not install this directly - \`@vantail/cli\` picks the right one ` +
-      `for the machine it is running on.\n`,
+      `The [Vantail](${home}) native runtime for ${target.platform} ` +
+      `${target.arch}: one executable, and nothing else.\n\n` +
+      `You do not depend on this directly. \`@vantail/runtime\` declares every ` +
+      `platform build as an optional dependency, and npm installs only the one ` +
+      `matching the \`os\` and \`cpu\` fields here - which is what keeps five ` +
+      `binaries from landing on one machine.\n\n` +
+      `\`\`\`bash\nnpm create @vantail my-app\n\`\`\`\n`,
     "utf8",
   );
 

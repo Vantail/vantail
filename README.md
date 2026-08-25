@@ -32,22 +32,6 @@ your project is a TypeScript project, with no toolchain beyond npm. The other
 side of that trade is that there is no native command to add - what the
 runtime exposes is what you get.
 
-## Status
-
-v0.1. Nothing is published to npm yet, so the quick start above is the shape of
-the thing rather than a command that works today - see
-[Working on Vantail](#working-on-vantail) to run it from this repository.
-
-macOS and Windows both run the full suite in CI, including the integration
-tests that drive a real window, menus, a tray icon, deep links and a complete
-sign -> publish -> download -> install update cycle.
-
-Linux runs the same suite in a container - 43 of 44, the exception being the
-credential store, which needs a Secret Service that a container has no reason
-to be running. `scripts/linux/run` does that on any machine with Docker, and
-is worth reaching for before touching anything platform-specific: it is what
-found that the webview could not be created on Linux at all.
-
 ## How it fits together
 
 ```text
@@ -496,164 +480,28 @@ package` refuses one unless you pass `--allow-debug-runtime`.
 | [`@vantail/create`](packages/create)   | `npm create @vantail`.                                           |
 | [`runtime/`](runtime)                  | The Rust runtime itself. Not a dependency of your project.       |
 
-## Continuous integration
+## Examples
 
-`.github/workflows/ci.yml` runs on every push: formatting, Clippy with
-warnings denied, the version check, a typecheck, and the full test suite on
-macOS, Windows and Linux - plus a job that compiles each capability feature on
-its own, which is the easy way to break optional dependencies without
-noticing.
+- [examples/showcase](examples/showcase) - a panel for every API, with the
+  calls that are meant to be refused shown alongside the ones that work.
+- [examples/react](examples/react) - a smaller, more realistic application.
+- [examples/vanilla](examples/vanilla) - the same idea without a framework.
 
-The integration tests open real windows, so they run on macOS and Windows and
-are skipped on the Linux runner, which has no desktop session.
+Run one against a local build with `vantail dev`.
 
-`.github/workflows/release.yml` runs on a `v*` tag: five native runners build
-the runtime, each binary is smoke-tested, and the packages are published to
-npm with provenance.
+## Further reading
 
-CI uses whatever Rust stable currently is, which may be newer than yours -
-Clippy gains lints between releases, so a clean local run is not a promise of
-a clean CI one. `rustup update stable` before pushing closes most of that gap.
-
-## Working on Vantail
-
-```bash
-pnpm install
-pnpm build            # the TypeScript packages
-pnpm build:runtime    # cargo build --release
-pnpm test             # cargo tests, package tests, integration tests
-```
-
-The examples run against the local build without anything published:
-
-```bash
-cd examples/react
-node ../../packages/cli/dist/bin.js dev
-```
-
-`@vantail/runtime` falls back to `target/{release,debug}/vantail-runtime` when
-no platform package is installed, which is what makes that work.
-
-### Starting an app before the packages are published
-
-Run the scaffolder out of the checkout and it points the new project back at
-it, so there is nothing to publish and nothing to configure:
-
-```bash
-node /path/to/vantail/packages/create/dist/index.js my-app --template svelte-ts
-cd my-app
-npm install
-npm run dev
-```
-
-`@vantail/api` and `@vantail/cli` become `file:` dependencies, which npm links
-rather than copies - so the runtime resolver walks up from the linked package
-and finds the `cargo build` in the checkout's `target/`. `npm run doctor`
-reports which runtime it found.
-
-Rebuild the checkout (`pnpm build`, `pnpm build:runtime`) and the app picks the
-change up; there is no reinstall step. Pass `--no-link` to keep the published
-version ranges instead.
-
-### Running CI on your own machine
-
-Every Linux job follows a repository variable, so another executor can take
-them without editing a workflow:
-
-```bash
-gh variable set LINUX_RUNNER --body self-hosted
-```
-
-Unset, the jobs stay on GitHub's runners. Whatever answers to the label has to
-be watching the repository: a job nothing picks up queues until it expires
-rather than failing. An external system that is not a registered GitHub
-Actions runner will not appear in `gh api repos/OWNER/REPO/actions/runners`.
-
-macOS and Windows jobs stay on GitHub runners, because they need those
-operating systems.
-
-The dependency step installs nothing if the webview libraries are already
-present, so it does not modify a machine that is not disposable.
-
-### Testing on Linux
-
-```bash
-scripts/linux/run            # build, then the whole suite
-scripts/linux/run shell      # a prompt inside the container
-```
-
-The container installs what CI installs, plus a virtual display and a window
-manager. The window manager is required: maximising is a window manager
-operation, and without one a window never changes size.
-
-```bash
-scripts/linux/run wayland node --test test/integration/runtime.test.js
-```
-
-runs against a Wayland compositor with no X server.
-
-Known Wayland limitations:
-
-- The clipboard needs X11 or XWayland. `arboard` speaks X11 on Linux, so a
-  session with neither answers `UNSUPPORTED`. Most Wayland desktops run
-  XWayland.
-- Running the full integration suite under Wayland ends with the runtime
-  exiting 1 on an xdg-shell protocol error, `xdg_surface geometry does not
-match the configured maximized state`. Each capability passes individually.
-  X11 and macOS are unaffected.
-
-### Building the runtime for other platforms
-
-```bash
-scripts/build-platforms
-```
-
-Three of the five from one Mac with Docker - macOS natively, both Linux ones
-in containers. Windows needs Windows.
-
-### Versions
-
-One number covers every package and the runtime crate.
-
-```bash
-node scripts/version.mjs patch    # 0.1.0 -> 0.1.1
-node scripts/version.mjs minor    # 0.1.0 -> 0.2.0
-node scripts/version.mjs --check  # fail if anything disagrees
-```
-
-CI fails when something that ships has changed but the version has not, so a
-release cannot get half way and then be refused for republishing a version.
-
-A tag publishes that version as `latest`. Every push to `main` that changes
-something shippable publishes a prerelease under the `dev` tag, so `main` is
-installable without waiting for a release:
-
-```bash
-npm install @vantail/cli        # the last release
-npm install @vantail/cli@dev    # main
-```
-
-A dev build carries the last release's native runtime - it publishes the
-TypeScript only. Change the Rust and the dev build stops and asks for a
-release rather than pairing new JavaScript with an old binary.
-
-Further reading:
-
+- [docs/api.md](docs/api.md) - every method, its arguments and what it returns.
 - [docs/architecture.md](docs/architecture.md) - how a call gets from
   JavaScript to the OS and back.
 - [docs/permissions.md](docs/permissions.md) - the permission model in full.
+- [docs/packaging.md](docs/packaging.md) - bundles, installers and signing.
 - [docs/updater.md](docs/updater.md) - signing keys, manifests, and what
   `install` actually does.
-- [docs/releasing.md](docs/releasing.md) - how the runtime binaries are built
-  and published.
 
-## What is not here yet
+## Contributing
 
-Notarisation is not automated, and neither is Windows code signing. The `.msi`
-is generated but has never been built - WiX only runs on Windows. Linux is
-unverified beyond the `.deb` being structurally correct. Binary calls travel as
-base64 and are capped at 64 MB, so they suit documents and icons rather than
-video.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

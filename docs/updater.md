@@ -148,8 +148,8 @@ folder holding the executable.
   needs a different approach.
 - **Signature verification is not code signing.** On macOS the replacement
   bundle still needs its own Developer ID signature to satisfy Gatekeeper on a
-  machine other than the one that built it, and notarisation is not automated
-  by `vantail package`.
+  machine other than the one that built it, and notarising it is a separate
+  step. See [packaging.md](packaging.md).
 - **No delta updates.** Every update is the whole application.
 - **No rollback.** The previous version is kept only until the next start.
 - **The updater is a compile-time feature.** It is on by default; a runtime

@@ -91,10 +91,9 @@ describe(
     });
 
     it("points the Vantail packages at the checkout it ran from", async () => {
-      // Nothing is published yet, so the version ranges in the templates cannot
-      // resolve. Run from a checkout, the only installable answer is a link
-      // back to it - and that is also what lets the runtime resolver find the
-      // local `cargo build`.
+      // Run from a checkout, a link back to it beats the published ranges:
+      // the app picks up a `pnpm build` without a publish, and it is what
+      // lets the runtime resolver find the local `cargo build`.
       const { dependencies, devDependencies } = await manifest(
         await create("linked", "--template", "react-ts"),
       );

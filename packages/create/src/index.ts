@@ -77,8 +77,11 @@ async function main(): Promise<number> {
 
     await scaffold({ template, target, name, identifier });
 
-    // Nothing is published to npm yet, so a project scaffolded from a checkout
-    // has to point back at it or `npm install` cannot resolve anything.
+    // Scaffolded from a checkout rather than from the registry, the new
+    // project points back at that checkout, so a change to the packages is
+    // one `pnpm build` away rather than a publish away. `checkout()` finds
+    // nothing when this runs from an installed copy, which is what keeps a
+    // normal `npm create` on published versions.
     const root = flags.get("no-link") === "true" ? undefined : checkout();
     const linked = root ? await linkToCheckout(target, root) : [];
 
