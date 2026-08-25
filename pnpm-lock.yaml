@@ -55,6 +55,22 @@ importers:
         specifier: ^8.0.0
         version: 8.2.2(@types/node@26.2.0)(esbuild@0.28.2)(yaml@2.9.0)
 
+  examples/showcase:
+    dependencies:
+      '@vantail/api':
+        specifier: workspace:^
+        version: link:../../packages/api
+    devDependencies:
+      '@vantail/cli':
+        specifier: workspace:^
+        version: link:../../packages/cli
+      typescript:
+        specifier: ^7.0.0
+        version: 7.0.2
+      vite:
+        specifier: ^8.0.0
+        version: 8.2.2(@types/node@26.2.0)(esbuild@0.28.2)(yaml@2.9.0)
+
   examples/vanilla:
     dependencies:
       '@vantail/api':

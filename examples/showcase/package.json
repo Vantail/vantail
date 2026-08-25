@@ -1,0 +1,21 @@
+{
+  "name": "@vantail/example-showcase",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vantail dev",
+    "build": "vantail build",
+    "package": "vantail package",
+    "doctor": "vantail doctor",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@vantail/api": "workspace:^"
+  },
+  "devDependencies": {
+    "@vantail/cli": "workspace:^",
+    "typescript": "^7.0.0",
+    "vite": "^8.0.0"
+  }
+}
