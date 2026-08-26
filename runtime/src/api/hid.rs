@@ -28,7 +28,14 @@ const BASE64: base64::engine::general_purpose::GeneralPurpose =
 
 /// How long a read waits before letting go of the device so a write can get
 /// in. Short enough to feel immediate, long enough not to spin.
-const READ_TIMEOUT_MS: i32 = 50;
+/// How often the reader looks for input.
+///
+/// It does not block on the device while it waits. A blocking read holds the
+/// device lock for the whole timeout, and every call the application makes
+/// then queues behind it: 48 sequential writes measured at 1361ms, which is
+/// most of a second to draw a few images. Polling costs a wakeup per interval
+/// and holds the lock for microseconds instead.
+const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(2);
 
 /// Nothing sends reports anywhere near this large; the buffer is just a cap.
 const MAX_REPORT_BYTES: usize = 8 * 1024;
@@ -241,6 +248,16 @@ fn open(rt: &Arc<Runtime>, source: &str, method: &str, params: Value) -> ApiResu
         })
     })?;
 
+    // The reader polls rather than blocking, so a read has to return at once
+    // whether or not the device has anything to say. Blocking would hold the
+    // device lock for the whole timeout and put every call behind it.
+    device.set_blocking_mode(false).map_err(|e| {
+        ApiError::new(
+            code::IO_ERROR,
+            format!("Could not put `{id}` into non-blocking mode: {e}"),
+        )
+    })?;
+
     let handle = rt.devices.next.fetch_add(1, Ordering::Relaxed) + 1;
     let entry = Arc::new(Open {
         path: id,
@@ -276,36 +293,47 @@ fn read_loop(rt: &Arc<Runtime>, source: &str, handle: u32, entry: &Arc<Open>) {
             let mut buffer = vec![0_u8; MAX_REPORT_BYTES];
             let mut reason = "closed";
 
-            while reading.load(Ordering::Relaxed) {
-                // Releasing the lock is not enough on its own: this loop takes
-                // it again immediately, and an unfair mutex hands it straight
-                // back. A call that wants the device says so, and this waits
-                // for it rather than racing.
+            'polling: while reading.load(Ordering::Relaxed) {
+                // Releasing the lock is not enough on its own: an unfair mutex
+                // hands it straight back to whoever asks again first, and that
+                // is this loop. A call that wants the device says so, and this
+                // stands aside for it.
                 if waiting.busy() {
-                    std::thread::sleep(std::time::Duration::from_micros(200));
+                    std::thread::sleep(POLL_INTERVAL);
                     continue;
                 }
 
-                let read = {
-                    let device = device.lock().expect("hid device poisoned");
-                    device.read_timeout(&mut buffer, READ_TIMEOUT_MS)
-                };
+                // Drain whatever is waiting, taking the lock per report so a
+                // call can still get in between them. Each read returns at
+                // once, so the lock is held for microseconds.
+                loop {
+                    let read = {
+                        let device = device.lock().expect("hid device poisoned");
+                        device.read(&mut buffer)
+                    };
 
-                match read {
-                    Ok(0) => continue,
-                    Ok(count) => rt.send(
-                        Some(source.clone()),
-                        Outgoing::Event(Event::new(
-                            "hid.input",
-                            json!({ "handle": handle, "data": BASE64.encode(&buffer[..count]) }),
-                        )),
-                    ),
-                    Err(_) => {
-                        // Almost always the device being unplugged.
-                        reason = "disconnected";
+                    match read {
+                        Ok(0) => break,
+                        Ok(count) => rt.send(
+                            Some(source.clone()),
+                            Outgoing::Event(Event::new(
+                                "hid.input",
+                                json!({ "handle": handle, "data": BASE64.encode(&buffer[..count]) }),
+                            )),
+                        ),
+                        Err(_) => {
+                            // Almost always the device being unplugged.
+                            reason = "disconnected";
+                            break 'polling;
+                        }
+                    }
+
+                    if waiting.busy() {
                         break;
                     }
                 }
+
+                std::thread::sleep(POLL_INTERVAL);
             }
 
             rt.devices.remove(handle);
@@ -443,30 +471,39 @@ mod tests {
 
     use super::*;
 
-    /// The read loop, with the blocking read stood in for by a sleep.
+    /// The read loop, with the device stood in for by a lock.
     ///
-    /// No device is involved: what is being tested is who gets the lock, and
-    /// that is decided by the turnstile rather than by hidapi.
+    /// `hold` is how long the reader keeps the device per iteration: a few
+    /// microseconds for a non-blocking read, or the whole timeout for a
+    /// blocking one. That difference is the entire point.
     fn reader(
         device: Arc<Mutex<()>>,
         turnstile: Arc<Turnstile>,
         running: Arc<AtomicBool>,
-        polite: bool,
+        hold: Duration,
+        polling: bool,
     ) -> std::thread::JoinHandle<()> {
         std::thread::spawn(move || {
             while running.load(Ordering::Relaxed) {
-                if polite && turnstile.busy() {
-                    std::thread::sleep(Duration::from_micros(200));
+                if polling && turnstile.busy() {
+                    std::thread::sleep(POLL_INTERVAL);
                     continue;
                 }
-                let _held = device.lock().expect("poisoned");
-                std::thread::sleep(Duration::from_millis(READ_TIMEOUT_MS as u64));
+                {
+                    let _held = device.lock().expect("poisoned");
+                    std::thread::sleep(hold);
+                }
+                // The old loop had nothing here: it asked for the device
+                // again immediately, and an unfair mutex obliged.
+                if polling {
+                    std::thread::sleep(POLL_INTERVAL);
+                }
             }
         })
     }
 
-    /// How long a caller waits for the device, worst of several attempts.
-    fn worst_wait(polite: bool) -> Duration {
+    /// What a run of calls costs, which is what drawing to a device is.
+    fn sequential(calls: usize, hold: Duration, polling: bool) -> Duration {
         let device = Arc::new(Mutex::new(()));
         let turnstile = Arc::new(Turnstile::default());
         let running = Arc::new(AtomicBool::new(true));
@@ -475,39 +512,54 @@ mod tests {
             Arc::clone(&device),
             Arc::clone(&turnstile),
             Arc::clone(&running),
-            polite,
+            hold,
+            polling,
         );
 
         // Let the reader get into its loop first.
-        std::thread::sleep(Duration::from_millis(120));
+        std::thread::sleep(Duration::from_millis(50));
 
-        let mut worst = Duration::ZERO;
-        for _ in 0..8 {
-            let start = Instant::now();
+        let start = Instant::now();
+        for _ in 0..calls {
             {
                 let _waiting = turnstile.enter();
                 let _held = device.lock().expect("poisoned");
             }
-            worst = worst.max(start.elapsed());
-            std::thread::sleep(Duration::from_millis(5));
+            // The gap between two calls is one IPC round trip, measured at
+            // about 0.14ms. It is enough for the reader to take the device
+            // back, which is what made this expensive.
+            std::thread::sleep(Duration::from_micros(140));
         }
+        let taken = start.elapsed();
 
         running.store(false, Ordering::Relaxed);
         handle.join().expect("reader panicked");
-        worst
+        taken
     }
 
     #[test]
-    fn a_caller_waits_no_longer_than_one_read() {
-        // The bug this guards: an unfair mutex plus a loop that re-locks
-        // immediately starved callers for seconds at a time. Bounded now by
-        // the one read that may already be in flight, with room for a slow
-        // machine on top.
-        let worst = worst_wait(true);
+    fn a_run_of_calls_is_not_charged_a_poll_each() {
+        // Drawing images to a device is dozens of writes in a row. Against a
+        // reader that blocked for 50ms per read, 48 of them measured 1361ms.
+        // Holding the device only for the read itself is what fixes that.
+        let taken = sequential(48, Duration::from_micros(50), true);
 
         assert!(
-            worst < Duration::from_millis(READ_TIMEOUT_MS as u64 * 4),
-            "waited {worst:?}, which means the reader is not standing aside"
+            taken < Duration::from_millis(250),
+            "48 calls took {taken:?}; the reader is holding the device across its wait"
+        );
+    }
+
+    #[test]
+    fn a_blocking_reader_would_be_slow_and_this_proves_it() {
+        // The shape of the old bug, kept so the number above means something.
+        // Four calls is enough to show it and cheap enough to run every time;
+        // the real thing starved for seconds at a stretch.
+        let taken = sequential(4, Duration::from_millis(25), false);
+
+        assert!(
+            taken > Duration::from_millis(60),
+            "expected a blocking reader to be slow, got {taken:?}"
         );
     }
 
