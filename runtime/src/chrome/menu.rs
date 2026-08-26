@@ -10,6 +10,33 @@ use muda::accelerator::Accelerator;
 use muda::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use serde::Deserialize;
 
+/// The id the runtime gives its own Quit item.
+///
+/// `quit` is asked for as a predefined item, but it cannot be one: muda's
+/// predefined quit is the platform's own terminate, which tears the process
+/// down from under the event loop instead of unwinding it. From a tray menu,
+/// which runs its own modal tracking loop on macOS, that wedges rather than
+/// quits. So the item is an ordinary one with a reserved id, and the loop
+/// treats it exactly as it treats `app.quit`.
+pub const QUIT_ID: &str = "vantail:quit";
+
+/// The application's name, for the label macOS expects on that item.
+static APP_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Remembered once at startup, since every menu built later wants it.
+pub fn remember_app_name(name: &str) {
+    let _ = APP_NAME.set(name.to_string());
+}
+
+/// Pure so it can be checked without a window server.
+fn quit_label(given: Option<&str>, app: Option<&str>) -> String {
+    match (given, app) {
+        (Some(label), _) => label.to_string(),
+        (None, Some(name)) => format!("Quit {name}"),
+        (None, None) => "Quit".to_string(),
+    }
+}
+
 /// One entry in a menu.
 ///
 /// `type` is always explicit on the wire. `@vantail/api` fills in `normal`
@@ -216,7 +243,21 @@ fn append(
             Ok(())
         }
 
-        MenuSpec::Predefined { item, label } => menu.add(&predefined(item, label.as_deref())?),
+        MenuSpec::Predefined { item, label } => {
+            // Everything else muda can do natively. Quit is ours.
+            if item == "quit" {
+                let item = MenuItem::with_id(
+                    QUIT_ID,
+                    quit_label(label.as_deref(), APP_NAME.get().map(String::as_str)),
+                    true,
+                    parse(&Some("CmdOrCtrl+Q".to_string()))?,
+                );
+                menu.add(&item)?;
+                items.insert(QUIT_ID.to_string(), ItemHandle::Normal(item));
+                return Ok(());
+            }
+            menu.add(&predefined(item, label.as_deref())?)
+        }
     }
 }
 
@@ -262,7 +303,6 @@ fn predefined(name: &str, label: Option<&str>) -> Result<PredefinedMenuItem, Str
         "hideOthers" => PredefinedMenuItem::hide_others(label),
         "showAll" => PredefinedMenuItem::show_all(label),
         "closeWindow" => PredefinedMenuItem::close_window(label),
-        "quit" => PredefinedMenuItem::quit(label),
         "about" => PredefinedMenuItem::about(label, None),
         "services" => PredefinedMenuItem::services(label),
         "bringAllToFront" => PredefinedMenuItem::bring_all_to_front(label),
@@ -272,4 +312,37 @@ fn predefined(name: &str, label: Option<&str>) -> Result<PredefinedMenuItem, Str
             ))
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quit_is_no_longer_something_muda_provides() {
+        // `append` intercepts it and builds an ordinary item instead, because
+        // the platform's own terminate does not unwind the event loop. If
+        // that interception is ever dropped, this is what refuses to let it
+        // quietly go back to the broken one.
+        assert!(
+            predefined("quit", None).is_err(),
+            "quit reached the predefined builder, which means it is the platform's again"
+        );
+    }
+
+    #[test]
+    fn the_quit_item_is_labelled_the_way_the_platform_expects() {
+        assert_eq!(quit_label(None, Some("Vantail Showcase")), "Quit Vantail Showcase");
+        // A config may say what it wants instead.
+        assert_eq!(quit_label(Some("Leave"), Some("Showcase")), "Leave");
+        // Before the name is known, which is better than an empty label.
+        assert_eq!(quit_label(None, None), "Quit");
+    }
+
+    #[test]
+    fn the_reserved_id_is_namespaced() {
+        // An application's own item with this id would be shadowed by the
+        // runtime's handling, so it has to be one nobody would pick.
+        assert!(QUIT_ID.contains(':'), "{QUIT_ID} could collide with an application's own id");
+    }
 }

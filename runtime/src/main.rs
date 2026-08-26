@@ -162,6 +162,10 @@ fn run() -> Result<(), String> {
                 // Sleep and wake, once the application is actually running.
                 power::watch(&rt);
 
+                // Every menu built from here on, including a tray menu set
+                // much later, can label its Quit item.
+                chrome::menu::remember_app_name(&rt.config.app.name);
+
                 // On macOS a missing menu is not a cosmetic difference: without
                 // one, Cmd-W, Cmd-Q, Cmd-C and friends do nothing at all. So an
                 // application that sets none gets the standard one. `menu: []`
@@ -223,6 +227,14 @@ fn run() -> Result<(), String> {
             }
 
             Event::UserEvent(UserEvent::Menu(id)) => {
+                // Quit is the runtime's own item, and takes the same route out
+                // as `app.quit`: unwind the loop rather than let the platform
+                // terminate the process from under it.
+                if id == chrome::menu::QUIT_ID {
+                    *control_flow = ControlFlow::Exit;
+                    return;
+                }
+
                 windows.deliver(
                     None,
                     &Outgoing::Event(IpcEvent::new("menu.click", json!({ "id": id }))),
