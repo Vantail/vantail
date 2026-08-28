@@ -102,6 +102,30 @@ export function invoke<T = unknown>(
   method: string,
   params?: unknown,
 ): Promise<T> {
+  return call(method, params);
+}
+
+/**
+ * `invoke`, with the id of the outgoing message handed to `track` first.
+ *
+ * Only worth reaching for when the runtime offers a way to abandon a call
+ * that is still running: `network.cancel` names the request it is cancelling
+ * by exactly this id. Internal to the package - an application uses the
+ * `signal` option on the call itself.
+ */
+export function invokeTracked<T = unknown>(
+  method: string,
+  params: unknown,
+  track: (id: string) => void,
+): Promise<T> {
+  return call(method, params, track);
+}
+
+function call<T>(
+  method: string,
+  params?: unknown,
+  track?: (id: string) => void,
+): Promise<T> {
   let bridge: VantailBridge;
   try {
     bridge = requireBridge();
@@ -113,6 +137,9 @@ export function invoke<T = unknown>(
 
   return new Promise<T>((resolve, reject) => {
     pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
+    // Before the message goes out, so a caller that aborts in the same tick
+    // still has an id to cancel with.
+    track?.(id);
     try {
       bridge.postMessage({ id, method, params });
     } catch (error) {

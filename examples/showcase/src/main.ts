@@ -20,6 +20,7 @@ import { dialogPanel } from "./panels/dialog.js";
 import { filesystemPanel } from "./panels/filesystem.js";
 import { hidPanel, mdnsPanel, secretsPanel } from "./panels/devices.js";
 import { menuPanel } from "./panels/menu.js";
+import { databasePanel } from "./panels/database.js";
 import { networkPanel } from "./panels/network.js";
 import { osPanel } from "./panels/os.js";
 import { processPanel } from "./panels/process.js";
@@ -71,6 +72,7 @@ function build() {
     shellPanel(),
     processPanel(),
     networkPanel(),
+    databasePanel(),
     secretsPanel(),
     mdnsPanel(),
     hidPanel(),

@@ -10,7 +10,18 @@ name = "vantail-runtime"
 path = "src/main.rs"
 
 [features]
-default = ["devtools", "hid", "mdns", "network", "secrets", "updater", "watch"]
+default = [
+  "database",
+  "devtools",
+  "hid",
+  "mdns",
+  "network",
+  "secrets",
+  "socks",
+  "updater",
+  "watch",
+  "websocket",
+]
 # Ships the webview inspector. Enabled by default; whether it is actually
 # reachable is still decided by `devtools` in vantail.json.
 devtools = ["wry/devtools"]
@@ -27,6 +38,17 @@ watch = ["dep:notify"]
 secrets = ["dep:keyring"]
 # The self-updater, which downloads through the same client.
 updater = ["network", "dep:ed25519-dalek", "dep:tar", "dep:flate2"]
+# SOCKS support for `permissions.network.proxy`. HTTP and HTTPS proxies work
+# without it; measured at +16 KB, so it is on by default and strippable.
+socks = ["network", "ureq/socks-proxy"]
+# `network.socket` - WebSocket. A second protocol, but it reuses the rustls,
+# webpki-roots, http and httparse the HTTP client already needs, so the
+# measured cost of the protocol itself is +65 KB.
+websocket = ["network", "dep:tungstenite"]
+# `database.*` - SQLite, compiled in rather than linked against whatever the
+# machine happens to have. By far the largest optional capability at +885 KB;
+# see `docs/architecture.md` for why it is bundled and not the system copy.
+database = ["dep:rusqlite"]
 
 [dependencies]
 tao = "0.37"
@@ -54,6 +76,13 @@ mdns-sd = { version = "0.21", optional = true }
 notify = { version = "8.2", optional = true }
 
 ureq = { version = "3.4", optional = true }
+rusqlite = { version = "0.40", optional = true, features = ["bundled", "backup"] }
+tungstenite = { version = "0.30", optional = true, default-features = false, features = [
+  "handshake",
+  # Shares the rustls and webpki-roots that `ureq` already brings in, so the
+  # only new code is the protocol itself.
+  "rustls-tls-webpki-roots",
+] }
 ed25519-dalek = { version = "3", optional = true }
 tar = { version = "0.4", optional = true }
 flate2 = { version = "1.1", optional = true }

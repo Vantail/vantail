@@ -33,6 +33,12 @@ pub struct Runtime {
     pub updates: crate::updater::State,
     /// Live filesystem watches, keyed by the id handed to the application.
     pub watch: crate::api::watch::State,
+    /// HTTP requests that have not answered yet, so one can be cancelled.
+    pub requests: crate::api::network::InFlight,
+    /// Open WebSockets.
+    pub sockets: crate::api::websocket::Sockets,
+    /// Open SQLite connections, each on its own thread.
+    pub databases: crate::api::database::Databases,
     proxy: Mutex<EventLoopProxy<UserEvent>>,
 }
 
@@ -51,6 +57,9 @@ impl Runtime {
             discovery: crate::api::mdns::Discovery::default(),
             updates: crate::updater::State::default(),
             watch: crate::api::watch::State::default(),
+            requests: crate::api::network::InFlight::default(),
+            sockets: crate::api::websocket::Sockets::default(),
+            databases: crate::api::database::Databases::default(),
             proxy: Mutex::new(proxy),
         })
     }

@@ -180,3 +180,6 @@ jobs:
       - run: cargo check --no-default-features --features mdns
       - run: cargo check --no-default-features --features hid
       - run: cargo check --no-default-features --features watch
+      - run: cargo check --no-default-features --features socks
+      - run: cargo check --no-default-features --features websocket
+      - run: cargo check --no-default-features --features database

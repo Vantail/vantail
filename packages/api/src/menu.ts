@@ -43,6 +43,19 @@ export type PredefinedMenuItem =
   | "bringAllToFront";
 
 /**
+ * What the platform would not accept, and therefore what is missing from the
+ * menu that was installed.
+ *
+ * One mistyped accelerator used to cost the whole menu, which on macOS means
+ * losing Cmd-C, Cmd-V, Cmd-Q and Cmd-W along with it - those shortcuts exist
+ * only as menu items. The offending item is now left out instead, and named
+ * here. `skipped` is empty in the ordinary case.
+ */
+export interface MenuInstalled {
+  skipped: string[];
+}
+
+/**
  * The application menu.
  *
  * On macOS this is the menu bar, and it is not optional decoration: the
@@ -69,7 +82,7 @@ export type PredefinedMenuItem =
  */
 export const menu = {
   set: (items: MenuItem[]) =>
-    invoke<null>("menu.set", { items: normalize(items) }),
+    invoke<MenuInstalled>("menu.set", { items: normalize(items) }),
   remove: () => invoke<null>("menu.remove"),
 
   setEnabled: (id: string, enabled: boolean) =>

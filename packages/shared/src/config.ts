@@ -123,6 +123,39 @@ export interface NetworkPermissions {
    * checking who is answering" are different decisions.
    */
   allowInvalidCertificates?: string[];
+  /**
+   * Client certificates to present, and which hosts to present them to.
+   *
+   * `hosts` is not optional: a client key is an identity, and an entry that
+   * read as "present this to everyone" would hand it to whatever host the
+   * application was talked into contacting.
+   */
+  clientCertificates?: ClientCertificate[];
+  /** Send requests through a proxy. */
+  proxy?: NetworkProxy;
+  /**
+   * Ask the user about a host that is not in `allow`, rather than refusing it
+   * outright. For an application whose whole job is a host its user names.
+   *
+   * `deny` still wins and is never prompted for.
+   */
+  grantFromPrompt?: boolean;
+}
+
+export interface ClientCertificate {
+  /** The same rule forms as `allow`. Cannot be empty. */
+  hosts: string[];
+  /** A PEM certificate chain. `$APPDATA` and friends expand. */
+  certificate: string;
+  /** The matching PEM private key. */
+  key: string;
+}
+
+export interface NetworkProxy {
+  /** `<protocol>://<user>:<password>@<host>:<port>`; only the host is required. */
+  url: string;
+  /** Which hosts go through it. Everything, when left out. */
+  for?: string[];
 }
 
 export interface ShellPermissions {
@@ -174,6 +207,13 @@ export interface PermissionsConfig {
   network?: NetworkPermissions;
   /** The OS credential store. Default `false`. */
   secrets?: boolean;
+  /**
+   * SQLite. Default `false`.
+   *
+   * This is the capability; `filesystem.write` is still what says where a
+   * database may live. Both are needed.
+   */
+  database?: boolean;
   /**
    * Service types the application may discover, e.g. `_hub._tcp.local`.
    * `true` allows any, which is a different request from "find me the lights".

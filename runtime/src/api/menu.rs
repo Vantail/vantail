@@ -60,14 +60,16 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
     match method {
         "menu.set" => {
             let Items { items } = Request::params(method, params)?;
-            ctx.chrome.set_app_menu(&items)?;
+            let skipped = ctx.chrome.set_app_menu(&items)?;
             // Windows attaches the menu per window rather than per app.
             for label in ctx.windows.labels() {
                 if let Some(entry) = ctx.windows.get(&label) {
                     ctx.chrome.attach(&entry.window);
                 }
             }
-            Ok(Value::Null)
+            // An item the platform would not take is left out rather than
+            // costing the whole menu, so the caller is told which one.
+            Ok(json!({ "skipped": skipped }))
         }
 
         "menu.remove" => {
@@ -137,7 +139,8 @@ fn popup(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
     // for exactly as long as it is on screen.
     let mut handles = std::collections::HashMap::new();
     let menu = crate::chrome::menu::build(&params.items, &mut handles)
-        .map_err(ApiError::invalid_params)?;
+        .map_err(ApiError::invalid_params)?
+        .menu;
 
     // Annotated rather than inferred: only the platform-specific calls below
     // pin this type, so on a platform where none of them compile there is

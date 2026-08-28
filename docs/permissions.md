@@ -38,8 +38,12 @@ permissions: {
     allow: string[],            // default: nothing
     deny: string[],
     allowInvalidCertificates: string[],
+    clientCertificates: ClientCertificate[],
+    proxy: { url: string, for?: string[] },
+    grantFromPrompt: boolean,      // default false
   },
   secrets: boolean,             // default false
+  database: boolean,            // default false
   mdns: boolean | string[],     // default: nothing
   hid: boolean | HidRule[],     // default: nothing
   os: boolean,                  // default true
@@ -214,18 +218,96 @@ list of URL schemes.
 
 ## Reaching the network
 
-`network.request` will only reach what `network.allow` names. Four rule forms,
+`network.request` will only reach what `network.allow` names. Five rule forms,
 and no others:
 
 | Rule                       | Matches                                         |
 | -------------------------- | ----------------------------------------------- |
 | `api.example.com`            | that host exactly, any scheme, any port         |
 | `*.example.com`              | anything strictly beneath it - **not** the apex |
+| `*`                        | every host                                      |
 | `192.168.0.0/16`           | any address in that range                       |
 | `http://192.168.1.50:9123` | that scheme and host, and that port if given    |
 
-`deny` is checked first and wins. A wildcard is only allowed as a leading
-`*.`; `api.*.tv` is a configuration error rather than a surprise.
+`deny` is checked first and wins. A wildcard is either the whole rule or a
+leading `*.`; `api.*.tv` is a configuration error rather than a surprise.
+
+### When the host is not known until run time
+
+Most applications should name their hosts, and the discipline is the point: a
+compromised page cannot reach an attacker's server if the runtime has never
+heard of it. But a whole class of application exists to talk to a host the
+*user* names - an API client, a webhook inspector, a link checker, a feed
+reader, anything with a URL bar. There is no list of hosts to write, and
+guessing at one produces a config full of public suffixes that is
+simultaneously far too broad for any one user and still not broad enough.
+
+Say so instead:
+
+```ts
+network: {
+  allow: ["*"],
+  // Still worth denying what no application of yours should ever reach.
+  deny: ["169.254.0.0/16", "metadata.google.internal"],
+}
+```
+
+`*` is deliberately one legible line that a reviewer will see, in the same
+file as every other permission - the same way `shell: { open: true }` is. It
+does not switch anything else off: `deny` still wins, every redirect hop is
+still checked, and a certificate is still verified unless
+`allowInvalidCertificates` says otherwise.
+
+`https://*` is the same thing with the scheme pinned, for an application that
+will talk to anywhere but not in the clear.
+
+### grantFromPrompt
+
+`*` is the blunt answer. This is the narrow one:
+
+```ts
+network: {
+  allow: ["*.internal"],
+  grantFromPrompt: true,
+}
+```
+
+A request to a host `allow` does not cover no longer fails outright. The
+runtime shows a native dialog naming the host, and if the user says yes the
+host is reachable for as long as the application is running. Saying no is an
+ordinary `PERMISSION_DENIED`, indistinguishable from any other.
+
+This is the same idea as `filesystem.grantFromDialog`, and for the same
+reason: a narrow standing scope, widened by something the user visibly did.
+The property worth keeping is that a page which has been taken over cannot
+quietly exfiltrate to somewhere new, because a person has to read the host's
+name and agree - and that property is *stronger* than what an application
+which fell back to the webview's `fetch` had, since `fetch` asks nobody.
+
+Four things it does not do:
+
+- **`deny` still wins, and is never prompted for.** A denied host is a
+  decision the developer already made; no dialog overturns it. Keep the link
+  local metadata ranges in `deny` and they stay unreachable however many
+  times a page asks.
+- **A grant is one host, any scheme and port** - the same reach as writing
+  that host in `allow`. It is not a wildcard, and it does not cover
+  subdomains.
+- **A grant does not survive the process.** Nothing is written anywhere, so
+  the next launch starts from the config again.
+- **A grant is not permission to skip certificate checks.** Those stay with
+  `allowInvalidCertificates`.
+
+The prompt is serialised: an application that fires five requests at a new
+host at once asks once, and the other four find the answer already given. The
+thread making the request waits while the dialog is open, which for the
+runtime's fixed network queue means a slot is held until the user decides.
+
+`ws` and `wss` are `http` and `https` for the purposes of a rule, whichever
+way round you write it: `http://192.168.1.50:9123` covers a WebSocket to the
+same host and port, and so does `https://api.example.com` for `wss://`. The
+handshake is an HTTP GET on that port to that server, so separating them would
+be ceremony rather than security. A bare host rule covers every scheme anyway.
 
 A CIDR rule matches addresses, not names. `hub.local` is not covered by
 `192.168.0.0/16` even if it resolves there, because the check happens before
@@ -258,6 +340,91 @@ the service.
 
 It applies automatically to hosts in the list - the config is where the
 decision lives, not each call site.
+
+
+### clientCertificates
+
+```ts
+network: {
+  allow: ["*.bank.example"],
+  clientCertificates: [
+    {
+      hosts: ["*.bank.example"],
+      certificate: "$APPDATA/client.pem",
+      key: "$APPDATA/client.key",
+    },
+  ],
+}
+```
+
+Mutual TLS, which is how a good number of enterprise and financial APIs
+authenticate. Both files are PEM; the certificate file may hold the whole
+chain, and every intermediate in it is sent, since a missing intermediate is
+the usual reason an otherwise valid certificate is rejected.
+
+`hosts` is not optional and may not be empty. A client key is an identity, and
+an entry that read as "present this to everyone" would hand that identity to
+whatever host an application was talked into contacting. The first entry whose
+`hosts` match is the one used, so put the specific rules first.
+
+The files are read the first time a request needs them and kept after that, so
+a certificate under `$APPDATA` can be provisioned after the application is
+installed. A missing or unreadable file fails the request that needed it, not
+the launch.
+
+The paths take the same `$APPDATA`, `$APPCONFIG`, `$HOME` and `$RESOURCE`
+variables as the filesystem scopes. Naming the file here *is* the grant: it is
+in the permission file, where a reviewer will see it, rather than in a call
+where it would not be.
+
+### proxy
+
+```ts
+network: {
+  allow: ["*.example.com"],
+  proxy: { url: "http://127.0.0.1:8888", for: ["*.example.com"] },
+}
+```
+
+How a developer inspects their own application's traffic, and how a good many
+corporate networks require egress to go.
+
+`for` is the list of hosts that go through it, in the same rule forms as
+`allow`; leaving it out sends everything through the proxy. That distinction
+matters on a desktop: an application that talks to both an internet API and a
+hub on the user's own LAN wants the first proxied and the second not.
+
+The URL is `<protocol>://<user>:<password>@<host>:<port>`, with everything but
+the host optional. `http` and `https` (both CONNECT proxies) work in every
+build. `socks4` and `socks5` need a runtime built with the `socks` feature,
+which is off by default because it costs a dependency that most applications
+will never use.
+
+A proxy does not widen `allow`. The request is checked against the host it is
+*for*, not the proxy it goes through, so routing through a proxy cannot be
+used to reach somewhere the config does not permit.
+## Storing data
+
+```ts
+permissions: {
+  database: true,
+  filesystem: { read: ["$APPDATA/**"], write: ["$APPDATA/**"] },
+}
+```
+
+`database` is the capability; `filesystem.write` is still the reach. Both are
+needed, and they answer different questions: whether this application may open
+a SQLite database at all, and where it may put one. A database is a file, so
+the path goes through exactly the same scope a `filesystem.writeText` would -
+`$APPDATA/**` and the rest read the way they always did.
+
+`database.snapshot` writes a second file, and that path is checked the same
+way. Opening with `readOnly` needs only `filesystem.read`.
+
+The database is not encrypted. `secrets` will hold a key perfectly well, but
+there is nothing here to give it to, so an application that needs encryption at
+rest needs something Vantail does not yet have. Say so in your interface rather
+than showing a padlock that means nothing.
 
 ## Devices
 

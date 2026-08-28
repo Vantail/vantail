@@ -77,11 +77,32 @@ const shellRule = z
   })
   .strict();
 
+const clientCertificate = z
+  .object({
+    // A certificate with no hosts would read as "present it to everyone",
+    // which is how a client key leaks. Say who it is for.
+    hosts: z.array(z.string()).min(1, "a client certificate needs `hosts`"),
+    certificate: z.string().min(1),
+    key: z.string().min(1),
+  })
+  .strict();
+
+const networkProxy = z
+  .object({
+    url: z.string().min(1),
+    /** Which hosts go through it. Everything, when left out. */
+    for: z.array(z.string()).optional(),
+  })
+  .strict();
+
 const networkPermissions = z
   .object({
     allow: z.array(z.string()).optional(),
     deny: z.array(z.string()).optional(),
     allowInvalidCertificates: z.array(z.string()).optional(),
+    clientCertificates: z.array(clientCertificate).optional(),
+    proxy: networkProxy.optional(),
+    grantFromPrompt: z.boolean().optional(),
   })
   .strict();
 
@@ -129,6 +150,116 @@ const PREDEFINED = [
 ] as const;
 
 /**
+ * Every key name muda - the menu library the runtime uses - will accept,
+ * plus `Return`, which the runtime rewrites to `Enter` for the benefit of
+ * anyone typing what is printed on an Apple keyboard.
+ *
+ * Taken from muda's own parser rather than written by hand, so this check
+ * cannot disagree with the one that actually installs the menu.
+ */
+const ACCELERATOR_KEYS = new Set([
+  "'", ",", "-", ".", "/", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+  ";", "=", "A", "ARROWDOWN", "ARROWLEFT", "ARROWRIGHT", "ARROWUP",
+  "AUDIOVOLUMEDOWN", "AUDIOVOLUMEMUTE", "AUDIOVOLUMEUP", "B", "BACKQUOTE",
+  "BACKSLASH", "BACKSPACE", "BRACKETLEFT", "BRACKETRIGHT", "C", "CAPSLOCK",
+  "COMMA", "D", "DELETE", "DIGIT0", "DIGIT1", "DIGIT2", "DIGIT3", "DIGIT4",
+  "DIGIT5", "DIGIT6", "DIGIT7", "DIGIT8", "DIGIT9", "DOWN", "E", "END",
+  "ENTER", "EQUAL", "ESC", "ESCAPE", "F", "F1", "F10", "F11", "F12", "F13",
+  "F14", "F15", "F16", "F17", "F18", "F19", "F2", "F20", "F21", "F22",
+  "F23", "F24", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "G", "H", "HOME",
+  "I", "INSERT", "J", "K", "KEYA", "KEYB", "KEYC", "KEYD", "KEYE", "KEYF",
+  "KEYG", "KEYH", "KEYI", "KEYJ", "KEYK", "KEYL", "KEYM", "KEYN", "KEYO",
+  "KEYP", "KEYQ", "KEYR", "KEYS", "KEYT", "KEYU", "KEYV", "KEYW", "KEYX",
+  "KEYY", "KEYZ", "L", "LEFT", "M", "MINUS", "N", "NUM0", "NUM1", "NUM2",
+  "NUM3", "NUM4", "NUM5", "NUM6", "NUM7", "NUM8", "NUM9", "NUMADD",
+  "NUMDECIMAL", "NUMDIVIDE", "NUMENTER", "NUMEQUAL", "NUMLOCK",
+  "NUMMULTIPLY", "NUMPAD0", "NUMPAD1", "NUMPAD2", "NUMPAD3", "NUMPAD4",
+  "NUMPAD5", "NUMPAD6", "NUMPAD7", "NUMPAD8", "NUMPAD9", "NUMPADADD",
+  "NUMPADDECIMAL", "NUMPADDIVIDE", "NUMPADENTER", "NUMPADEQUAL",
+  "NUMPADMULTIPLY", "NUMPADPLUS", "NUMPADSUBTRACT", "NUMPLUS",
+  "NUMSUBTRACT", "O", "P", "PAGEDOWN", "PAGEUP", "PERIOD", "PRINTSCREEN",
+  "Q", "QUOTE", "R", "RETURN", "RIGHT", "S", "SCROLLLOCK", "SEMICOLON",
+  "SLASH", "SPACE", "T", "TAB", "U", "UP", "V", "VOLUMEDOWN", "VOLUMEMUTE",
+  "VOLUMEUP", "W", "X", "Y", "Z", "[", "\\", "]", "`",
+]);
+
+const ACCELERATOR_MODIFIERS = new Set([
+  "ALT", "CMD", "CMDORCONTROL", "CMDORCTRL", "COMMAND", "COMMANDORCONTROL",
+  "COMMANDORCTRL", "CONTROL", "CTRL", "OPTION", "SHIFT", "SUPER",
+]);
+
+/**
+ * Split an accelerator into modifiers and a key, the way the runtime does.
+ *
+ * Modifiers come first and the key is last, so the split is on the *final*
+ * `+` - which is also what lets `Ctrl++` mean the `+` key.
+ */
+function splitAccelerator(text: string): { modifiers: string[]; key: string } {
+  const trimmed = text.trim();
+  const at = trimmed.lastIndexOf("+");
+  if (at < 0) return { modifiers: [], key: trimmed };
+
+  const rawKey = trimmed.slice(at + 1);
+  const head =
+    rawKey.trim() === ""
+      ? trimmed.slice(0, at).replace(/\++$/, "")
+      : trimmed.slice(0, at);
+
+  return {
+    modifiers: head === "" ? [] : head.split("+"),
+    key: rawKey.trim() === "" ? "+" : rawKey.trim(),
+  };
+}
+
+/**
+ * What is wrong with an accelerator, if anything.
+ *
+ * Worth checking here rather than only in the runtime because of how the
+ * failure used to land: an accelerator the platform cannot parse takes the
+ * *whole menu* with it, and on macOS a missing menu means Cmd-C, Cmd-V,
+ * Cmd-Q and Cmd-W silently stop working - those shortcuts exist only as menu
+ * items. The runtime now leaves the one bad item out instead, but a mistake
+ * in a literal string in `vantail.config.ts` should not need a window to be
+ * found at all. `vantail dev`, `vantail build` and `vantail doctor` all load
+ * this schema.
+ */
+export function acceleratorProblem(text: string): string | undefined {
+  if (text.trim() === "") return "an accelerator cannot be empty";
+
+  const { modifiers, key } = splitAccelerator(text);
+
+  for (const modifier of modifiers) {
+    const name = modifier.trim();
+    if (name === "") {
+      return `\`${text}\` has an empty modifier - check the \`+\` signs`;
+    }
+    if (!ACCELERATOR_MODIFIERS.has(name.toUpperCase())) {
+      return (
+        `\`${name}\` is not a modifier. Use CmdOrCtrl, Cmd, Ctrl, Alt, ` +
+        `Option, Shift or Super, and put the key last`
+      );
+    }
+  }
+
+  if (!ACCELERATOR_KEYS.has(key.toUpperCase())) {
+    return (
+      `\`${key}\` is not a key name. Keys are a letter, a digit, ` +
+      `F1-F24, or a name like Enter, Escape, Space, Tab, Delete, ` +
+      `ArrowUp or PageDown`
+    );
+  }
+
+  return undefined;
+}
+
+const acceleratorSchema = z.string().superRefine((value, ctx) => {
+  const problem = acceleratorProblem(value);
+  if (problem !== undefined) {
+    ctx.addIssue({ code: "custom", message: problem });
+  }
+});
+
+/**
  * Menus nest, so the schema does too. Zod needs the explicit annotation
  * because a recursive type cannot be inferred from its own definition.
  */
@@ -140,7 +271,7 @@ export const menuItemSchema: z.ZodType<unknown> = z.lazy(() =>
         id: z.string().min(1),
         label: z.string(),
         enabled: z.boolean().optional(),
-        accelerator: z.string().optional(),
+        accelerator: acceleratorSchema.optional(),
       })
       .strict(),
     z
@@ -150,7 +281,7 @@ export const menuItemSchema: z.ZodType<unknown> = z.lazy(() =>
         label: z.string(),
         checked: z.boolean().optional(),
         enabled: z.boolean().optional(),
-        accelerator: z.string().optional(),
+        accelerator: acceleratorSchema.optional(),
       })
       .strict(),
     z
@@ -222,6 +353,7 @@ export const permissionsSchema = z
     updater: z.boolean().optional(),
     network: networkPermissions.optional(),
     secrets: z.boolean().optional(),
+    database: z.boolean().optional(),
     mdns: z.union([z.boolean(), z.array(z.string())]).optional(),
     hid: hidPermissions.optional(),
   })

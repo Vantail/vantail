@@ -576,6 +576,9 @@ mod tests {
         .join();
 
         assert!(panicked.is_err(), "the thread was supposed to panic");
-        assert!(!turnstile.busy(), "the reader would never take the device again");
+        assert!(
+            !turnstile.busy(),
+            "the reader would never take the device again"
+        );
     }
 }

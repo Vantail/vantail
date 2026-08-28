@@ -459,11 +459,18 @@ macOS bundle, an `.ico` for Windows, and the hicolor theme sizes for the
 Debian package. Give it 1024x1024 if you have it; 256x256 is the minimum,
 because scaling _up_ looks worse than the platform placeholder.
 
-For scale: the release runtime is a 2.8 MB binary with every capability
-compiled in, and the packaged React example - two windows, menus, tray,
-dialogs, clipboard, subprocesses, the scoped filesystem, the network client
-and the self-updater - is a 3.2 MB `.app`, which compresses to a 1.9 MB
-`.dmg`. With the optional capabilities turned off the runtime is 1.7 MB.
+For scale: the release runtime is a 4.1 MB binary with every capability
+compiled in - two windows, menus, tray, dialogs, clipboard, subprocesses, the
+scoped filesystem, HID, mDNS, the keychain, the network client, WebSocket,
+SQLite and the self-updater. With the optional capabilities turned off it is
+2.1 MB.
+
+SQLite is 885 KB of that, which is more than everything else optional put
+together. It is compiled in rather than linked against whatever version the
+machine happens to have, because a database whose behaviour changes with the
+user's OS release is not one you can write a migration for. If your
+application does not store anything, `--no-default-features --features
+devtools,network` gets most of the way back down.
 
 If you ever see a bundle ten times that, it is a debug runtime: `vantail
 package` refuses one unless you pass `--allow-debug-runtime`.

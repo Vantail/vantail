@@ -1,5 +1,37 @@
 pub mod app;
 pub mod autostart;
+
+#[cfg(feature = "database")]
+pub mod database;
+
+/// The same entry point for builds without SQLite, so an application gets an
+/// answer it can act on rather than `UNKNOWN_METHOD`.
+#[cfg(not(feature = "database"))]
+pub mod database {
+    use serde_json::Value;
+
+    use crate::error::{ApiError, ApiResult};
+    use crate::state::MainCtx;
+
+    /// A placeholder so `Runtime` has the field either way.
+    #[derive(Default)]
+    pub struct Databases;
+
+    impl Databases {
+        pub fn shutdown(&self) {}
+    }
+
+    pub fn dispatch(
+        _ctx: &mut MainCtx<'_>,
+        _id: &str,
+        _method: &str,
+        _params: Value,
+    ) -> Option<ApiResult> {
+        Some(Err(ApiError::unsupported(
+            "This runtime was built without SQLite. Rebuild with the `database` feature enabled.",
+        )))
+    }
+}
 pub mod clipboard;
 pub mod deeplink;
 pub mod dialog;
@@ -76,6 +108,10 @@ pub mod network {
     use crate::error::{ApiError, ApiResult};
     use crate::state::MainCtx;
 
+    /// A placeholder so `Runtime` has the field either way.
+    #[derive(Default)]
+    pub struct InFlight;
+
     pub fn dispatch(
         _ctx: &mut MainCtx<'_>,
         _id: &str,
@@ -87,6 +123,38 @@ pub mod network {
         )))
     }
 }
+#[cfg(feature = "websocket")]
+pub mod websocket;
+
+/// The same entry point for builds without it, so an application gets an
+/// answer it can act on rather than `UNKNOWN_METHOD`.
+#[cfg(not(feature = "websocket"))]
+pub mod websocket {
+    use serde_json::Value;
+
+    use crate::error::{ApiError, ApiResult};
+    use crate::state::MainCtx;
+
+    /// A placeholder so `Runtime` has the field either way.
+    #[derive(Default)]
+    pub struct Sockets;
+
+    impl Sockets {
+        pub fn shutdown(&self) {}
+    }
+
+    pub fn dispatch(
+        _ctx: &mut MainCtx<'_>,
+        _id: &str,
+        _method: &str,
+        _params: Value,
+    ) -> Option<ApiResult> {
+        Some(Err(ApiError::unsupported(
+            "This runtime was built without WebSocket support. Rebuild with the `websocket` feature enabled.",
+        )))
+    }
+}
+
 pub mod notification;
 pub mod os;
 pub mod process;

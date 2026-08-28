@@ -1,4 +1,4 @@
-import { normalize, type MenuItem } from "./menu.js";
+import { normalize, type MenuInstalled, type MenuItem } from "./menu.js";
 import { invoke, listen } from "./transport.js";
 
 export interface TrayOptions {
@@ -44,7 +44,7 @@ export interface TrayClick {
 export const tray = {
   /** Create the tray icon, or replace the one that is there. */
   set: (options: TrayOptions) =>
-    invoke<null>("tray.set", {
+    invoke<MenuInstalled>("tray.set", {
       ...options,
       ...(options.menu ? { menu: normalize(options.menu) } : {}),
     }),
@@ -61,7 +61,7 @@ export const tray = {
   setVisible: (visible: boolean) =>
     invoke<null>("tray.setVisible", { visible }),
   setMenu: (items: MenuItem[]) =>
-    invoke<null>("tray.setMenu", { items: normalize(items) }),
+    invoke<MenuInstalled>("tray.setMenu", { items: normalize(items) }),
 
   /** Open the tray menu without waiting for a click on the icon. */
   showMenu: () => invoke<null>("tray.showMenu"),

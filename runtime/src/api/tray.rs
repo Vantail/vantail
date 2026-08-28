@@ -45,8 +45,8 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
     match method {
         "tray.set" => {
             let spec: TraySpec = Request::params(method, params)?;
-            ctx.chrome.set_tray(ctx.rt, &spec)?;
-            Ok(Value::Null)
+            let skipped = ctx.chrome.set_tray(ctx.rt, &spec)?;
+            Ok(json!({ "skipped": skipped }))
         }
 
         "tray.remove" => {
@@ -106,8 +106,8 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
 
         "tray.setMenu" => {
             let MenuParams { items } = Request::params(method, params)?;
-            ctx.chrome.set_tray_menu(&items)?;
-            Ok(Value::Null)
+            let skipped = ctx.chrome.set_tray_menu(&items)?;
+            Ok(json!({ "skipped": skipped }))
         }
 
         _ => Err(ApiError::unknown_method(method)),

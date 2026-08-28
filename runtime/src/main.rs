@@ -175,8 +175,19 @@ fn run() -> Result<(), String> {
                 let items = rt.config.menu.as_deref().or(default_menu.as_deref());
 
                 if let Some(items) = items {
-                    if let Err(error) = chrome.set_app_menu(items) {
-                        eprintln!("vantail: could not install the menu: {}", error.message);
+                    match chrome.set_app_menu(items) {
+                        // The menu is installed either way; anything the
+                        // platform refused was left out of it. Saying which
+                        // item went missing is the difference between a
+                        // puzzling gap in the menu bar and a one-line fix.
+                        Ok(skipped) => {
+                            for note in skipped {
+                                eprintln!("vantail: menu item left out - {note}");
+                            }
+                        }
+                        Err(error) => {
+                            eprintln!("vantail: could not install the menu: {}", error.message);
+                        }
                     }
                     for label in windows.labels() {
                         if let Some(entry) = windows.get(&label) {
@@ -185,8 +196,15 @@ fn run() -> Result<(), String> {
                     }
                 }
                 if let Some(spec) = &rt.config.tray {
-                    if let Err(error) = chrome.set_tray(&rt, spec) {
-                        eprintln!("vantail: could not create the tray icon: {}", error.message);
+                    match chrome.set_tray(&rt, spec) {
+                        Ok(skipped) => {
+                            for note in skipped {
+                                eprintln!("vantail: tray menu item left out - {note}");
+                            }
+                        }
+                        Err(error) => {
+                            eprintln!("vantail: could not create the tray icon: {}", error.message);
+                        }
                     }
                 }
             }
@@ -224,6 +242,8 @@ fn run() -> Result<(), String> {
                 rt.processes.kill_all();
                 rt.discovery.shutdown();
                 rt.devices.shutdown();
+                rt.sockets.shutdown();
+                rt.databases.shutdown();
             }
 
             Event::UserEvent(UserEvent::Menu(id)) => {
@@ -251,6 +271,22 @@ fn run() -> Result<(), String> {
                         &Outgoing::Event(IpcEvent::new("shortcut.pressed", payload)),
                     );
                 }
+            }
+
+            Event::UserEvent(UserEvent::GrantHost { host, app, answer }) => {
+                // The thread that asked is blocked until this replies, so the
+                // dialog runs here and the answer goes straight back. Naming
+                // the host is the whole point: a page that has been taken over
+                // cannot reach somewhere new without a person reading where.
+                let allowed = rfd::MessageDialog::new()
+                    .set_level(rfd::MessageLevel::Warning)
+                    .set_title(&app)
+                    .set_description(format!(
+                        "{app} wants to connect to {host}.\n\n                         Allow it for as long as {app} is running?"
+                    ))
+                    .set_buttons(rfd::MessageButtons::YesNo)
+                    .show();
+                let _ = answer.send(matches!(allowed, rfd::MessageDialogResult::Yes));
             }
 
             Event::UserEvent(UserEvent::Tray { event, payload }) => {

@@ -88,8 +88,14 @@ export default defineConfig({
       open: ["https://*"],
     },
 
+    // The capability; `filesystem.write` below is still what says where a
+    // database may live.
+    database: true,
+
     network: {
-      allow: ["example.com", "api.github.com"],
+      // A bare host covers every scheme, so `echo.websocket.org` is reachable
+      // over both https and wss with one rule.
+      allow: ["example.com", "api.github.com", "echo.websocket.org"],
     },
   },
 });

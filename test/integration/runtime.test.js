@@ -11,6 +11,7 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { deflateSync } from "node:zlib";
@@ -71,9 +72,104 @@ describe(
           });
           return response.end();
         }
+        if (request.url === "/hop") {
+          // A redirect that stays inside the allow list, so the chain is
+          // followed rather than refused.
+          response.writeHead(302, { location: "/status" });
+          return response.end();
+        }
+        if (request.url === "/cookies") {
+          // Two Set-Cookie headers, the first with a comma and a space inside
+          // its own Expires date. Joining them cannot be undone.
+          response.writeHead(200, {
+            "content-type": "text/plain",
+            "set-cookie": [
+              "session=abc; Expires=Wed, 09 Jun 2027 10:18:14 GMT",
+              "theme=dark; Path=/",
+            ],
+          });
+          return response.end("ok");
+        }
+        if (request.url === "/stream") {
+          response.writeHead(200, { "content-type": "text/event-stream" });
+          // Two writes with a gap, so they arrive as separate chunks the way
+          // server-sent events do.
+          response.write("data: one\n\n");
+          setTimeout(() => {
+            response.write("data: caf\u00e9\n\n");
+            response.end();
+          }, 30);
+          return;
+        }
+        if (request.url === "/forever") {
+          response.writeHead(200, { "content-type": "text/event-stream" });
+          const tick = setInterval(() => response.write("data: tick\n\n"), 25);
+          // A safety net: nothing should leave this open, but a suite must
+          // not hang if something does.
+          const stop = setTimeout(() => {
+            clearInterval(tick);
+            response.end();
+          }, 5000);
+          request.on("close", () => {
+            clearInterval(tick);
+            clearTimeout(stop);
+          });
+          return;
+        }
         response.writeHead(200, { "content-type": "text/plain" });
         response.end("device says hello");
       });
+      // A real WebSocket endpoint, framed by hand: the handshake and the two
+      // frame shapes this exercises are small, and a dev dependency for a
+      // single test is not worth it.
+      device.on("upgrade", (request, socket) => {
+        const key = request.headers["sec-websocket-key"];
+        const accept = createHash("sha1")
+          .update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+          .digest("base64");
+
+        // Only ever offered "chat, other" by this test; picking the second
+        // proves the client reports what the server actually chose.
+        const offered = (request.headers["sec-websocket-protocol"] ?? "")
+          .split(",")
+          .map((name) => name.trim());
+        const chosen = offered.includes("other") ? "other" : undefined;
+
+        socket.write(
+          [
+            "HTTP/1.1 101 Switching Protocols",
+            "Upgrade: websocket",
+            "Connection: Upgrade",
+            `Sec-WebSocket-Accept: ${accept}`,
+            ...(chosen ? [`Sec-WebSocket-Protocol: ${chosen}`] : []),
+            "\r\n",
+          ].join("\r\n"),
+        );
+
+        // The header the webview's own WebSocket cannot send, echoed back so
+        // the test can prove it arrived.
+        socket.write(wsFrame(`auth:${request.headers.authorization}`, 0x1));
+
+        let buffered = Buffer.alloc(0);
+        socket.on("data", (incoming) => {
+          buffered = Buffer.concat([buffered, incoming]);
+          const { frames, rest } = wsParse(buffered);
+          buffered = rest;
+          for (const { opcode, payload } of frames) {
+            if (opcode === 0x1) {
+              socket.write(wsFrame(`echo:${payload.toString("utf8")}`, 0x1));
+            } else if (opcode === 0x2) {
+              socket.write(wsFrame(Buffer.from([...payload].reverse()), 0x2));
+            } else if (opcode === 0x8) {
+              // Echo the close frame back and hang up, as a server should.
+              socket.write(wsFrame(payload, 0x8));
+              socket.end();
+            }
+          }
+        });
+        socket.on("error", () => {});
+      });
+
       await new Promise((ready) => device.listen(0, "127.0.0.1", ready));
       const devicePort = device.address().port;
 
@@ -102,6 +198,7 @@ describe(
             menu: true,
             tray: true,
             secrets: true,
+            database: true,
             shortcut: true,
             autostart: true,
             // A vendor id nothing on any machine will have, so the filter is
@@ -154,6 +251,9 @@ describe(
     });
 
     after(async () => {
+      // A cancelled stream may still hold its connection, and `close` waits
+      // for connections rather than cutting them.
+      device?.closeAllConnections?.();
       device?.close();
       // Set VANTAIL_KEEP=1 to leave the fixture on disk and poke at it.
       if (process.env.VANTAIL_KEEP) {
@@ -275,7 +375,23 @@ describe(
       assert.equal(results.checkedBefore, true);
       assert.equal(results.checkedAfter, false);
       assert.equal(results.notACheckboxCode, "INVALID_PARAMS");
-      assert.equal(results.badAcceleratorCode, "INVALID_PARAMS");
+    });
+
+    it("leaves out an item it cannot build rather than the whole menu", () => {
+      // The failure this replaces: one bad accelerator dropped the entire
+      // menu, and on macOS that is Cmd-Q, Cmd-C and Cmd-V gone with it.
+      assert.equal(results.skipped.length, 1);
+      assert.match(results.skipped[0], /Bad/);
+      assert.match(results.skipped[0], /Nonsense/);
+
+      // Everything beside it was installed and is still addressable.
+      assert.equal(results.goodItemSurvived, true);
+      assert.equal(results.checkboxSurvivedSkip, true);
+      assert.equal(results.skippedItemIsGone, "NOT_FOUND");
+    });
+
+    it("accepts Return as the name of the Enter key", () => {
+      assert.deepEqual(results.returnSkipped, []);
     });
 
     it("creates a tray icon from a PNG", () => {
@@ -314,6 +430,103 @@ describe(
       // A permitted host that redirects to a denied one is otherwise a way
       // straight through the fence.
       assert.equal(results.networkRedirectCode, "PERMISSION_DENIED");
+    });
+
+    it("keeps repeated headers apart even when joining them cannot", () => {
+      assert.deepEqual(results.cookiePairs, [
+        "session=abc; Expires=Wed, 09 Jun 2027 10:18:14 GMT",
+        "theme=dark; Path=/",
+      ]);
+      // The record form joins them, and the Expires date has a comma and a
+      // space of its own - so splitting it back apart would find three.
+      assert.equal(results.cookieJoined.split(", ").length, 3);
+      assert.equal(results.cookieBytes, 2);
+      assert.ok(results.cookieTiming.totalMs >= 0);
+      assert.ok(results.cookieTiming.totalMs >= results.cookieTiming.downloadMs);
+    });
+
+    it("records the redirects it followed", () => {
+      assert.equal(results.hopStatus, 200);
+      assert.equal(results.hopRedirects.length, 1);
+      assert.equal(results.hopRedirects[0].status, 302);
+      assert.equal(results.hopRedirects[0].location, "/status");
+      // Same host, so nothing had to be dropped.
+      assert.deepEqual(results.hopRedirects[0].droppedHeaders, []);
+    });
+
+    it("delivers a response as it arrives", () => {
+      assert.equal(results.streamStatus, 200);
+      assert.equal(results.streamContentType, "text/event-stream");
+      // Both events, with the accented character intact across whatever
+      // chunk boundary the two writes produced.
+      assert.equal(results.streamText, "data: one\n\ndata: caf\u00e9\n\n");
+      assert.deepEqual(results.streamEnd, { cancelled: false });
+    });
+
+    it("stops a stream that would otherwise never end", () => {
+      assert.equal(results.foreverCancelled, true);
+      assert.equal(results.foreverEnd.cancelled, true);
+      assert.equal(results.foreverEnd.error, undefined);
+      // Cancelling a stream that is already gone says so rather than throwing.
+      assert.equal(results.foreverCancelAgain, false);
+    });
+
+    it("stores a ledger in a real SQLite file", () => {
+      assert.equal(results.dbFatal, undefined, results.dbFatal);
+      assert.equal(results.dbPath, true);
+      assert.equal(results.dbChanges, 1);
+      assert.equal(results.dbRowId, 1);
+    });
+
+    it("refuses to round an integer rather than quietly changing it", () => {
+      // The bug this capability exists to not have: a balance in minor units
+      // past 2^53 coming back with its low bits gone.
+      assert.equal(results.dbBigExact, true);
+      assert.equal(results.dbBigType, "bigint");
+      // Reading the same column without asking for bigint is an error, not a
+      // rounded answer.
+      assert.equal(results.dbTruncationCode, "INVALID_PARAMS");
+    });
+
+    it("commits a transaction that returns and rolls back one that throws", () => {
+      assert.equal(results.dbRollbackThrew, true);
+      assert.equal(results.dbAfterRollback, 0);
+      assert.equal(results.dbAfterCommit, 1);
+    });
+
+    it("enforces a foreign key, which SQLite does not do by default", () => {
+      assert.equal(results.dbForeignKeyCode, "IO_ERROR");
+    });
+
+    it("takes a snapshot that is a database on its own", () => {
+      assert.equal(results.dbSnapshot, true);
+      // Both entries plus the committed one.
+      assert.equal(results.dbSnapshotRows, 3);
+    });
+
+    it("answers rather than hangs once it is closed", () => {
+      assert.equal(results.dbClosedCode, "NOT_FOUND");
+    });
+
+    it("opens a WebSocket with headers the webview could not send", () => {
+      assert.equal(results.socketFatal, undefined, results.socketFatal);
+      // The server picked the second subprotocol offered, and the client
+      // reports what was chosen rather than what was asked for.
+      assert.equal(results.socketProtocol, "other");
+      // The whole reason this exists rather than the page's own WebSocket.
+      assert.equal(results.socketMessages[0], "auth:Bearer integration");
+    });
+
+    it("carries text and binary messages both ways", () => {
+      assert.equal(results.socketMessages[1], "echo:hello");
+      // Sent [1,2,3], echoed back reversed, and still bytes at this end.
+      assert.deepEqual(results.socketMessages[2], [3, 2, 1]);
+    });
+
+    it("closes a socket with the code it was given", () => {
+      assert.equal(results.socketClosed.code, 1000);
+      assert.equal(results.socketClosed.reason, "done");
+      assert.equal(results.socketClosed.error, undefined);
     });
 
     it("can be told to hide rather than close", () => {
@@ -604,7 +817,7 @@ function fixture(scratch, resultsPath, devicePort) {
 </script>
 <script type="module">
 import {
-  app, appWindow, clipboard, createWindow, currentWindow, filesystem, invoke,
+  app, appWindow, clipboard, createWindow, currentWindow, database, filesystem, invoke,
   isVantail, listWindows, menu, notification, onWindowClosed, os,
   autostart, fileDrop, hid, mdns, network, power, process as childProcess, runtimeVersion,
   screen, secrets, shell,
@@ -711,9 +924,32 @@ try {
   await menu.setChecked("wrap", false);
   results.checkedAfter = await menu.isChecked("wrap");
   results.notACheckboxCode = (await failure(menu.setChecked("new", true))).code;
-  results.badAcceleratorCode = (
-    await failure(menu.set([{ id: "x", label: "X", accelerator: "Nonsense+Q" }]))
-  ).code;
+
+  // An accelerator the platform cannot parse costs that one item, not the
+  // whole menu - which on macOS would take Cmd-Q and Cmd-C with it.
+  const partial = await menu.set([
+    {
+      type: "submenu",
+      label: "Edit",
+      items: [
+        { id: "good", label: "Good", accelerator: "CmdOrCtrl+G" },
+        { id: "bad", label: "Bad", accelerator: "Nonsense+Q" },
+        { type: "checkbox", id: "flag", label: "Flag", checked: true },
+      ],
+    },
+  ]);
+  results.skipped = partial.skipped;
+  results.goodItemSurvived = await menu
+    .setEnabled("good", false)
+    .then(() => true)
+    .catch(() => false);
+  results.skippedItemIsGone = (await failure(menu.setEnabled("bad", false))).code;
+  results.checkboxSurvivedSkip = await menu.isChecked("flag");
+
+  // Return is what the key is called on an Apple keyboard.
+  results.returnSkipped = (
+    await menu.set([{ id: "run", label: "Run", accelerator: "CmdOrCtrl+Return" }])
+  ).skipped;
 
   // --- tray ---
   await tray.set({ icon: "icon.png", tooltip: "Integration", iconAsTemplate: true,
@@ -753,6 +989,148 @@ try {
   results.networkRedirectCode = (
     await failure(network.request({ url: device + "/redirect-away" }))
   ).code;
+
+  const cookies = await network.request({ url: device + "/cookies" });
+  results.cookiePairs = cookies.headerPairs
+    .filter(([name]) => name === "set-cookie")
+    .map(([, value]) => value);
+  results.cookieJoined = cookies.headers["set-cookie"];
+  results.cookieBytes = cookies.bodyBytes;
+  results.cookieTiming = cookies.timing;
+
+  const hopped = await network.request({ url: device + "/hop" });
+  results.hopStatus = hopped.status;
+  results.hopRedirects = hopped.redirects;
+
+  const stream = await network.stream({ url: device + "/stream" });
+  results.streamStatus = stream.status;
+  results.streamContentType = stream.headers["content-type"];
+  const streamChunks = [];
+  const streamDone = new Promise((resolve) => stream.onEnd(resolve));
+  stream.onChunk((chunk) => streamChunks.push(chunk));
+  results.streamEnd = await streamDone;
+  results.streamText = streamChunks.join("");
+  results.streamChunkCount = streamChunks.length;
+
+  // --- database ---
+  try {
+    const dbPath = ${JSON.stringify(scratch)} + "/ledger.sqlite";
+    const db = await database.open({ path: dbPath });
+    results.dbPath = db.path.endsWith("ledger.sqlite");
+
+    await db.execute(
+      "create table entry(id integer primary key, minor integer not null, note text)",
+    );
+    const inserted = await db.execute(
+      "insert into entry(minor, note) values (?, ?)",
+      [1250, "coffee"],
+    );
+    results.dbChanges = inserted.changes;
+    results.dbRowId = inserted.lastInsertRowId;
+
+    // An amount past 2^53 must come back exactly, not rounded.
+    const huge = 9007199254740993n;
+    await db.execute("insert into entry(minor, note) values (?, ?)", [huge, "big"]);
+    const big = await db.query("select minor from entry where note = ?", ["big"], {
+      bigint: true,
+    });
+    results.dbBigExact = big[0].minor === huge;
+    results.dbBigType = typeof big[0].minor;
+
+    // And reading it without asking is an error rather than a wrong number.
+    results.dbTruncationCode = (
+      await failure(db.query("select minor from entry where note = ?", ["big"]))
+    ).code;
+
+    // A transaction that throws leaves nothing behind.
+    results.dbRollbackThrew = await db
+      .transaction(async (tx) => {
+        await tx.execute("insert into entry(minor, note) values (?, ?)", [1, "doomed"]);
+        throw new Error("no");
+      })
+      .then(() => false)
+      .catch(() => true);
+    results.dbAfterRollback = (
+      await db.query("select count(*) as n from entry where note = ?", ["doomed"])
+    )[0].n;
+
+    // And one that returns commits.
+    await db.transaction(async (tx) => {
+      await tx.execute("insert into entry(minor, note) values (?, ?)", [2, "kept"]);
+    });
+    results.dbAfterCommit = (
+      await db.query("select count(*) as n from entry where note = ?", ["kept"])
+    )[0].n;
+
+    // A declared foreign key is actually enforced.
+    await db.execute("create table child(parent integer references entry(id))");
+    results.dbForeignKeyCode = (
+      await failure(db.execute("insert into child values (99999)"))
+    ).code;
+
+    await db.checkpoint();
+    const copy = await db.snapshot(${JSON.stringify(scratch)} + "/backup.sqlite");
+    results.dbSnapshot = copy.path.endsWith("backup.sqlite");
+
+    // The copy is a database in its own right, which is what makes "back up
+    // your ledger" a real feature.
+    const restored = await database.open({ path: copy.path, readOnly: true });
+    results.dbSnapshotRows = (
+      await restored.query("select count(*) as n from entry")
+    )[0].n;
+    await restored.close();
+
+    await db.close();
+    results.dbClosedCode = (await failure(db.query("select 1"))).code;
+  } catch (error) {
+    results.dbFatal = String(error);
+  }
+
+  // --- websocket ---
+  try {
+    const deadline = (promise, what) =>
+      Promise.race([
+        promise,
+        new Promise((_, no) =>
+          setTimeout(() => no(new Error("timed out waiting for " + what)), 5000),
+        ),
+      ]);
+
+    const socket = await deadline(
+      network.socket({
+        url: device.replace("http://", "ws://") + "/socket",
+        headers: { authorization: "Bearer integration" },
+        protocols: ["chat", "other"],
+      }),
+      "the handshake",
+    );
+    results.socketProtocol = socket.protocol ?? null;
+
+    const messages = [];
+    const three = new Promise((resolve) => {
+      socket.onMessage((data) => {
+        messages.push(typeof data === "string" ? data : Array.from(data));
+        if (messages.length === 3) resolve();
+      });
+    });
+
+    await socket.send("hello");
+    await socket.sendBytes(new Uint8Array([1, 2, 3]));
+    await deadline(three, "three messages");
+    results.socketMessages = messages;
+
+    const closed = new Promise((resolve) => socket.onClose(resolve));
+    await socket.close(1000, "done");
+    results.socketClosed = await deadline(closed, "the close");
+  } catch (error) {
+    results.socketFatal = String(error);
+  }
+
+  const forever = await network.stream({ url: device + "/forever" });
+  const foreverDone = new Promise((resolve) => forever.onEnd(resolve));
+  results.foreverCancelled = await forever.cancel();
+  results.foreverEnd = await foreverDone;
+  results.foreverCancelAgain = await forever.cancel();
 
   // --- surviving a close ---
   results.closeBehaviorDefault = await appWindow.closeBehavior();
@@ -1152,4 +1530,49 @@ function run(command, args) {
       reject(new Error(`runtime exited with ${exitCode}\n${stderr}`));
     });
   });
+}
+
+/** One WebSocket frame, unmasked - which is what a server sends. */
+function wsFrame(payload, opcode) {
+  const data = Buffer.isBuffer(payload) ? payload : Buffer.from(payload, "utf8");
+  if (data.length > 125) throw new Error("this fixture only sends small frames");
+  return Buffer.concat([Buffer.from([0x80 | opcode, data.length]), data]);
+}
+
+/**
+ * Pull whole frames out of a buffer, leaving any partial one behind.
+ *
+ * Client frames are always masked, which is the half of the protocol a server
+ * has to implement to read anything at all.
+ */
+function wsParse(buffer) {
+  const frames = [];
+  let offset = 0;
+
+  while (offset + 2 <= buffer.length) {
+    const opcode = buffer[offset] & 0x0f;
+    const masked = (buffer[offset + 1] & 0x80) !== 0;
+    let length = buffer[offset + 1] & 0x7f;
+    let cursor = offset + 2;
+
+    if (length === 126) {
+      if (cursor + 2 > buffer.length) break;
+      length = buffer.readUInt16BE(cursor);
+      cursor += 2;
+    }
+
+    const mask = masked ? buffer.subarray(cursor, cursor + 4) : null;
+    if (masked) cursor += 4;
+    if (cursor + length > buffer.length) break;
+
+    const payload = Buffer.from(buffer.subarray(cursor, cursor + length));
+    if (mask) {
+      for (let i = 0; i < payload.length; i += 1) payload[i] ^= mask[i % 4];
+    }
+
+    frames.push({ opcode, payload });
+    offset = cursor + length;
+  }
+
+  return { frames, rest: buffer.subarray(offset) };
 }

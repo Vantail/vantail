@@ -18,6 +18,8 @@ pub mod code {
     pub const INVALID_UTF8: &str = "INVALID_UTF8";
     pub const UNSUPPORTED: &str = "UNSUPPORTED";
     pub const INTERNAL: &str = "INTERNAL";
+    /// The caller abandoned the request before it answered.
+    pub const CANCELLED: &str = "CANCELLED";
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -60,6 +62,10 @@ impl ApiError {
 
     pub fn unsupported(message: impl Into<String>) -> Self {
         Self::new(code::UNSUPPORTED, message)
+    }
+
+    pub fn cancelled(message: impl Into<String>) -> Self {
+        Self::new(code::CANCELLED, message)
     }
 
     /// Map an `io::Error` onto a code the SDK can branch on.

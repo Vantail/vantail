@@ -51,6 +51,8 @@ export const ErrorCode = {
   INVALID_UTF8: "INVALID_UTF8",
   UNSUPPORTED: "UNSUPPORTED",
   INTERNAL: "INTERNAL",
+  /** The caller abandoned the request before it answered. */
+  CANCELLED: "CANCELLED",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

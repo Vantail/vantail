@@ -27,4 +27,16 @@ pub enum UserEvent {
         event: &'static str,
         payload: serde_json::Value,
     },
+    /// A request wants to reach a host the config did not name, and
+    /// `permissions.network.grantFromPrompt` says to ask.
+    ///
+    /// It arrives here because the event loop is the only thread that may
+    /// open a dialog; the thread that asked is blocked on `answer` until it
+    /// hears back.
+    GrantHost {
+        host: String,
+        /// The application's name, for the dialog's title.
+        app: String,
+        answer: std::sync::mpsc::Sender<bool>,
+    },
 }

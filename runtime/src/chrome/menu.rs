@@ -184,19 +184,40 @@ impl ItemHandle {
     }
 }
 
+/// A built menu, and whatever had to be left out of it.
+pub struct Built {
+    pub menu: Menu,
+    /// One line per item that could not be created, in the order they were
+    /// found. Empty in the ordinary case.
+    pub skipped: Vec<String>,
+}
+
 /// Build a native menu, recording every addressable item by id.
-pub fn build(specs: &[MenuSpec], items: &mut HashMap<String, ItemHandle>) -> Result<Menu, String> {
+///
+/// An item the platform will not accept - an accelerator it cannot parse, a
+/// predefined item it does not know - is left out rather than failing the
+/// whole menu. On macOS a menu that fails to install takes Cmd-C, Cmd-V,
+/// Cmd-Q and Cmd-W down with it, because those shortcuts exist only as menu
+/// items: losing all of them over one mistyped accelerator is far worse than
+/// losing the item that was mistyped. What was skipped comes back, so the
+/// caller can say which item went missing instead of leaving it a mystery.
+///
+/// A failure from the platform itself is still an error - that is a broken
+/// menu rather than a typo in a config file.
+pub fn build(specs: &[MenuSpec], items: &mut HashMap<String, ItemHandle>) -> Result<Built, String> {
     let menu = Menu::new();
+    let mut skipped = Vec::new();
     for spec in specs {
-        append(&menu, spec, items)?;
+        append(&menu, spec, items, &mut skipped)?;
     }
-    Ok(menu)
+    Ok(Built { menu, skipped })
 }
 
 fn append(
     menu: &dyn Container,
     spec: &MenuSpec,
     items: &mut HashMap<String, ItemHandle>,
+    skipped: &mut Vec<String>,
 ) -> Result<(), String> {
     match spec {
         MenuSpec::Separator => menu.add(&PredefinedMenuItem::separator()),
@@ -207,7 +228,14 @@ fn append(
             enabled,
             accelerator,
         } => {
-            let item = MenuItem::with_id(id.clone(), label, *enabled, parse(accelerator)?);
+            let accelerator = match parse(accelerator) {
+                Ok(accelerator) => accelerator,
+                Err(error) => {
+                    skipped.push(format!("`{label}` (id `{id}`): {error}"));
+                    return Ok(());
+                }
+            };
+            let item = MenuItem::with_id(id.clone(), label, *enabled, accelerator);
             menu.add(&item)?;
             items.insert(id.clone(), ItemHandle::Normal(item));
             Ok(())
@@ -220,8 +248,14 @@ fn append(
             enabled,
             accelerator,
         } => {
-            let item =
-                CheckMenuItem::with_id(id.clone(), label, *enabled, *checked, parse(accelerator)?);
+            let accelerator = match parse(accelerator) {
+                Ok(accelerator) => accelerator,
+                Err(error) => {
+                    skipped.push(format!("`{label}` (id `{id}`): {error}"));
+                    return Ok(());
+                }
+            };
+            let item = CheckMenuItem::with_id(id.clone(), label, *enabled, *checked, accelerator);
             menu.add(&item)?;
             items.insert(id.clone(), ItemHandle::Checkbox(item));
             Ok(())
@@ -234,7 +268,7 @@ fn append(
         } => {
             let submenu = Submenu::new(label, *enabled);
             for child in children {
-                append(&submenu, child, items)?;
+                append(&submenu, child, items, skipped)?;
             }
             menu.add(&submenu)?;
             // Submenus are addressable by label, since they carry no id of
@@ -256,7 +290,13 @@ fn append(
                 items.insert(QUIT_ID.to_string(), ItemHandle::Normal(item));
                 return Ok(());
             }
-            menu.add(&predefined(item, label.as_deref())?)
+            match predefined(item, label.as_deref()) {
+                Ok(built) => menu.add(&built),
+                Err(error) => {
+                    skipped.push(error);
+                    Ok(())
+                }
+            }
         }
     }
 }
@@ -282,9 +322,34 @@ fn parse(accelerator: &Option<String>) -> Result<Option<Accelerator>, String> {
     accelerator
         .as_deref()
         .map(|text| {
-            Accelerator::from_str(text).map_err(|e| format!("Invalid accelerator `{text}`: {e}"))
+            Accelerator::from_str(&alias(text))
+                .map_err(|e| format!("Invalid accelerator `{text}`: {e}"))
         })
         .transpose()
+}
+
+/// Accept the names an Apple keyboard prints for keys the web platform calls
+/// something else.
+///
+/// muda speaks `KeyboardEvent.code`, where the big key on the right of the
+/// home row is `Enter`. Every Mac keyboard has `return` written on it, so
+/// that is what somebody writing a macOS-first application types - and until
+/// now it took the entire menu down with it.
+fn alias(text: &str) -> String {
+    match text.rsplit_once('+') {
+        // `Ctrl++` means the `+` key itself: the split leaves no key name
+        // behind, so there is nothing here to rewrite.
+        Some((_, key)) if key.trim().is_empty() => text.to_string(),
+        Some((modifiers, key)) => format!("{modifiers}+{}", key_alias(key.trim())),
+        None => key_alias(text.trim()).to_string(),
+    }
+}
+
+fn key_alias(key: &str) -> &str {
+    if key.eq_ignore_ascii_case("return") {
+        return "Enter";
+    }
+    key
 }
 
 fn predefined(name: &str, label: Option<&str>) -> Result<PredefinedMenuItem, String> {
@@ -332,7 +397,10 @@ mod tests {
 
     #[test]
     fn the_quit_item_is_labelled_the_way_the_platform_expects() {
-        assert_eq!(quit_label(None, Some("Vantail Showcase")), "Quit Vantail Showcase");
+        assert_eq!(
+            quit_label(None, Some("Vantail Showcase")),
+            "Quit Vantail Showcase"
+        );
         // A config may say what it wants instead.
         assert_eq!(quit_label(Some("Leave"), Some("Showcase")), "Leave");
         // Before the name is known, which is better than an empty label.
@@ -340,9 +408,53 @@ mod tests {
     }
 
     #[test]
+    fn return_is_accepted_as_the_name_apple_prints_on_the_key() {
+        // The report that prompted this: `CmdOrCtrl+Return` took the whole
+        // menu down, and with it Cmd-Q, Cmd-C and Cmd-V.
+        assert_eq!(alias("CmdOrCtrl+Return"), "CmdOrCtrl+Enter");
+        assert_eq!(alias("Return"), "Enter");
+        // Case is not what a developer should have to get right.
+        assert_eq!(alias("Shift+RETURN"), "Shift+Enter");
+        assert!(parse(&Some("CmdOrCtrl+Return".to_string())).is_ok());
+    }
+
+    #[test]
+    fn a_plus_key_survives_the_rewrite() {
+        // `Ctrl++` is the `+` key, and the split that finds the key name
+        // leaves nothing behind. Rewriting it would silently change which
+        // shortcut the item got.
+        assert_eq!(alias("Ctrl++"), "Ctrl++");
+        assert_eq!(alias("+"), "+");
+    }
+
+    #[test]
+    fn only_the_key_is_aliased_not_a_modifier_that_reads_the_same() {
+        // `Enter` still works, and nothing else is rewritten.
+        assert_eq!(alias("CmdOrCtrl+Enter"), "CmdOrCtrl+Enter");
+        assert_eq!(alias("CmdOrCtrl+S"), "CmdOrCtrl+S");
+        assert_eq!(alias("Alt+Shift+F4"), "Alt+Shift+F4");
+    }
+
+    #[test]
+    fn an_accelerator_that_means_nothing_is_still_an_error() {
+        // Skipping the item depends on this failing rather than silently
+        // producing something wrong.
+        let error = parse(&Some("CmdOrCtrl+Nonsense".to_string())).unwrap_err();
+        assert!(error.contains("Nonsense"), "{error}");
+    }
+
+    #[test]
+    fn no_accelerator_is_not_an_error() {
+        assert!(matches!(parse(&None), Ok(None)));
+    }
+
+    #[test]
     fn the_reserved_id_is_namespaced() {
         // An application's own item with this id would be shadowed by the
         // runtime's handling, so it has to be one nobody would pick.
-        assert!(QUIT_ID.contains(':'), "{QUIT_ID} could collide with an application's own id");
+        assert!(
+            QUIT_ID.contains(':'),
+            "{QUIT_ID} could collide with an application's own id"
+        );
     }
 }

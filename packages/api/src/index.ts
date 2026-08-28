@@ -20,6 +20,17 @@ export {
 } from "./app.js";
 export { autostart } from "./autostart.js";
 export { clipboard, type ClipboardImage } from "./clipboard.js";
+export {
+  database,
+  type Database,
+  type DatabaseParam,
+  type DatabaseRow,
+  type DatabaseValue,
+  type DatabaseExecuteResult,
+  type OpenOptions as DatabaseOpenOptions,
+  type StatementOptions,
+  type Transaction,
+} from "./database.js";
 export { deepLink } from "./deeplink.js";
 export { fileDrop, type DropEvent } from "./drop.js";
 export {
@@ -39,14 +50,28 @@ export {
 } from "./filesystem.js";
 export { hid, type HidConnection, type HidDeviceInfo } from "./hid.js";
 export { mdns, type DiscoveredService, type DiscoverOptions } from "./mdns.js";
-export { menu, type MenuItem, type PredefinedMenuItem } from "./menu.js";
+export {
+  menu,
+  type MenuInstalled,
+  type MenuItem,
+  type PredefinedMenuItem,
+} from "./menu.js";
 export {
   network,
+  type NetworkRedirect,
   type NetworkRequestOptions,
   type NetworkResponse,
+  type NetworkSocket,
+  type NetworkSocketClosed,
+  type NetworkSocketOptions,
+  type NetworkStream,
+  type NetworkStreamEnd,
+  type NetworkStreamHead,
+  type NetworkTiming,
 } from "./network.js";
 export { notification, type NotificationOptions } from "./notification.js";
 export { os, type OsInfo, type Platform } from "./os.js";
+export { path, type PathApi } from "./path.js";
 export {
   process,
   type Child,

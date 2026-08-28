@@ -262,9 +262,11 @@ impl Chrome {
     }
 
     /// Replace the application menu.
-    pub fn set_app_menu(&mut self, specs: &[MenuSpec]) -> Result<(), ApiError> {
+    /// Returns the items that had to be left out, if any - see `menu::build`.
+    pub fn set_app_menu(&mut self, specs: &[MenuSpec]) -> Result<Vec<String>, ApiError> {
         let mut items = HashMap::new();
-        let menu = menu::build(specs, &mut items).map_err(ApiError::invalid_params)?;
+        let menu::Built { menu, skipped } =
+            menu::build(specs, &mut items).map_err(ApiError::invalid_params)?;
 
         self.forget(Scope::App);
         self.app_menu_ids = items.keys().cloned().collect();
@@ -274,7 +276,7 @@ impl Chrome {
         menu.init_for_nsapp();
 
         self.app_menu = Some(menu);
-        Ok(())
+        Ok(skipped)
     }
 
     /// Windows hangs the menu off each window rather than the application, so
@@ -304,15 +306,17 @@ impl Chrome {
     }
 
     /// Create or replace the tray icon.
-    pub fn set_tray(&mut self, rt: &Runtime, spec: &TraySpec) -> Result<(), ApiError> {
+    pub fn set_tray(&mut self, rt: &Runtime, spec: &TraySpec) -> Result<Vec<String>, ApiError> {
+        let mut skipped = Vec::new();
         let menu = match &spec.menu {
             Some(specs) => {
                 let mut items = HashMap::new();
-                let menu = menu::build(specs, &mut items).map_err(ApiError::invalid_params)?;
+                let built = menu::build(specs, &mut items).map_err(ApiError::invalid_params)?;
+                skipped = built.skipped;
                 self.forget(Scope::Tray);
                 self.tray_menu_ids = items.keys().cloned().collect();
                 self.items.extend(items);
-                Some(menu)
+                Some(built.menu)
             }
             None => None,
         };
@@ -351,7 +355,7 @@ impl Chrome {
             tray.set_title(Some(title));
         }
 
-        Ok(())
+        Ok(skipped)
     }
 
     pub fn remove_tray(&mut self) {
@@ -384,9 +388,10 @@ impl Chrome {
         })
     }
 
-    pub fn set_tray_menu(&mut self, specs: &[MenuSpec]) -> Result<(), ApiError> {
+    pub fn set_tray_menu(&mut self, specs: &[MenuSpec]) -> Result<Vec<String>, ApiError> {
         let mut items = HashMap::new();
-        let menu = menu::build(specs, &mut items).map_err(ApiError::invalid_params)?;
+        let menu::Built { menu, skipped } =
+            menu::build(specs, &mut items).map_err(ApiError::invalid_params)?;
 
         self.forget(Scope::Tray);
         self.tray_menu_ids = items.keys().cloned().collect();
@@ -394,7 +399,7 @@ impl Chrome {
 
         self.tray()?.set_menu(Some(Box::new(menu.clone())));
         self.tray_menu = Some(menu);
-        Ok(())
+        Ok(skipped)
     }
 
     fn forget(&mut self, scope: Scope) {

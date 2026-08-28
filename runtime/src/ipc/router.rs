@@ -65,6 +65,13 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, request: Request) -> Option<Response> {
             .map(|result| Response::from_result(id, result));
     }
 
+    // A query is as slow as it is, and the connection has its own thread, so
+    // this answers later too.
+    if namespace == "database" {
+        return api::database::dispatch(ctx, &id, &method, params)
+            .map(|result| Response::from_result(id, result));
+    }
+
     // Discovery waits for devices to answer, so it answers later too.
     if namespace == "mdns" {
         return api::mdns::dispatch(ctx, &id, &method, params)

@@ -229,3 +229,83 @@ deleting is running out of it.
 
 It is a compile-time feature. Turning it off removes the HTTP client and TLS,
 which is most of what it costs.
+
+## What the HTTP client deliberately is not
+
+`network.*` buffers a response, streams it, or upgrades it to a WebSocket, and
+does nothing else. Two things it does not do, on purpose:
+
+**No interrupt mid-read.** Cancelling a request or a stream frees the
+application at once, but the connection is dropped when the reader next comes
+up for air. Interrupting a blocked socket read means owning the transport
+rather than borrowing one, which is a much larger commitment than a stop
+button is worth.
+
+**No DNS, connect or TLS timings.** `timing` reports what the client can
+actually measure. Splitting out the phases means a custom connector; numbers
+that look precise and are guessed would be worse than the four honest ones.
+
+## The cost of a WebSocket, measured
+
+`network.socket` was very nearly not built, on the argument that a second
+protocol means a new dependency and that the cost lands on every application
+including the ones that only talk to a lamp. That argument was wrong, and it
+is worth writing down why, because the same reasoning applies the next time.
+
+The runtime already carries `rustls`, `webpki-roots`, `http` and `httparse`
+for the HTTP client and the updater. A WebSocket needs all four and adds only
+the protocol itself, so the marginal cost is small. Measured on
+`aarch64-apple-darwin`, release profile:
+
+| Build                | Size      | Delta   |
+| -------------------- | --------- | ------- |
+| default, before      | 3,311,792 |         |
+| `+ socks`            | 3,328,576 | +16 KB  |
+| `+ websocket`        | 3,378,432 | +65 KB  |
+| both, the default now| 3,395,200 | +81 KB  |
+
+2.5% for two capabilities that are otherwise impossible from a webview. Both
+are on by default and both are still cargo features, so a build that wants
+neither can say `--no-default-features`.
+
+There is a second lesson in it. `socks` and `websocket` were first written as
+opt-in features, which sounds like a careful compromise and is in fact no
+decision at all: the published runtime is built by `.github/workflows/release.yml`
+with default features, so an opt-in capability would have reached nobody. For
+a runtime that ships as a prebuilt binary, "put it behind a flag" is a way of
+not shipping something while appearing to have shipped it. Either it is in
+`default` or it does not exist - so measure, then decide.
+
+## Why SQLite is bundled, and why it is on by default
+
+`database` is by far the largest optional capability. Measured on
+`aarch64-apple-darwin`, release profile:
+
+| Build                          | Size      | Delta    |
+| ------------------------------ | --------- | -------- |
+| `--no-default-features`        | 2,168,096 |          |
+| default, before SQLite         | 3,395,264 |          |
+| `+ database`, system libsqlite3| 3,397,056 | +1.8 KB  |
+| `+ database`, bundled          | 4,318,368 | +885 KB  |
+
+Linking against the system copy is almost free, and it was still the wrong
+answer. macOS, Windows and Linux each ship a different SQLite, and each OS
+release moves it: `RETURNING` needs 3.35, `STRICT` tables need 3.37, and a
+JSON function that exists on one machine is a syntax error on another. A
+framework whose whole claim is that the same application runs on three
+platforms cannot hand the application a database whose SQL dialect depends on
+which laptop it is running on - and the applications that want a real database
+are exactly the ones keeping records they cannot afford to have silently
+behave differently. So: one version, everywhere, for 885 KB.
+
+On by default for the reason in the section above - a capability that is not
+in `default` is not shipped, because the release workflow builds with default
+features. An application that stores nothing can strip it, and the runtime is
+2.1 MB with everything optional turned off.
+
+The part that is genuinely load-bearing is the integer rule. SQLite's INTEGER
+is 64-bit, JSON's number is a double, and the boundary between them is where a
+ledger quietly loses money. Returning a rounded number is never acceptable, so
+an integer that does not fit is an error naming the column, and `bigint: true`
+asks for all of them exactly. That decision came from a downstream application
+that hit the same edge in `sql.js` and had to pass `useBigInt` on every read.

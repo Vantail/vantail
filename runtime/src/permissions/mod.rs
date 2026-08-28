@@ -59,6 +59,13 @@ pub struct PermissionsConfig {
     /// The OS credential store. Default `false`.
     #[serde(default)]
     pub secrets: bool,
+    /// SQLite. Default `false`.
+    ///
+    /// Where the database may live is still `filesystem.write`, so this is
+    /// the capability and that is the reach - the same split every other
+    /// path-taking capability has.
+    #[serde(default)]
+    pub database: bool,
     /// Service types the application may discover. Default: none.
     #[serde(default)]
     pub mdns: TextScopeConfig,
@@ -131,6 +138,7 @@ impl Default for PermissionsConfig {
             updater: false,
             network: network::NetworkConfig::default(),
             secrets: false,
+            database: false,
             mdns: TextScopeConfig::default(),
             hid: HidConfig::default(),
         }
@@ -372,7 +380,7 @@ impl Vars {
         Self { entries }
     }
 
-    fn expand(&self, pattern: &str) -> String {
+    pub(crate) fn expand(&self, pattern: &str) -> String {
         let mut out = pattern.to_string();
         for (name, value) in &self.entries {
             if out.contains(name) {
@@ -540,6 +548,7 @@ pub struct Permissions {
     pub updater: bool,
     pub network: network::NetworkScope,
     pub secrets: bool,
+    pub database: bool,
     mdns: TextScope,
     hid: HidConfig,
     granted: Mutex<Grants>,
@@ -603,8 +612,9 @@ impl Permissions {
             autostart: config.autostart,
             menu: config.menu,
             updater: config.updater,
-            network: network::NetworkScope::compile(&config.network)?,
+            network: network::NetworkScope::compile(&config.network, vars)?,
             secrets: config.secrets,
+            database: config.database,
             mdns: TextScope::compile(&config.mdns)?,
             hid: config.hid.clone(),
             granted: Mutex::new(Grants::default()),
