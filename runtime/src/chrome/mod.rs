@@ -7,6 +7,7 @@
 
 pub mod icon;
 pub mod menu;
+pub mod titlebar;
 
 use std::collections::HashMap;
 use std::path::PathBuf;

@@ -1,5 +1,21 @@
 import { useEffect, useState } from "react";
 
+import { TitleBar, useTitleBar, type Place } from "./TitleBar.js";
+
+/**
+ * Somewhere the search bar can take you.
+ *
+ * A real application would have routes here; this one only has to prove the
+ * bar's arrows and dropdown are wired to something.
+ */
+const PLACES: Place[] = [
+  { id: "files", label: "Files" },
+  { id: "windows", label: "Windows and screens" },
+  { id: "clipboard", label: "Clipboard" },
+  { id: "shortcuts", label: "Shortcuts and menus" },
+  { id: "system", label: "System and power" },
+];
+
 import {
   app,
   appWindow,
@@ -102,6 +118,10 @@ export function App() {
       stopWatch();
     };
   }, []);
+
+  const titleBar = useTitleBar();
+  // The history the arrows walk, which the dropdown also jumps into.
+  const [place, setPlace] = useState(0);
 
   async function refreshWindows() {
     setWindows(await listWindows());
@@ -292,7 +312,19 @@ export function App() {
   }
 
   return (
-    <main>
+    <>
+      {titleBar.custom && (
+        <TitleBar
+          metrics={titleBar.metrics}
+          title={info?.name ?? "Vantail"}
+          places={PLACES}
+          current={place}
+          onGo={setPlace}
+          onProfile={() => setNote("profile: whatever your app puts here")}
+          onSettings={() => void openSettings()}
+        />
+      )}
+      <main>
       <header>
         <div>
           <h1>{info?.name ?? "Vantail"}</h1>
@@ -303,6 +335,22 @@ export function App() {
           </p>
         </div>
         <div className="window-controls">
+          <button
+            onClick={() =>
+              void titleBar.setStyle(titleBar.custom ? "default" : "hidden")
+            }
+          >
+            {titleBar.custom ? "System title bar" : "Custom title bar"}
+          </button>
+          {titleBar.custom && (
+            <button
+              onClick={() =>
+                void titleBar.setHeight(titleBar.metrics.height > 40 ? null : 40)
+              }
+            >
+              {titleBar.metrics.height > 40 ? "Native height" : "Taller bar"}
+            </button>
+          )}
           <button onClick={() => void appWindow.minimize()}>Minimise</button>
           <button onClick={() => void appWindow.toggleMaximize()}>
             Maximise
@@ -392,6 +440,7 @@ export function App() {
           </p>
         </section>
       )}
-    </main>
+      </main>
+    </>
   );
 }

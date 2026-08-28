@@ -16,7 +16,8 @@ use wry::{WebView, WebViewBuilder};
 
 use std::sync::Arc;
 
-use crate::config::{CloseBehavior, WindowConfig};
+use crate::chrome::titlebar;
+use crate::config::{CloseBehavior, TitleBarStyle, WindowConfig};
 use crate::error::ApiError;
 use crate::ipc::{Outgoing, Request, UserEvent};
 use crate::state::Runtime;
@@ -41,6 +42,23 @@ pub struct WindowEntry {
     /// tell "hidden" from "open but behind something" and those want
     /// different things to happen.
     pub focused: bool,
+    /// Whether this window is currently drawing its own title bar, and what
+    /// the config asked for in the first place.
+    ///
+    /// The original matters when switching back: an application that started
+    /// with `decorations: false` should not gain a frame it never wanted just
+    /// because it turned a hidden title bar off again.
+    pub title_bar_style: TitleBarStyle,
+    /// A height the application asked for, rather than the platform's.
+    pub title_bar_height: Option<f64>,
+    /// An explicit traffic light position, if the application set one.
+    pub traffic_lights: Option<(f64, f64)>,
+    /// What the platform's title bar measured before anything moved.
+    pub native_title_bar: titlebar::Native,
+    // Only the platforms that toggle the frame need this; macOS switches the
+    // title bar without touching the decorations at all.
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
+    pub decorations: bool,
     /// Current inner size in logical pixels.
     ///
     /// Tracked rather than queried: on macOS `Window::inner_size` keeps
@@ -57,6 +75,92 @@ pub struct WindowEntry {
 impl WindowEntry {
     pub fn id(&self) -> WindowId {
         self.window.id()
+    }
+
+    /// Switch between an ordinary title bar and one the application draws in.
+    ///
+    /// The same three calls the builder makes, except after the fact - macOS
+    /// lets all of them be changed on a live window. Everywhere else the only
+    /// lever is the frame itself, so this is `set_decorations`, and switching
+    /// back restores what the config asked for rather than assuming a frame.
+    ///
+    /// The page is told: the CSS variables and the bridge are updated in
+    /// place, so a toolbar sized from them resizes with the change instead of
+    /// keeping numbers that are no longer true.
+    pub fn set_title_bar_style(&mut self, style: TitleBarStyle) -> titlebar::Metrics {
+        let hidden = style == TitleBarStyle::Hidden;
+
+        #[cfg(target_os = "macos")]
+        {
+            use objc2_app_kit::{NSWindow, NSWindowTitleVisibility};
+            use tao::platform::macos::WindowExtMacOS;
+
+            self.window.set_fullsize_content_view(hidden);
+            self.window.set_titlebar_transparent(hidden);
+
+            let pointer = self.window.ns_window() as *mut NSWindow;
+            if !pointer.is_null() {
+                // Safety: the pointer belongs to the window this entry owns,
+                // and this runs on the event loop thread.
+                let ns: &NSWindow = unsafe { &*pointer };
+                ns.setTitleVisibility(if hidden {
+                    NSWindowTitleVisibility::Hidden
+                } else {
+                    NSWindowTitleVisibility::Visible
+                });
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            self.window
+                .set_decorations(if hidden { false } else { self.decorations });
+        }
+
+        self.title_bar_style = style;
+        self.remeasure()
+    }
+
+    /// Ask for a bar of a particular height, or `None` for the platform's own.
+    ///
+    /// Taller is the browser-toolbar case, and the traffic lights move to the
+    /// middle of it - the part that is easy to get wrong by hand, and obvious
+    /// the moment it is wrong.
+    pub fn set_title_bar_height(&mut self, height: Option<f64>) -> titlebar::Metrics {
+        self.title_bar_height = height;
+        self.remeasure()
+    }
+
+    /// Place the traffic lights by hand, instead of centring them.
+    pub fn set_traffic_lights(&mut self, position: Option<(f64, f64)>) -> titlebar::Metrics {
+        self.traffic_lights = position;
+        self.remeasure()
+    }
+
+    /// Measure again and tell the page, after anything that changes the sums.
+    fn remeasure(&mut self) -> titlebar::Metrics {
+        let metrics = match self.title_bar_style {
+            TitleBarStyle::Hidden => titlebar::measure_with(
+                &self.window,
+                self.native_title_bar,
+                self.title_bar_height,
+                self.traffic_lights,
+            ),
+            TitleBarStyle::Default => titlebar::Metrics::none(),
+        };
+        self.publish_title_bar(metrics);
+        metrics
+    }
+
+    /// Put the measured metrics back into the live page.
+    fn publish_title_bar(&self, metrics: titlebar::Metrics) {
+        let script = crate::webview::title_bar_script(metrics);
+        if let Err(error) = self.webview.evaluate_script(&script) {
+            eprintln!(
+                "vantail: could not update the title bar metrics in `{}`: {error}",
+                self.label
+            );
+        }
     }
 
     /// Push a response or event into this window.
@@ -165,7 +269,21 @@ impl WindowManager {
         }
 
         let window = build_window(rt, target, config)?;
-        let webview = build_webview(rt, &window, proxy, label, url)?;
+        // Measured from the window that exists, not guessed from a constant -
+        // and only when the application is the one drawing up there.
+        // Measured before anything is moved, and kept: the numbers come off
+        // the window buttons themselves.
+        let native = titlebar::native(&window);
+        let title_bar = match config.title_bar_style {
+            TitleBarStyle::Hidden => titlebar::measure_with(
+                &window,
+                native,
+                config.title_bar_height,
+                config.traffic_light_position.map(|i| (i.x, i.y)),
+            ),
+            TitleBarStyle::Default => titlebar::Metrics::none(),
+        };
+        let webview = build_webview(rt, &window, proxy, label, url, title_bar)?;
         let size = window.inner_size().to_logical::<f64>(window.scale_factor());
 
         self.entries.push(WindowEntry {
@@ -173,6 +291,11 @@ impl WindowManager {
             min_size: None,
             max_size: None,
             close_behavior: config.close_behavior,
+            title_bar_style: config.title_bar_style,
+            title_bar_height: config.title_bar_height,
+            traffic_lights: config.traffic_light_position.map(|i| (i.x, i.y)),
+            native_title_bar: native,
+            decorations: config.decorations,
             focused: false,
             size,
             webview,
@@ -212,12 +335,23 @@ fn build_window(
         .clone()
         .unwrap_or_else(|| rt.config.app.name.clone());
 
+    // A hidden title bar has no bar to decorate. On macOS the decorations
+    // stay on - that is what keeps the traffic lights, and the bar itself is
+    // removed by the platform-specific calls below. Everywhere else the only
+    // way to lose the bar is to lose the frame with it.
+    let hidden = config.title_bar_style == TitleBarStyle::Hidden;
+    let decorations = if hidden && !cfg!(target_os = "macos") {
+        false
+    } else {
+        config.decorations
+    };
+
     let mut builder = WindowBuilder::new()
         .with_title(title)
         .with_inner_size(LogicalSize::new(config.width, config.height))
         .with_resizable(config.resizable)
         .with_maximized(config.maximized)
-        .with_decorations(config.decorations)
+        .with_decorations(decorations)
         .with_transparent(config.transparent)
         .with_always_on_top(config.always_on_top)
         // Shown once the webview exists, so the first frame is the
@@ -235,6 +369,25 @@ fn build_window(
     }
     if config.fullscreen {
         builder = builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
+    }
+
+    #[cfg(target_os = "macos")]
+    if hidden {
+        use tao::platform::macos::WindowBuilderExtMacOS;
+
+        // The three together are what "no bar, but keep the buttons" means:
+        // the content view runs the full height of the window, the bar itself
+        // is transparent, and the title text is gone.
+        builder = builder
+            .with_fullsize_content_view(true)
+            .with_titlebar_transparent(true)
+            .with_title_hidden(true);
+
+        // A toolbar taller than the bar it replaced usually wants the lights
+        // moved down to sit in the middle of it.
+        if let Some(inset) = config.traffic_light_position {
+            builder = builder.with_traffic_light_inset(LogicalPosition::new(inset.x, inset.y));
+        }
     }
 
     if let Some(icon) = window_icon(rt) {
@@ -299,6 +452,7 @@ fn build_webview(
     proxy: EventLoopProxy<UserEvent>,
     label: &str,
     url: &str,
+    title_bar: crate::chrome::titlebar::Metrics,
 ) -> Result<WebView, String> {
     let resources = webview::Resources::new(&rt.resource_dir);
     let devtools = rt.config.devtools.unwrap_or_else(|| rt.is_dev());
@@ -307,7 +461,7 @@ fn build_webview(
     let load_proxy = proxy.clone();
 
     let builder = WebViewBuilder::new()
-        .with_initialization_script(webview::init_script(rt, label))
+        .with_initialization_script(webview::init_script(rt, label, title_bar))
         .with_devtools(devtools)
         // A desktop app's background window is not a browser tab that nobody
         // is looking at: it may be doing work on purpose, and a window that

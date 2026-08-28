@@ -45,6 +45,18 @@ struct Flag {
 }
 
 #[derive(Deserialize)]
+struct Style {
+    style: crate::config::TitleBarStyle,
+}
+
+#[derive(Deserialize)]
+struct Height {
+    /// `None` means the platform's own.
+    #[serde(default)]
+    height: Option<f64>,
+}
+
+#[derive(Deserialize)]
 struct Behaviour {
     behavior: CloseBehavior,
 }
@@ -283,6 +295,63 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
         "window.focus" => {
             window.set_focus();
             Ok(Value::Null)
+        }
+
+        // A window with no title bar has nothing to drag it by, so the
+        // application's own toolbar has to do it. `-webkit-app-region: drag`
+        // is a Chromium extension and does nothing in a WKWebView, so this is
+        // the portable way: call it from `pointerdown` and the platform takes
+        // over the drag from there.
+        "window.startDragging" => {
+            window
+                .drag_window()
+                .map_err(|e| ApiError::unsupported(format!("Could not drag the window: {e}")))?;
+            Ok(Value::Null)
+        }
+
+        // Switching between an ordinary title bar and one the application
+        // draws in, on a window that is already open. Answers with the room
+        // the new arrangement leaves, since that is what a caller needs next.
+        "window.setTitleBarStyle" => {
+            let Style { style } = Request::params(method, params)?;
+            let label = entry.label.clone();
+            let entry = ctx.windows.require_mut(&label)?;
+            Ok(json!(entry.set_title_bar_style(style)))
+        }
+        // A taller bar than the platform's, with the lights re-centred in it.
+        // `null` puts it back to whatever the platform uses.
+        "window.setTitleBarHeight" => {
+            let Height { height } = Request::params(method, params)?;
+            let label = entry.label.clone();
+            let entry = ctx.windows.require_mut(&label)?;
+            Ok(json!(entry.set_title_bar_height(height)))
+        }
+
+        "window.titleBarStyle" => Ok(json!(match entry.title_bar_style {
+            crate::config::TitleBarStyle::Hidden => "hidden",
+            crate::config::TitleBarStyle::Default => "default",
+        })),
+
+        // Where the traffic lights sit, for a toolbar taller than the bar it
+        // replaced. macOS only, because nowhere else has them.
+        "window.setTrafficLightPosition" => {
+            if cfg!(not(target_os = "macos")) {
+                return Err(ApiError::unsupported(
+                    "Only macOS has traffic lights to position",
+                ));
+            }
+            let Position { x, y } = Request::params(method, params)?;
+            let label = entry.label.clone();
+            let entry = ctx.windows.require_mut(&label)?;
+            Ok(json!(entry.set_traffic_lights(Some((x, y)))))
+        }
+
+        // Back to the middle of the bar, which is where they belong unless
+        // an application has a reason otherwise.
+        "window.centerTrafficLights" => {
+            let label = entry.label.clone();
+            let entry = ctx.windows.require_mut(&label)?;
+            Ok(json!(entry.set_traffic_lights(None)))
         }
 
         "window.openDevtools" => {

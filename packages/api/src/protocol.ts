@@ -58,6 +58,24 @@ export const ErrorCode = {
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
 
 /** The object the runtime injects before any page script runs. */
+
+/**
+ * The room a hidden title bar left behind, in logical pixels.
+ *
+ * Also set on `:root` as `--vantail-titlebar-height`,
+ * `--vantail-titlebar-inset-left` and `--vantail-titlebar-inset-right`, before
+ * the page lays out - which is usually the form you want, since CSS can then
+ * size the toolbar without JavaScript running at all.
+ */
+export interface TitleBarMetrics {
+  /** How tall the platform's own title bar is. `0` when there is one. */
+  height: number;
+  /** Room the system's window buttons need on the leading edge. */
+  insetLeft: number;
+  /** The same on the trailing edge. `0` on macOS. */
+  insetRight: number;
+}
+
 export interface VantailBridge {
   version: string;
   /** The label of the window this page is running in. */
@@ -70,6 +88,8 @@ export interface VantailBridge {
     platform: string;
     arch: string;
   };
+  /** The room a hidden title bar left behind. Zeroes when there is a bar. */
+  titleBar: TitleBarMetrics;
   postMessage(message: VantailRequest): void;
   subscribe(listener: (message: VantailIncoming) => void): () => void;
 }

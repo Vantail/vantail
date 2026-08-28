@@ -1,6 +1,7 @@
 import {
   appWindow,
   createWindow,
+  titleBarMetrics,
   currentWindow,
   getWindow,
   listWindows,
@@ -10,6 +11,7 @@ import {
   windowLabel,
 } from "@vantail/api";
 import { panel, type Panel } from "../ui.js";
+import { resizeTitleBar, switchTitleBar } from "../titlebar.js";
 
 /** This window, and any others the application opens. */
 export function windowPanel(): Panel {
@@ -31,6 +33,34 @@ export function windowPanel(): Panel {
 
   const title = p.input("title", "Vantail Showcase");
   p.row(title, p.button("setTitle()", () => appWindow.setTitle(title.value)));
+
+  p.row(
+    p.button("hide the title bar", () => switchTitleBar("hidden")),
+    p.button("bring it back", () => switchTitleBar("default")),
+    p.button("titleBarStyle()", () => appWindow.titleBarStyle()),
+    p.button("make it 48px", () => resizeTitleBar(48)),
+    p.button("native height", () => resizeTitleBar(null)),
+  );
+  p.note(
+    "Watch the top of this window. Hiding the bar makes this app draw its own - " +
+      "the strip with the arrows - sized entirely from the CSS variables the runtime sets, " +
+      "so it matches the bar it replaced without hardcoding anything.",
+  );
+
+  p.row(
+    p.button("titleBarMetrics()", () => titleBarMetrics()),
+    p.button("startDragging()", () => appWindow.startDragging()),
+    p.button("setTrafficLightPosition()", () =>
+      appWindow.setTrafficLightPosition(18, 20),
+    ),
+  );
+  p.note(
+    "This window has an ordinary title bar, so the metrics are all zero - there is nothing to leave room for. " +
+      "With `titleBarStyle: \"hidden\"` they are the height and button insets to size a toolbar from, and there is " +
+      "no bar to drag the window by, so a " +
+      "toolbar calls startDragging() on pointerdown. The traffic lights stay on macOS; " +
+      "Windows and Linux get an undecorated window and draw their own controls.",
+  );
 
   p.row(
     p.button("alwaysOnTop on", () => appWindow.setAlwaysOnTop(true)),

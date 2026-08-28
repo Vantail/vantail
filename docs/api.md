@@ -93,6 +93,144 @@ the application such as `settings.html` or `/#/settings`.
 Two windows are two webviews with nothing shared between them. `app.emit` and
 `app.listen` are how they talk.
 
+### Drawing your own title bar
+
+```ts
+window: {
+  titleBarStyle: "hidden",
+  trafficLightPosition: { x: 16, y: 18 },
+}
+```
+
+No title bar, and the page runs to the top edge of the window - which is what
+lets an application put its own back and forward buttons, address bar or tab
+strip up there.
+
+On **macOS** the traffic lights stay. They are the system's: an application
+that draws its own gets the spacing, the hover behaviour and the full-screen
+transition subtly wrong, and users notice. Your content runs underneath them,
+so you have to leave room - and the runtime tells you how much rather than
+making you guess:
+
+```css
+.toolbar {
+  height: var(--vantail-titlebar-height);
+  padding-left: var(--vantail-titlebar-inset-left);
+  padding-right: var(--vantail-titlebar-inset-right);
+}
+```
+
+Those three are set on `:root` before the page lays out, so a toolbar sized
+from them is right on the first frame rather than after a reflow. They are
+measured from the window itself - `--vantail-titlebar-height` is the height
+of the bar that `hidden` removed, and the insets are the room the system's
+buttons occupy.
+
+**Do not hardcode these.** The number everyone copies for macOS is 28; on a
+current macOS it measures 32, and it is 0 on a window whose bar is not hidden.
+`titleBarMetrics()` returns the same values to JavaScript, synchronously, for
+the cases CSS cannot reach - laying out a canvas, or deciding whether to draw
+your own window controls (`insetLeft === 0` means the platform is not drawing
+any).
+
+### A taller bar
+
+`--vantail-titlebar-height` defaults to the platform's own, which is what makes
+a custom bar read as a title bar rather than as a div. For a browser-style
+toolbar, ask for more:
+
+```ts
+window: { titleBarStyle: "hidden", titleBarHeight: 48 }
+```
+
+```ts
+await appWindow.setTitleBarHeight(48);   // taller
+await appWindow.setTitleBarHeight(null); // the platform's own again
+```
+
+The traffic lights are re-centred in whatever height you ask for. That is the
+part that is easy to get wrong by hand and obvious the moment it is wrong -
+lights sitting high in a tall toolbar is the tell of an app that hardcoded
+their position. `insetLeft` does not change: a taller bar moves the buttons,
+it does not make them wider.
+
+`trafficLightPosition` is still there for placing them somewhere other than
+the middle, and `appWindow.centerTrafficLights()` puts them back - but with
+`titleBarHeight` you rarely want either.
+
+Centring is exact until the room runs out. The container AppKit keeps the
+buttons in is only as tall as the platform's own bar and cannot be grown -
+resizing it makes the lights vanish, and letting them past its bottom edge
+draws them where AppKit will not hit-test - so past roughly 46px the lights
+stop descending and sit slightly above centre. Live and a little high beats
+centred and dead.
+
+The lights are moved by setting their frames rather than through tao's
+`set_traffic_light_inset`. That call resizes the title bar container and lets
+AppKit re-lay the buttons inside it, and on current macOS the resize does not
+stick: read the container back and it measures 32 again, so the lights never
+move vertically however the inset is calculated. It is worth knowing if you
+are reading the runtime and wondering why the obvious API is not the one being
+used.
+
+### Switching at runtime
+
+```ts
+const metrics = await appWindow.setTitleBarStyle("hidden");
+await appWindow.titleBarStyle(); // "hidden"
+```
+
+For a "use the system title bar" preference, or just to show both. The CSS
+variables and `titleBarMetrics()` are updated before the call resolves, so a
+toolbar sized from either follows the switch instead of keeping numbers that
+are no longer true - which is also the easy way to show and hide your own bar:
+
+```css
+#titlebar { display: none; }
+html[data-titlebar="hidden"] #titlebar {
+  display: flex;
+  height: var(--vantail-titlebar-height);
+  padding-left: var(--vantail-titlebar-inset-left);
+}
+```
+
+On macOS the switch is seamless. Everywhere else the only lever is the window
+frame, so it adds and removes decorations - and switching back restores what
+the config asked for rather than assuming a frame, so a window that started
+with `decorations: false` does not gain one it never wanted.
+
+The showcase demonstrates the whole arrangement: its **window** panel has
+*hide the title bar* and *bring it back*, and the strip that appears at the
+top is the app's own, sized entirely from the variables.
+
+On **Windows and Linux** there is no way to keep the buttons without the bar,
+so `hidden` is an undecorated window and your toolbar has to include close,
+minimise and maximise itself. Both insets are `0` there, which is the signal
+to draw them - branch on that rather than on the platform name.
+
+`decorations: false` is a different thing and still there: it removes the
+frame entirely, traffic lights included.
+
+### Dragging it
+
+A window with no title bar has nothing to drag it by, so your toolbar has to
+do it:
+
+```ts
+toolbar.addEventListener("pointerdown", (event) => {
+  // Let buttons and inputs be clicked rather than dragged.
+  if ((event.target as Element).closest("button, input, a, select")) return;
+  if (event.buttons === 1) void appWindow.startDragging();
+});
+```
+
+`-webkit-app-region: drag` is a Chromium extension. It does nothing in a
+WKWebView, so a CSS property would work on two platforms out of three, which
+is worse than not having it - hence a call.
+
+Double-click to maximise is not automatic either; `appWindow.toggleMaximize()`
+on `dblclick` is the whole of it.
+
 ## appWindow and window handles
 
 Sizes and positions are in **logical pixels**, so they mean the same thing on

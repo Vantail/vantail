@@ -1,5 +1,6 @@
 import { VantailError } from "./error.js";
 import { invoke, listen, windowLabel } from "./transport.js";
+import type { TitleBarMetrics, VantailBridge } from "./protocol.js";
 
 export interface Size {
   width: number;
@@ -38,6 +39,36 @@ export interface WindowOptions {
   maximized?: boolean;
   fullscreen?: boolean;
   decorations?: boolean;
+  /**
+   * Whether the title bar is a bar, or space your application draws in.
+   *
+   * `hidden` is what every editor and browser does: no title bar, the page
+   * running to the top edge of the window, and a toolbar of your own where
+   * the bar would have been.
+   *
+   * On macOS the traffic lights stay - they are the system's, and an
+   * application drawing its own gets them subtly wrong. Windows and Linux
+   * have no way to keep the buttons without the bar, so `hidden` there is an
+   * undecorated window and your toolbar has to include close and minimise.
+   *
+   * A window with no title bar has nothing to drag it by. Give your toolbar
+   * `appWindow.startDragging()` on `pointerdown`.
+   */
+  titleBarStyle?: TitleBarStyle;
+  /**
+   * Nudge the traffic lights, for a toolbar taller than the bar it replaced.
+   * Logical pixels from the top left. macOS only.
+   */
+  trafficLightPosition?: { x: number; y: number };
+  /**
+   * How tall the bar your application draws should be.
+   *
+   * Defaults to the height of the platform's own, which is what makes a
+   * custom bar read as a title bar rather than as a div. Set it larger for a
+   * browser-style toolbar and the traffic lights are re-centred in it - the
+   * part that is easy to get wrong by hand, and obvious the moment it is.
+   */
+  titleBarHeight?: number;
   transparent?: boolean;
   alwaysOnTop?: boolean;
   center?: boolean;
@@ -60,6 +91,41 @@ export interface WindowOptions {
  * Declaring the behaviour is the same thing without that failure mode.
  */
 export type CloseBehavior = "close" | "hide" | "ask";
+
+/**
+ * `default` keeps the platform's title bar. `hidden` removes it and lets the
+ * page run to the top edge of the window - see `titleBarStyle`.
+ */
+export type TitleBarStyle = "default" | "hidden";
+
+/**
+ * The room a hidden title bar left behind, without awaiting.
+ *
+ * `undefined` outside a Vantail window. All zeroes when this window has an
+ * ordinary title bar, since there is then nothing to leave room for.
+ *
+ * The same numbers are already on `:root` as CSS variables before the page
+ * lays out, so reach for those first:
+ *
+ * ```css
+ * .toolbar {
+ *   height: var(--vantail-titlebar-height);
+ *   padding-left: var(--vantail-titlebar-inset-left);
+ *   padding-right: var(--vantail-titlebar-inset-right);
+ * }
+ * ```
+ *
+ * This is for the cases CSS cannot reach - laying out a canvas, or deciding
+ * whether to draw your own window controls:
+ *
+ * ```ts
+ * const { insetLeft } = titleBarMetrics() ?? { insetLeft: 0 };
+ * if (insetLeft === 0) drawOwnWindowControls();
+ * ```
+ */
+export function titleBarMetrics(): TitleBarMetrics | undefined {
+  return (globalThis as { __VANTAIL__?: VantailBridge }).__VANTAIL__?.titleBar;
+}
 
 /**
  * A handle to one window.
@@ -106,6 +172,73 @@ export interface WindowHandle {
   isFullscreen(): Promise<boolean>;
   setResizable(value: boolean): Promise<null>;
   setAlwaysOnTop(value: boolean): Promise<null>;
+
+  /**
+   * Drag the window from wherever the pointer is.
+   *
+   * What a title bar would have done for you. Call it on `pointerdown` in
+   * your own toolbar and the platform takes the drag from there:
+   *
+   * ```ts
+   * toolbar.addEventListener("pointerdown", (event) => {
+   *   // Let buttons and inputs be clicked rather than dragged.
+   *   if ((event.target as Element).closest("button, input, a")) return;
+   *   if (event.buttons === 1) void appWindow.startDragging();
+   * });
+   * ```
+   *
+   * `-webkit-app-region: drag` is a Chromium extension and does nothing in a
+   * WKWebView, which is why this is a call rather than a CSS property.
+   */
+  startDragging(): Promise<null>;
+
+  /**
+   * Switch between an ordinary title bar and one your application draws in,
+   * on a window that is already open.
+   *
+   * Answers with the room the new arrangement leaves. The CSS variables and
+   * {@link titleBarMetrics} are updated before it resolves, so a toolbar
+   * sized from either resizes with the change.
+   *
+   * ```ts
+   * const { height } = await appWindow.setTitleBarStyle("hidden");
+   * ```
+   *
+   * On macOS the switch is seamless. Everywhere else the only lever is the
+   * window frame, so this adds and removes decorations - and switching back
+   * restores what the config asked for rather than assuming a frame.
+   */
+  setTitleBarStyle(style: TitleBarStyle): Promise<TitleBarMetrics>;
+
+  /** Which one this window is using now. */
+  titleBarStyle(): Promise<TitleBarStyle>;
+
+  /**
+   * Ask for a bar of a particular height; `null` for the platform's own.
+   *
+   * ```ts
+   * await appWindow.setTitleBarHeight(48); // a browser-style toolbar
+   * await appWindow.setTitleBarHeight(null); // back to the platform's
+   * ```
+   *
+   * The traffic lights move to the middle of the new height, and the CSS
+   * variables follow, so a toolbar sized from them resizes with it.
+   */
+  setTitleBarHeight(height: number | null): Promise<TitleBarMetrics>;
+
+  /**
+   * Move the traffic lights, for a toolbar taller than the bar they came
+   * from. Logical pixels from the top left.
+   *
+   * macOS only; `UNSUPPORTED` everywhere else, since nowhere else has them.
+   */
+  setTrafficLightPosition(x: number, y: number): Promise<TitleBarMetrics>;
+
+  /**
+   * Put them back in the middle of the bar, which is where they sit unless
+   * you have moved them.
+   */
+  centerTrafficLights(): Promise<TitleBarMetrics>;
 
   setCloseBehavior(behavior: CloseBehavior): Promise<null>;
   closeBehavior(): Promise<CloseBehavior>;
@@ -194,6 +327,18 @@ function handle(label?: string): WindowHandle {
     isFullscreen: () => call<boolean>("window.isFullscreen"),
     setResizable: (value) => call<null>("window.setResizable", { value }),
     setAlwaysOnTop: (value) => call<null>("window.setAlwaysOnTop", { value }),
+
+    setTitleBarStyle: (style) =>
+      call<TitleBarMetrics>("window.setTitleBarStyle", { style }),
+    titleBarStyle: () => call<TitleBarStyle>("window.titleBarStyle"),
+    setTitleBarHeight: (height) =>
+      call<TitleBarMetrics>("window.setTitleBarHeight", { height }),
+
+    startDragging: () => call<null>("window.startDragging"),
+    setTrafficLightPosition: (x, y) =>
+      call<TitleBarMetrics>("window.setTrafficLightPosition", { x, y }),
+    centerTrafficLights: () =>
+      call<TitleBarMetrics>("window.centerTrafficLights"),
 
     setCloseBehavior: (behavior) =>
       call<null>("window.setCloseBehavior", { behavior }),

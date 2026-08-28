@@ -26,10 +26,35 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
+  /* The window is the viewport: the title bar is chrome and stays put, and
+     only the content underneath it scrolls. */
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/*
+ * React mounts into this, so it is the body's only child - which makes it the
+ * flex column, not `body`. Without that the title bar and `main` are laid out
+ * inside a plain auto-height div and `main`'s `flex: 1` has nothing to size
+ * against, so the content is clipped by the body's `overflow: hidden` with no
+ * way to scroll to it.
+ */
+#root {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 main {
@@ -37,7 +62,21 @@ main {
   flex-direction: column;
   gap: 16px;
   padding: 20px;
-  min-height: 100vh;
+  /* `min-height: 0` is what lets a flex child actually shrink, and without it
+     this grows to fit its content and the whole body scrolls instead. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/*
+ * Flex items shrink by default, so in a scrolling flex column the content
+ * squashes to fit instead of overflowing - and a scroll container with
+ * nothing overflowing it never scrolls. Letting the children keep their own
+ * height is what gives `main` something to scroll.
+ */
+main > * {
+  flex: 0 0 auto;
 }
 
 header {
@@ -153,4 +192,207 @@ footer {
 pre.nowrap {
   white-space: pre;
   overflow-wrap: normal;
+}
+
+/*
+ * The title bar this example draws, since `titleBarStyle: "hidden"` removed
+ * the platform's.
+ *
+ * Nothing here sets a height or a leading inset: those come from
+ * `titleBarMetrics()` as inline styles in `TitleBar.tsx`, because they are the
+ * platform's own numbers and they change when the app asks for a taller bar.
+ */
+.titlebar {
+  /* `--tb-height` is set inline from `titleBarMetrics()`. Every size below is
+     a fraction of it, so asking for a taller bar scales the controls with it
+     rather than leaving them adrift in the middle of too much space. */
+  --tb-control: calc(var(--tb-height) * 0.69);
+  --tb-icon: calc(var(--tb-height) * 0.4);
+  --tb-gap: calc(var(--tb-height) * 0.25);
+  --tb-radius: calc(var(--tb-height) * 0.19);
+
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--tb-gap);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  user-select: none;
+  -webkit-user-select: none;
+  flex: none;
+}
+
+/* Close, minimise and zoom, where the platform drew none of its own. Round
+   and on the left, matching the ones macOS keeps. */
+.titlebar-dots {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--tb-height) * 0.25);
+  padding-right: calc(var(--tb-height) * 0.44);
+}
+
+.titlebar-dots .dot {
+  width: calc(var(--tb-height) * 0.375);
+  height: calc(var(--tb-height) * 0.375);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: default;
+  background: var(--line);
+}
+
+.titlebar:hover .dot.close,
+.titlebar .dot.close:focus-visible {
+  background: #ff5f57;
+}
+.titlebar:hover .dot.minimise,
+.titlebar .dot.minimise:focus-visible {
+  background: #febc2e;
+}
+.titlebar:hover .dot.zoom,
+.titlebar .dot.zoom:focus-visible {
+  background: #28c840;
+}
+
+.titlebar-history {
+  display: flex;
+  gap: calc(var(--tb-height) * 0.06);
+}
+
+.titlebar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--tb-height) * 0.06);
+}
+
+.titlebar-history button,
+.titlebar-action {
+  display: grid;
+  place-items: center;
+  width: var(--tb-control);
+  height: var(--tb-control);
+  padding: 0;
+  border: 0;
+  border-radius: var(--tb-radius);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--tb-icon);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.titlebar-history button:hover:not(:disabled),
+.titlebar-action:hover {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.titlebar-history button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/*
+ * Centred on the window rather than on the space left over.
+ *
+ * The leading inset is asymmetric - the traffic lights are only on one side -
+ * so centring this in normal flow would sit it off-centre by half of that.
+ * Taking it out of flow is what makes it land where the eye expects.
+ */
+.titlebar-search {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(520px, 46%);
+  display: flex;
+  justify-content: center;
+}
+
+.titlebar-search-button,
+.titlebar-search-field {
+  width: 100%;
+  height: var(--tb-control);
+  display: flex;
+  align-items: center;
+  gap: calc(var(--tb-height) * 0.19);
+  padding: 0 calc(var(--tb-height) * 0.31);
+  border-radius: var(--tb-radius);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: calc(var(--tb-height) * 0.375);
+  line-height: 1;
+}
+
+.titlebar-search-button {
+  cursor: text;
+  justify-content: center;
+}
+
+.titlebar-search-button:hover {
+  border-color: var(--accent);
+}
+
+.titlebar-search-field {
+  color: var(--fg);
+  outline: none;
+  border-color: var(--accent);
+}
+
+.titlebar-search-icon {
+  font-size: calc(var(--tb-height) * 0.3);
+  opacity: 0.8;
+}
+
+.titlebar-search-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The dropdown, hanging under the field the way a quick-pick does. */
+.titlebar-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: 0 12px 28px rgb(0 0 0 / 45%);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.titlebar-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.titlebar-menu button:hover {
+  background: var(--bg);
+}
+
+.titlebar-menu button.current {
+  color: var(--accent);
+}
+
+.titlebar-menu-empty {
+  margin: 0;
+  padding: 8px;
+  color: var(--muted);
+  font-size: 12px;
 }

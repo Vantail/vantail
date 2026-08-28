@@ -30,12 +30,37 @@ pub fn app_url(path: &str) -> String {
     }
 }
 
+/// Put a window's title bar metrics into a page that is already running.
+///
+/// The same three variables the bridge sets at startup, and the same object
+/// `titleBarMetrics()` reads - so a toolbar built from either stays correct
+/// when the style is switched at runtime.
+pub fn title_bar_script(metrics: crate::chrome::titlebar::Metrics) -> String {
+    format!(
+        r#"(function () {{
+  var metrics = {metrics};
+  if (window.__VANTAIL__) window.__VANTAIL__.titleBar = metrics;
+  var root = document.documentElement;
+  if (root) {{
+    root.style.setProperty('--vantail-titlebar-height', metrics.height + 'px');
+    root.style.setProperty('--vantail-titlebar-inset-left', metrics.insetLeft + 'px');
+    root.style.setProperty('--vantail-titlebar-inset-right', metrics.insetRight + 'px');
+  }}
+}})();"#,
+        metrics = json!(metrics)
+    )
+}
+
 /// The bridge, injected before any page script runs.
 ///
 /// It deliberately knows nothing about methods or promises - it is a pipe.
 /// `@vantail/api` subscribes to it and builds the typed surface on top, so
 /// the protocol can grow without the runtime shipping a new bridge.
-pub fn init_script(rt: &Runtime, label: &str) -> String {
+pub fn init_script(
+    rt: &Runtime,
+    label: &str,
+    title_bar: crate::chrome::titlebar::Metrics,
+) -> String {
     let app = json!({
         "name": rt.config.app.name,
         "version": rt.config.app.version,
@@ -45,6 +70,8 @@ pub fn init_script(rt: &Runtime, label: &str) -> String {
         "arch": std::env::consts::ARCH,
     });
 
+    let title_bar = json!(title_bar);
+
     format!(
         r#"(function () {{
   if (window.__VANTAIL__) return;
@@ -52,10 +79,29 @@ pub fn init_script(rt: &Runtime, label: &str) -> String {
   var listeners = new Set();
   var backlog = [];
 
+  // The room a hidden title bar left behind, in the page before it lays out -
+  // so a toolbar sized from it never has to flash at the wrong height, and
+  // nobody has to hardcode a number that differs per platform.
+  var metrics = {title_bar};
+  function applyMetrics() {{
+    var root = document.documentElement;
+    if (!root) return false;
+    root.style.setProperty('--vantail-titlebar-height', metrics.height + 'px');
+    root.style.setProperty('--vantail-titlebar-inset-left', metrics.insetLeft + 'px');
+    root.style.setProperty('--vantail-titlebar-inset-right', metrics.insetRight + 'px');
+    return true;
+  }}
+  // At document-start `<html>` normally exists already; when it does not,
+  // this runs as soon as the parser has made it.
+  if (!applyMetrics()) {{
+    document.addEventListener('DOMContentLoaded', applyMetrics, {{ once: true }});
+  }}
+
   window.__VANTAIL__ = {{
     version: {runtime_version},
     app: {app},
     label: {label},
+    titleBar: {title_bar},
 
     postMessage: function (message) {{
       window.ipc.postMessage(JSON.stringify(message));

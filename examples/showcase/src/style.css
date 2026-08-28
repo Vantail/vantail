@@ -30,6 +30,8 @@ body {
   margin: 0;
   display: grid;
   grid-template-columns: 190px 1fr;
+  /* The app's own title bar, when there is one, then everything else. */
+  grid-template-rows: auto 1fr;
   height: 100vh;
   background: var(--bg);
   color: var(--text);
@@ -180,4 +182,69 @@ input:focus {
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.92em;
+}
+
+
+/*
+ * The title bar this app draws when the platform's is hidden.
+ *
+ * Every measurement comes from the runtime: `--vantail-titlebar-height` is
+ * how tall the bar it replaced was, and the insets are the room the system's
+ * own buttons need. Nothing here is a magic number, which is why it stays
+ * right when the style is switched at runtime.
+ */
+#titlebar {
+  grid-column: 1 / -1;
+  display: none;
+}
+
+html[data-titlebar="hidden"] #titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--vantail-titlebar-height);
+  padding-left: var(--vantail-titlebar-inset-left);
+  padding-right: var(--vantail-titlebar-inset-right);
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Where the platform reserved no room, it drew no buttons either. */
+html[data-own-controls="yes"] #titlebar::after {
+  content: "your app draws the window controls here";
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+#titlebar .tb-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+#titlebar button {
+  width: 24px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#titlebar .tb-search {
+  flex: 1;
+  max-width: 380px;
+  height: 22px;
+  line-height: 21px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12px;
 }

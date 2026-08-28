@@ -104,9 +104,11 @@ export {
   onWindowClosed,
   onWindowCreated,
   onWindowReady,
+  titleBarMetrics,
   type CloseBehavior,
   type Position,
   type Size,
+  type TitleBarStyle,
   type WindowHandle,
   type WindowOptions,
 } from "./window.js";
@@ -122,6 +124,7 @@ export {
 } from "./transport.js";
 export { ErrorCode } from "./protocol.js";
 export type {
+  TitleBarMetrics,
   VantailBridge,
   VantailErrorPayload,
   VantailIncoming,

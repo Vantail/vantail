@@ -56,6 +56,12 @@ export const windowSchema = z
     maximized: z.boolean().optional(),
     fullscreen: z.boolean().optional(),
     decorations: z.boolean().optional(),
+    titleBarStyle: z.enum(["default", "hidden"]).optional(),
+    titleBarHeight: z.number().positive().optional(),
+    trafficLightPosition: z
+      .object({ x: z.number(), y: z.number() })
+      .strict()
+      .optional(),
     transparent: z.boolean().optional(),
     alwaysOnTop: z.boolean().optional(),
     center: z.boolean().optional(),

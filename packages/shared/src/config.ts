@@ -33,6 +33,36 @@ export interface WindowConfig {
   maximized?: boolean;
   fullscreen?: boolean;
   decorations?: boolean;
+  /**
+   * Whether the title bar is a bar, or space your application draws in.
+   *
+   * `hidden` is what every editor and browser does: no title bar, the page
+   * running to the top edge of the window, and a toolbar of your own where
+   * the bar would have been.
+   *
+   * On macOS the traffic lights stay - they are the system's, and an
+   * application drawing its own gets them subtly wrong. Windows and Linux
+   * have no way to keep the buttons without the bar, so `hidden` there is an
+   * undecorated window and your toolbar has to include close and minimise.
+   *
+   * A window with no title bar has nothing to drag it by. Give your toolbar
+   * `appWindow.startDragging()` on `pointerdown`.
+   */
+  titleBarStyle?: TitleBarStyle;
+  /**
+   * Nudge the traffic lights, for a toolbar taller than the bar it replaced.
+   * Logical pixels from the top left. macOS only.
+   */
+  trafficLightPosition?: { x: number; y: number };
+  /**
+   * How tall the bar your application draws should be.
+   *
+   * Defaults to the height of the platform's own, which is what makes a
+   * custom bar read as a title bar rather than as a div. Set it larger for a
+   * browser-style toolbar and the traffic lights are re-centred in it - the
+   * part that is easy to get wrong by hand, and obvious the moment it is.
+   */
+  titleBarHeight?: number;
   transparent?: boolean;
   alwaysOnTop?: boolean;
   /** Centre on the current monitor unless `x`/`y` are given. Default `true`. */
@@ -56,6 +86,12 @@ export interface WindowConfig {
  * `$VIDEO`, `$AUDIO`, `$TEMP`, `$CWD`, `$RESOURCE`, `$APPDATA`,
  * `$APPCONFIG` and `$APPCACHE`.
  */
+/**
+ * `default` keeps the platform's title bar. `hidden` removes it and lets the
+ * page run to the top edge of the window.
+ */
+export type TitleBarStyle = "default" | "hidden";
+
 export type PathScope =
   boolean | string[] | { allow?: string[]; deny?: string[] };
 

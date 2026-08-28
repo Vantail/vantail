@@ -12,6 +12,7 @@
 import "./style.css";
 
 import { isVantail, runtimeVersion } from "@vantail/api";
+import { mountTitleBar } from "./titlebar.js";
 
 import { appPanel } from "./panels/app.js";
 import { clipboardPanel } from "./panels/clipboard.js";
@@ -54,6 +55,9 @@ if (!isVantail()) {
 }
 
 function build() {
+  // The app's own title bar, shown only while the platform's is hidden.
+  mountTitleBar();
+
   const panels: Panel[] = [
     appPanel(),
     windowPanel(),

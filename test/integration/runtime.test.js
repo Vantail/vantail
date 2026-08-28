@@ -471,6 +471,86 @@ describe(
       assert.equal(results.foreverCancelAgain, false);
     });
 
+    it("switches a live window between its own title bar and the platform's", () => {
+      // It starts with the platform's, so there is nothing reserved.
+      assert.equal(results.toggleBefore.style, "default");
+      assert.equal(results.toggleBefore.css, "0px");
+
+      // Hidden: a real height, and the page told about it in both forms.
+      assert.equal(results.toggleHidden.style, "hidden");
+      assert.ok(
+        results.toggleHiddenMetrics.height > 0,
+        `expected a real height, got ${results.toggleHiddenMetrics.height}`,
+      );
+      assert.equal(
+        results.toggleHidden.css,
+        `${results.toggleHiddenMetrics.height}px`,
+        "the CSS variable has to follow the switch, or a toolbar sized from it goes stale",
+      );
+      assert.equal(
+        results.toggleHidden.sync.height,
+        results.toggleHiddenMetrics.height,
+        "titleBarMetrics() has to agree with what the call returned",
+      );
+
+      // And back, with the reservation released.
+      assert.equal(results.toggleBack.style, "default");
+      assert.equal(results.toggleBack.css, "0px");
+      assert.equal(results.toggleBack.sync.height, 0);
+      assert.equal(results.toggleBackMetrics.height, 0);
+    });
+
+    it("takes a height of its own, and gives it back", () => {
+      // Defaults to the platform's, which is what makes a custom bar read as
+      // a title bar rather than as a div.
+      assert.ok(results.nativeHeight > 0);
+      assert.notEqual(results.nativeHeight, 48);
+
+      // Asked for 48, reported as 48, everywhere the page can see it.
+      assert.equal(results.tallMetrics.height, 48);
+      assert.equal(results.tallCss, "48px");
+      assert.equal(results.tallSync.height, 48);
+      // The room for the window buttons is the platform's either way - a
+      // taller bar moves them, it does not make them wider.
+      assert.equal(results.tallMetrics.insetLeft, results.backToNative.insetLeft);
+
+      // `null` puts the platform's own height back.
+      assert.equal(results.backToNative.height, results.nativeHeight);
+
+      // Placing the lights by hand and re-centring both answer with the
+      // metrics, and neither changes the height they are being placed in.
+      assert.equal(results.movedLights.height, 48);
+      assert.equal(results.centredLights.height, 48);
+    });
+
+    it("reports no title bar to reserve when there is a title bar", () => {
+      // This window is an ordinary one, so there is nothing to leave room
+      // for and the numbers say so rather than being absent.
+      assert.deepEqual(results.mainTitleBar, {
+        height: 0,
+        insetLeft: 0,
+        insetRight: 0,
+      });
+      // And the CSS variable is set either way, so `var()` never falls back.
+      assert.equal(results.mainTitleBarCss, "0px");
+    });
+
+    it("opens a window with no title bar for the app to draw over", () => {
+      assert.equal(results.bareFatal, undefined, results.bareFatal);
+      assert.equal(results.bareExists, true);
+      // The window is a real one: hiding the bar is not hiding the window.
+      assert.equal(results.bareSize.width, 420);
+      assert.equal(results.bareSize.height, 320);
+      assert.equal(results.bareGone, false);
+    });
+
+    it("moves the traffic lights only where there are any", () => {
+      assert.equal(
+        results.bareTrafficLights,
+        process.platform === "darwin" ? "moved" : "UNSUPPORTED",
+      );
+    });
+
     it("stores a ledger in a real SQLite file", () => {
       assert.equal(results.dbFatal, undefined, results.dbFatal);
       assert.equal(results.dbPath, true);
@@ -820,7 +900,7 @@ import {
   app, appWindow, clipboard, createWindow, currentWindow, database, filesystem, invoke,
   isVantail, listWindows, menu, notification, onWindowClosed, os,
   autostart, fileDrop, hid, mdns, network, power, process as childProcess, runtimeVersion,
-  screen, secrets, shell,
+  screen, secrets, shell, titleBarMetrics,
   shortcut,
   tray, VantailError,
 } from "./api/index.js";
@@ -1011,6 +1091,68 @@ try {
   results.streamEnd = await streamDone;
   results.streamText = streamChunks.join("");
   results.streamChunkCount = streamChunks.length;
+
+  // Switching this window's title bar, and the page seeing it change.
+  const readCss = () =>
+    getComputedStyle(document.documentElement)
+      .getPropertyValue("--vantail-titlebar-height")
+      .trim();
+
+  results.toggleBefore = { style: await appWindow.titleBarStyle(), css: readCss() };
+  results.toggleHiddenMetrics = await appWindow.setTitleBarStyle("hidden");
+  results.toggleHidden = {
+    style: await appWindow.titleBarStyle(),
+    css: readCss(),
+    sync: titleBarMetrics(),
+  };
+  results.toggleBackMetrics = await appWindow.setTitleBarStyle("default");
+  results.toggleBack = {
+    style: await appWindow.titleBarStyle(),
+    css: readCss(),
+    sync: titleBarMetrics(),
+  };
+
+  // A taller bar than the platform's, and back.
+  await appWindow.setTitleBarStyle("hidden");
+  const nativeHeight = titleBarMetrics().height;
+  results.tallMetrics = await appWindow.setTitleBarHeight(48);
+  results.tallCss = readCss();
+  results.tallSync = titleBarMetrics();
+  // Moving them by hand, and putting them back.
+  results.movedLights = await appWindow.setTrafficLightPosition(12, 14);
+  results.centredLights = await appWindow.centerTrafficLights();
+  results.backToNative = await appWindow.setTitleBarHeight(null);
+  results.nativeHeight = nativeHeight;
+  await appWindow.setTitleBarStyle("default");
+
+  results.mainTitleBar = titleBarMetrics();
+  results.mainTitleBarCss = getComputedStyle(document.documentElement)
+    .getPropertyValue("--vantail-titlebar-height")
+    .trim();
+
+  // --- a window with no title bar ---
+  try {
+    const bare = await createWindow("bare", {
+      url: "second.html",
+      width: 420,
+      height: 320,
+      titleBarStyle: "hidden",
+      trafficLightPosition: { x: 16, y: 18 },
+      visible: false,
+    });
+    results.bareExists = await bare.exists();
+    results.bareSize = await bare.size();
+    // macOS keeps the traffic lights, so it can move them; nowhere else has
+    // any, and says so rather than pretending.
+    results.bareTrafficLights = await bare
+      .setTrafficLightPosition(12, 14)
+      .then(() => "moved")
+      .catch((error) => error.code);
+    await bare.close();
+    results.bareGone = await bare.exists();
+  } catch (error) {
+    results.bareFatal = String(error);
+  }
 
   // --- database ---
   try {

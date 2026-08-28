@@ -15,6 +15,10 @@ export default defineConfig({
     height: 700,
     minWidth: 560,
     minHeight: 420,
+    // This example draws its own title bar - see `src/TitleBar.tsx`. The
+    // height is left to the platform; the app can ask for a taller one at
+    // runtime, and the traffic lights follow.
+    titleBarStyle: "hidden",
   },
 
   // On macOS this is what makes Cmd-C, Cmd-V and Cmd-Z work at all - without

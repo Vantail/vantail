@@ -91,6 +91,23 @@ pub struct WindowConfig {
     pub fullscreen: bool,
     #[serde(default = "yes")]
     pub decorations: bool,
+    /// Whether the title bar is a bar, or space the application draws in.
+    #[serde(default)]
+    pub title_bar_style: TitleBarStyle,
+    /// Where to put the traffic lights when the title bar is hidden. macOS
+    /// only; ignored everywhere else.
+    ///
+    /// Rarely needed: `title_bar_height` already centres them.
+    #[serde(default)]
+    pub traffic_light_position: Option<Inset>,
+    /// How tall the bar the application draws should be.
+    ///
+    /// Defaults to the height of the platform's own, which is what makes a
+    /// custom bar look like a title bar rather than like a div. Set it larger
+    /// for a browser-style toolbar - the traffic lights are re-centred in it,
+    /// which is the part that is easy to get wrong by hand.
+    #[serde(default)]
+    pub title_bar_height: Option<f64>,
     #[serde(default)]
     pub transparent: bool,
     #[serde(default)]
@@ -102,6 +119,32 @@ pub struct WindowConfig {
     /// What the window's own close button does.
     #[serde(default)]
     pub close_behavior: CloseBehavior,
+}
+
+/// Whether the window has a title bar, or the application draws over it.
+///
+/// `Hidden` is the arrangement every editor and browser uses: no bar, the web
+/// content running all the way to the top edge, and a toolbar of the
+/// application's own where the bar would have been.
+///
+/// On macOS the traffic lights stay - they are the system's, and an
+/// application that drew its own would get them subtly wrong. Windows and
+/// Linux have no way to keep the buttons without the bar, so `Hidden` there
+/// is an undecorated window and the application draws its own controls.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TitleBarStyle {
+    #[default]
+    Default,
+    Hidden,
+}
+
+/// A position in logical pixels, for nudging the traffic lights.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Inset {
+    pub x: f64,
+    pub y: f64,
 }
 
 /// An application that lives in the tray has to survive its window closing.
