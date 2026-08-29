@@ -178,7 +178,7 @@ function registryServing(answer) {
  * fresh clone does not - so without this the test passes locally and tests
  * nothing on a runner.
  */
-function probeRun(registry) {
+function probeRun(registry, extraEnv = {}) {
   const home = mkdtempSync(join(tmpdir(), "vantail-npm-home-"));
   const packages = mkdtempSync(join(tmpdir(), "vantail-packages-"));
   mkdirSync(join(packages, "runtime-darwin-arm64"));
@@ -200,6 +200,7 @@ function probeRun(registry) {
     HOME: home,
     USERPROFILE: home,
     npm_config_userconfig: join(home, ".npmrc"),
+    ...extraEnv,
   });
 }
 
@@ -255,6 +256,38 @@ test("does not call a package missing when it could not ask", async () => {
     output,
     /do not exist on .* yet/,
     "a registry it could not reach was read as an empty one",
+  );
+});
+
+/**
+ * When it could not ask, it has to say something worth reading.
+ *
+ * That message is the whole diagnostic for a release that stopped without
+ * publishing, so it cannot be the first thing npm happened to print. npm
+ * writes warnings to stderr alongside errors, and pnpm sets an env var that
+ * makes npm lead with one - so this run once explained an unreachable registry
+ * by complaining about `verify-deps-before-run`, on Linux only, while Windows
+ * managed "no answer from npm" and macOS printed the truth.
+ */
+test("says why it could not ask, not whatever npm printed first", async () => {
+  const registry = await registryServing("everything");
+  await registry.close();
+
+  const { output } = await probeRun(registry.url, {
+    // Exactly what pnpm puts in the environment of anything it runs.
+    npm_config_verify_deps_before_run: "false",
+  });
+
+  assert.match(output, /Could not ask/);
+  assert.doesNotMatch(
+    output,
+    /- npm warn/,
+    "a warning was reported as the reason the registry could not be asked",
+  );
+  assert.match(
+    output,
+    /ECONNREFUSED/,
+    "the reason should be the failure npm actually hit",
   );
 });
 

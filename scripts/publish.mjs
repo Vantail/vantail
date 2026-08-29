@@ -98,9 +98,35 @@ function known(spec) {
   } catch (error) {
     const said = `${error.stderr ?? ""}`;
     if (/E404|404 Not Found/.test(said)) return false;
-    unanswered.set(spec, said.trim().split("\n")[0] || "no answer from npm");
+    unanswered.set(spec, whyItFailed(error));
     return null;
   }
+}
+
+/**
+ * The line of npm's output worth repeating, or a description of how it died.
+ *
+ * Not simply the first line. npm writes warnings to the same stream, and under
+ * pnpm the first of them is always `npm warn Unknown env config
+ * "verify-deps-before-run"` - so a release that stopped because it could not
+ * reach the registry explained itself by complaining about a config key, on
+ * Linux only, which is a fine way to spend an afternoon. Windows managed worse
+ * and said nothing at all, because there was no stderr to quote.
+ */
+function whyItFailed(error) {
+  const lines = `${error.stderr ?? ""}`
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("npm warn"));
+
+  const complaint = lines.find((line) => line.startsWith("npm error")) ?? lines[0];
+  if (complaint) return complaint;
+
+  // Nothing on stderr: say how it ended instead of saying nothing.
+  if (error.signal === "SIGTERM") return "npm did not answer in time";
+  if (error.signal) return `npm was killed by ${error.signal}`;
+  if (error.code === "ENOENT") return "npm is not on PATH";
+  return `npm exited with status ${error.status ?? "unknown"}`;
 }
 
 /** Specs the registry could not be asked about, and why. */
