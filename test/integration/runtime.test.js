@@ -506,29 +506,51 @@ describe(
       assert.ok(results.nativeHeight > 0);
       assert.notEqual(results.nativeHeight, 48);
 
-      // Asked for 48, reported as 48, everywhere the page can see it.
-      assert.equal(results.tallMetrics.height, 48);
-      assert.equal(results.tallCss, "48px");
-      assert.equal(results.tallSync.height, 48);
-      // The room for the window buttons is the platform's either way - a
-      // taller bar moves them, it does not make them wider.
-      assert.equal(results.tallMetrics.insetLeft, results.backToNative.insetLeft);
+      // Asking for more room than the plain bar has gets a taller bar.
+      assert.ok(
+        results.tallMetrics.height > results.nativeHeight,
+        `expected taller than ${results.nativeHeight}, got ${results.tallMetrics.height}`,
+      );
 
-      // `null` puts the platform's own height back.
+      if (process.platform === "darwin") {
+        // The height is the platform's, not the number asked for. macOS draws
+        // the window buttons and centres them in the bar it provides; saying
+        // 48 while they sit centred in 40 would line a toolbar up with
+        // nothing. It is also the only arrangement whose buttons stay put
+        // while the window is being resized.
+        assert.ok(
+          results.tallMetrics.height <= 48,
+          `the platform's taller bar should be no taller than the request, got ${results.tallMetrics.height}`,
+        );
+      } else {
+        // Nowhere else has system buttons in the bar, so the number asked for
+        // is the number - the application draws all of it.
+        assert.equal(results.tallMetrics.height, 48);
+      }
+
+      // Whatever that height came to, everywhere the page can read it agrees.
+      assert.equal(results.tallCss, `${results.tallMetrics.height}px`);
+      assert.equal(results.tallSync.height, results.tallMetrics.height);
+
+      // `null` puts the platform's own bar back, height and inset both - the
+      // taller bar starts its buttons a little further in, so this is not the
+      // same number as the tall one reported.
       assert.equal(results.backToNative.height, results.nativeHeight);
+      assert.equal(results.backToNative.insetLeft, results.nativeInsetLeft);
 
       // Placing the lights by hand and re-centring both answer with the
-      // metrics, and neither changes the height they are being placed in.
+      // metrics, and neither changes the bar they are being placed in.
+      const tall = results.tallMetrics.height;
       if (process.platform === "darwin") {
         assert.equal(results.movedLights.moved, true);
-        assert.equal(results.movedLights.height, 48);
+        assert.equal(results.movedLights.height, tall);
       } else {
         // Refused, and said why - rather than pretending it moved something
         // that is not there.
         assert.equal(results.movedLights.moved, false);
         assert.equal(results.movedLights.code, "UNSUPPORTED");
       }
-      assert.equal(results.centredLights.height, 48);
+      assert.equal(results.centredLights.height, tall);
     });
 
     it("reports no title bar to reserve when there is a title bar", () => {
@@ -1123,6 +1145,7 @@ try {
   // A taller bar than the platform's, and back.
   await appWindow.setTitleBarStyle("hidden");
   const nativeHeight = titleBarMetrics().height;
+  const nativeInsetLeft = titleBarMetrics().insetLeft;
   results.tallMetrics = await appWindow.setTitleBarHeight(48);
   results.tallCss = readCss();
   results.tallSync = titleBarMetrics();
@@ -1140,6 +1163,7 @@ try {
   results.centredLights = await appWindow.centerTrafficLights();
   results.backToNative = await appWindow.setTitleBarHeight(null);
   results.nativeHeight = nativeHeight;
+  results.nativeInsetLeft = nativeInsetLeft;
   await appWindow.setTitleBarStyle("default");
 
   results.mainTitleBar = titleBarMetrics();

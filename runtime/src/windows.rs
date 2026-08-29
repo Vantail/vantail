@@ -56,8 +56,16 @@ pub struct WindowEntry {
     /// Whether the platform's own window buttons are hidden, so the
     /// application can draw its own.
     pub buttons_hidden: bool,
-    /// What the platform's title bar measured before anything moved.
+    /// What the title bar in force measures, before anything moved. Re-taken
+    /// when the bar changes shape, because a taller one puts the window
+    /// buttons somewhere else.
     pub native_title_bar: titlebar::Native,
+    /// What the platform's ordinary bar measures, kept as the reference for
+    /// "is this request for more room than the plain bar has". Reading it off
+    /// `native_title_bar` would not do: once the taller bar is in force that
+    /// is 40, and a request for 30 would turn it off, which would make it 28,
+    /// which would turn it back on.
+    pub native_short: titlebar::Native,
     // Only the platforms that toggle the frame need this; macOS switches the
     // title bar without touching the decorations at all.
     #[cfg_attr(target_os = "macos", allow(dead_code))]
@@ -171,8 +179,25 @@ impl WindowEntry {
         );
     }
 
+    /// Put the platform's bar into the shape the request asks for.
+    ///
+    /// A height greater than the ordinary bar's is a request macOS can answer
+    /// itself, and its answer is worth having: it centres the window buttons
+    /// in the taller bar and keeps them there while the window is resized,
+    /// which moving them cannot do. The measurement is retaken because the
+    /// buttons are somewhere else afterwards.
+    fn refit(&mut self) {
+        let tall = self.title_bar_style == TitleBarStyle::Hidden
+            && self
+                .title_bar_height
+                .is_some_and(|height| height > self.native_short.height);
+        titlebar::set_tall(&self.window, tall);
+        self.native_title_bar = titlebar::native(&self.window);
+    }
+
     /// Measure again and tell the page, after anything that changes the sums.
     fn remeasure(&mut self) -> titlebar::Metrics {
+        self.refit();
         let mut metrics = match self.title_bar_style {
             TitleBarStyle::Hidden => titlebar::measure_with(
                 &self.window,
@@ -311,6 +336,16 @@ impl WindowManager {
         // and only when the application is the one drawing up there.
         // Measured before anything is moved, and kept: the numbers come off
         // the window buttons themselves.
+        // Measured before the taller bar is asked for, so it stays the
+        // reference for what "taller" means.
+        let native_short = titlebar::native(&window);
+        titlebar::set_tall(
+            &window,
+            config.title_bar_style == TitleBarStyle::Hidden
+                && config
+                    .title_bar_height
+                    .is_some_and(|height| height > native_short.height),
+        );
         let native = titlebar::native(&window);
         let buttons_hidden = config.title_bar_buttons == TitleBarButtons::Hidden;
         let title_bar = match config.title_bar_style {
@@ -343,6 +378,7 @@ impl WindowManager {
             traffic_lights: config.traffic_light_position.map(|i| (i.x, i.y)),
             buttons_hidden: config.title_bar_buttons == TitleBarButtons::Hidden,
             native_title_bar: native,
+            native_short,
             decorations: config.decorations,
             focused: false,
             size,

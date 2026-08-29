@@ -1,6 +1,6 @@
 {
   "name": "@vantail/vite",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Vite plugin for Vantail applications.",
   "license": "MIT",
   "repository": {

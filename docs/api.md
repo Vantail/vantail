@@ -148,11 +148,29 @@ await appWindow.setTitleBarHeight(48);   // taller
 await appWindow.setTitleBarHeight(null); // the platform's own again
 ```
 
-The traffic lights are re-centred in whatever height you ask for. That is the
-part that is easy to get wrong by hand and obvious the moment it is wrong -
-lights sitting high in a tall toolbar is the tell of an app that hardcoded
-their position. `insetLeft` does not change: a taller bar moves the buttons,
-it does not make them wider.
+On macOS this asks the platform for its taller title bar, and **the height you
+get back is the platform's rather than the one you asked for** - ask for 48 and
+`titleBarMetrics().height` says 40. That is not a rounding error, it is the
+whole point: macOS draws the window buttons and centres them in the bar it
+provides, and it keeps them centred while the window is resized. Size your
+toolbar from the reported number - the CSS variable already is - and the lights
+line up with it, always.
+
+The alternative is to make the bar whatever height you like and move the
+buttons into it by hand, which is what this used to do. It cannot be made to
+work: AppKit lays the title bar out and draws it *before* the resize reaches
+the application, so the correction is always a frame late and the lights sit at
+the platform's position for the whole of a corner drag. There is no earlier
+hook - a frame set from inside the layout is discarded, and moving the buttons
+into a view of your own does not help, because AppKit finds them through
+`standardWindowButton:` rather than by looking at its own subviews. All three
+were measured before settling on the platform's own bar.
+
+Everywhere else there are no system buttons in the bar and the application
+draws all of it, so the number you ask for is the number you get.
+
+`insetLeft` does change with the taller bar: macOS starts its buttons a little
+further in there, and the reported inset says so.
 
 Their **size** is not yours to set either - macOS draws them at a fixed 12
 points whatever the bar is. If you want bigger ones, take the platform's away
@@ -188,12 +206,12 @@ them while the window is focused and grey them when it is not, which
 the middle, and `appWindow.centerTrafficLights()` puts them back - but with
 `titleBarHeight` you rarely want either.
 
-Centring is exact until the room runs out. The container AppKit keeps the
-buttons in is only as tall as the platform's own bar and cannot be grown -
-resizing it makes the lights vanish, and letting them past its bottom edge
-draws them where AppKit will not hit-test - so past roughly 46px the lights
-stop descending and sit slightly above centre. Live and a little high beats
-centred and dead.
+An explicit position has a ceiling. The container AppKit keeps the buttons in
+is only as tall as the bar in force - 28pt ordinarily, 40pt with the taller one
+- and cannot be grown by hand: resizing it makes the lights vanish, and letting
+them past its bottom edge draws them where AppKit will not hit-test. So a `y`
+larger than the container has room for stops there rather than descending
+further. Live and a little high beats centred and dead.
 
 The lights are moved by setting their frames rather than through tao's
 `set_traffic_light_inset`. That call resizes the title bar container and lets
@@ -209,6 +227,21 @@ so a moved set of lights would snap home the moment you dragged a corner. The
 placement is worked out from where the platform originally put each button
 rather than from where it sits now, so running it on every frame of a drag
 lands them in the same place as running it once.
+
+**A `trafficLightPosition` of your own is not held during a live resize**, for
+the reason given under `titleBarHeight` above: the correction lands a frame
+after AppKit has drawn. Leave it unset and the lights stay exactly where the
+platform centres them, through the drag and after it. Set it and they sit at
+the platform's position while a corner is being dragged, and move to yours when
+the mouse comes up.
+
+So there are two arrangements that hold still, and one that does not:
+
+| | during a drag |
+|---|---|
+| `titleBarHeight`, no explicit position | stays put - macOS centres them |
+| `titleBarButtons: "hidden"`, your own controls | stays put - nothing system-drawn is involved |
+| `trafficLightPosition` set | sits at the platform's position until the mouse comes up |
 
 ### Switching at runtime
 

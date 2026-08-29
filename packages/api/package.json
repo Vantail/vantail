@@ -1,6 +1,6 @@
 {
   "name": "@vantail/api",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "The Vantail JavaScript SDK: native APIs for your application.",
   "license": "MIT",
   "repository": {
