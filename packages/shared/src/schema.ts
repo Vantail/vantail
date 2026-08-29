@@ -58,6 +58,7 @@ export const windowSchema = z
     decorations: z.boolean().optional(),
     titleBarStyle: z.enum(["default", "hidden"]).optional(),
     titleBarHeight: z.number().positive().optional(),
+    titleBarButtons: z.enum(["system", "hidden"]).optional(),
     trafficLightPosition: z
       .object({ x: z.number(), y: z.number() })
       .strict()

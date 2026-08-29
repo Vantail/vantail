@@ -207,6 +207,9 @@ pre.nowrap {
      a fraction of it, so asking for a taller bar scales the controls with it
      rather than leaving them adrift in the middle of too much space. */
   --tb-control: calc(var(--tb-height) * 0.69);
+  /* The window buttons this app draws. macOS's own are a fixed 12px whatever
+     the bar is; these follow the bar, and one number changes them. */
+  --tb-dot: calc(var(--tb-height) * 0.375);
   --tb-icon: calc(var(--tb-height) * 0.4);
   --tb-gap: calc(var(--tb-height) * 0.25);
   --tb-radius: calc(var(--tb-height) * 0.19);
@@ -228,30 +231,37 @@ pre.nowrap {
   display: flex;
   align-items: center;
   gap: calc(var(--tb-height) * 0.25);
+  /* The bar's own leading padding is `insetLeft`, which is zero once nothing
+     is reserved - so these have to bring their own. */
+  padding-left: calc(var(--tb-height) * 0.28);
   padding-right: calc(var(--tb-height) * 0.44);
 }
 
 .titlebar-dots .dot {
-  width: calc(var(--tb-height) * 0.375);
-  height: calc(var(--tb-height) * 0.375);
+  width: var(--tb-dot);
+  height: var(--tb-dot);
   padding: 0;
   border: 0;
   border-radius: 50%;
   cursor: default;
-  background: var(--line);
 }
 
-.titlebar:hover .dot.close,
-.titlebar .dot.close:focus-visible {
+/* Coloured while the window is in front, which is what macOS does and what
+   people read as "these are the window buttons". */
+.titlebar .dot.close {
   background: #ff5f57;
 }
-.titlebar:hover .dot.minimise,
-.titlebar .dot.minimise:focus-visible {
+.titlebar .dot.minimise {
   background: #febc2e;
 }
-.titlebar:hover .dot.zoom,
-.titlebar .dot.zoom:focus-visible {
+.titlebar .dot.zoom {
   background: #28c840;
+}
+
+/* And grey behind, the same as the system's. Coloured dots on a background
+   window are the tell of a title bar that is only a picture of one. */
+.titlebar.unfocused .dot {
+  background: var(--line);
 }
 
 .titlebar-history {

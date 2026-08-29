@@ -154,6 +154,36 @@ lights sitting high in a tall toolbar is the tell of an app that hardcoded
 their position. `insetLeft` does not change: a taller bar moves the buttons,
 it does not make them wider.
 
+Their **size** is not yours to set either - macOS draws them at a fixed 12
+points whatever the bar is. If you want bigger ones, take the platform's away
+and draw your own:
+
+```ts
+window: { titleBarStyle: "hidden", titleBarButtons: "hidden" }
+```
+
+```ts
+await appWindow.setTitleBarButtons("hidden");  // yours
+await appWindow.setTitleBarButtons("system");  // the platform's back
+```
+
+With them hidden, `insetLeft` is `0` - the same signal Windows and Linux
+already give - so code that draws its own controls when nothing is reserved
+needs no new branch, and one stylesheet covers all three platforms. You then
+own the size, the colour and the hover behaviour, and you own getting them
+right.
+
+Their **colour** is not yours to set. macOS draws them red, amber and green
+when the window is in front and grey when it is not - and grey in front too if
+the user has picked Graphite under Appearance, which is a common reason for
+"my traffic lights are the wrong colour". There is no API for it because it is
+the user's choice, not the application's.
+
+Your own controls, on the platforms that have none, are ordinary elements and
+ordinary CSS. Worth copying the one behaviour that reads as native: colour
+them while the window is focused and grey them when it is not, which
+`appWindow.onFocusChanged` tells you.
+
 `trafficLightPosition` is still there for placing them somewhere other than
 the middle, and `appWindow.centerTrafficLights()` puts them back - but with
 `titleBarHeight` you rarely want either.
@@ -172,6 +202,13 @@ stick: read the container back and it measures 32 again, so the lights never
 move vertically however the inset is calculated. It is worth knowing if you
 are reading the runtime and wondering why the obvious API is not the one being
 used.
+
+The frames are also put back on every resize. AppKit re-lays the title bar out
+when the window changes size and returns the buttons to where it wants them,
+so a moved set of lights would snap home the moment you dragged a corner. The
+placement is worked out from where the platform originally put each button
+rather than from where it sits now, so running it on every frame of a drag
+lands them in the same place as running it once.
 
 ### Switching at runtime
 

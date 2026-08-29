@@ -108,6 +108,7 @@ export {
   type CloseBehavior,
   type Position,
   type Size,
+  type TitleBarButtons,
   type TitleBarStyle,
   type WindowHandle,
   type WindowOptions,

@@ -12,6 +12,7 @@ import {
 import {
   appWindow,
   titleBarMetrics,
+  type TitleBarButtons,
   type TitleBarMetrics,
   type TitleBarStyle,
 } from "@vantail/api";
@@ -46,11 +47,18 @@ export function useTitleBar() {
     setMetrics(await appWindow.setTitleBarHeight(height));
   }, []);
 
+  const setButtons = useCallback(async (buttons: TitleBarButtons) => {
+    setMetrics(await appWindow.setTitleBarButtons(buttons));
+  }, []);
+
   return {
     metrics,
     style,
     setStyle,
     setHeight,
+    setButtons,
+    /** Whether this application is drawing the window buttons. */
+    ownButtons: metrics.insetLeft === 0,
     /** Whether this window is the one drawing its title bar. */
     custom: style === "hidden",
   };
@@ -106,9 +114,16 @@ export function TitleBar({
   // than the platform's name: it stays right if a platform changes its mind.
   const ownControls = metrics.insetLeft === 0;
 
+  // macOS greys its traffic lights when the window is not in front, and an
+  // application drawing its own should do the same - coloured dots on a
+  // background window are the tell of a title bar that is only a picture of
+  // one.
+  const [focused, setFocused] = useState(true);
+  useEffect(() => appWindow.onFocusChanged((state) => setFocused(state.focused)), []);
+
   return (
     <div
-      className="titlebar"
+      className={focused ? "titlebar" : "titlebar unfocused"}
       onPointerDown={drag}
       onDoubleClick={maximise}
       style={

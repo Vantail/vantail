@@ -63,6 +63,19 @@ export interface WindowConfig {
    * part that is easy to get wrong by hand, and obvious the moment it is.
    */
   titleBarHeight?: number;
+  /**
+   * Whether the platform draws the window buttons, or you do.
+   *
+   * macOS keeps its traffic lights when the title bar is hidden, and they are
+   * a fixed size. `hidden` takes them away so you can draw your own - bigger,
+   * or in your own style - the way you already have to on the platforms that
+   * keep nothing.
+   *
+   * With them hidden, `insetLeft` is `0`: the same signal those platforms
+   * already give, so code that draws its own controls when nothing is
+   * reserved needs no new branch.
+   */
+  titleBarButtons?: TitleBarButtons;
   transparent?: boolean;
   alwaysOnTop?: boolean;
   /** Centre on the current monitor unless `x`/`y` are given. Default `true`. */
@@ -91,6 +104,9 @@ export interface WindowConfig {
  * page run to the top edge of the window.
  */
 export type TitleBarStyle = "default" | "hidden";
+
+/** Who draws close, minimise and zoom. */
+export type TitleBarButtons = "system" | "hidden";
 
 export type PathScope =
   boolean | string[] | { allow?: string[]; deny?: string[] };

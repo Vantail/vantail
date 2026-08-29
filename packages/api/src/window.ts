@@ -69,6 +69,19 @@ export interface WindowOptions {
    * part that is easy to get wrong by hand, and obvious the moment it is.
    */
   titleBarHeight?: number;
+  /**
+   * Whether the platform draws the window buttons, or you do.
+   *
+   * macOS keeps its traffic lights when the title bar is hidden, and they are
+   * a fixed size. `hidden` takes them away so you can draw your own - bigger,
+   * or in your own style - the way you already have to on the platforms that
+   * keep nothing.
+   *
+   * With them hidden, `insetLeft` is `0`: the same signal those platforms
+   * already give, so code that draws its own controls when nothing is
+   * reserved needs no new branch.
+   */
+  titleBarButtons?: TitleBarButtons;
   transparent?: boolean;
   alwaysOnTop?: boolean;
   center?: boolean;
@@ -97,6 +110,9 @@ export type CloseBehavior = "close" | "hide" | "ask";
  * page run to the top edge of the window - see `titleBarStyle`.
  */
 export type TitleBarStyle = "default" | "hidden";
+
+/** Who draws close, minimise and zoom. */
+export type TitleBarButtons = "system" | "hidden";
 
 /**
  * The room a hidden title bar left behind, without awaiting.
@@ -212,6 +228,20 @@ export interface WindowHandle {
 
   /** Which one this window is using now. */
   titleBarStyle(): Promise<TitleBarStyle>;
+
+  /**
+   * Hand the window buttons to your application, or take them back.
+   *
+   * ```ts
+   * await appWindow.setTitleBarButtons("hidden"); // draw your own
+   * ```
+   *
+   * Answers with the metrics, whose `insetLeft` is then `0`.
+   */
+  setTitleBarButtons(buttons: TitleBarButtons): Promise<TitleBarMetrics>;
+
+  /** Which of the two this window is using. */
+  titleBarButtons(): Promise<TitleBarButtons>;
 
   /**
    * Ask for a bar of a particular height; `null` for the platform's own.
@@ -331,6 +361,9 @@ function handle(label?: string): WindowHandle {
     setTitleBarStyle: (style) =>
       call<TitleBarMetrics>("window.setTitleBarStyle", { style }),
     titleBarStyle: () => call<TitleBarStyle>("window.titleBarStyle"),
+    setTitleBarButtons: (buttons) =>
+      call<TitleBarMetrics>("window.setTitleBarButtons", { buttons }),
+    titleBarButtons: () => call<TitleBarButtons>("window.titleBarButtons"),
     setTitleBarHeight: (height) =>
       call<TitleBarMetrics>("window.setTitleBarHeight", { height }),
 

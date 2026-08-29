@@ -339,6 +339,11 @@ fn run() -> Result<(), String> {
                         };
                         entry.size = size.to_logical::<f64>(entry.window.scale_factor());
                         let size = entry.size;
+                        // A resize puts the traffic lights back where the
+                        // platform wants them, so a window that moved them has
+                        // to move them again - on every frame of the drag, or
+                        // they visibly snap home while the user holds on.
+                        entry.reapply_title_bar();
                         windows.deliver(
                             Some(&label),
                             &Outgoing::Event(IpcEvent::new(

@@ -17,7 +17,7 @@ use wry::{WebView, WebViewBuilder};
 use std::sync::Arc;
 
 use crate::chrome::titlebar;
-use crate::config::{CloseBehavior, TitleBarStyle, WindowConfig};
+use crate::config::{CloseBehavior, TitleBarButtons, TitleBarStyle, WindowConfig};
 use crate::error::ApiError;
 use crate::ipc::{Outgoing, Request, UserEvent};
 use crate::state::Runtime;
@@ -53,6 +53,9 @@ pub struct WindowEntry {
     pub title_bar_height: Option<f64>,
     /// An explicit traffic light position, if the application set one.
     pub traffic_lights: Option<(f64, f64)>,
+    /// Whether the platform's own window buttons are hidden, so the
+    /// application can draw its own.
+    pub buttons_hidden: bool,
     /// What the platform's title bar measured before anything moved.
     pub native_title_bar: titlebar::Native,
     // Only the platforms that toggle the frame need this; macOS switches the
@@ -131,15 +134,46 @@ impl WindowEntry {
         self.remeasure()
     }
 
+    /// Hand the window buttons over to the application, or take them back.
+    ///
+    /// Hiding them zeroes `insetLeft`, which is the same signal the platforms
+    /// without any already give - so a page that draws its own controls when
+    /// nothing is reserved needs no new branch for this.
+    pub fn set_buttons_hidden(&mut self, hidden: bool) -> titlebar::Metrics {
+        self.buttons_hidden = hidden;
+        titlebar::set_buttons_hidden(&self.window, hidden);
+        self.remeasure()
+    }
+
     /// Place the traffic lights by hand, instead of centring them.
     pub fn set_traffic_lights(&mut self, position: Option<(f64, f64)>) -> titlebar::Metrics {
         self.traffic_lights = position;
         self.remeasure()
     }
 
+    /// Put the window buttons back where they were asked to be.
+    ///
+    /// AppKit re-lays the title bar out whenever the window resizes, which
+    /// undoes any frame that was set - so a window whose lights were moved
+    /// loses them the moment the user drags a corner, and gets them back only
+    /// on the next call that happened to remeasure. Nothing about the metrics
+    /// changes with the width, so this places them again and leaves the page
+    /// alone.
+    pub fn reapply_title_bar(&self) {
+        if self.title_bar_style != TitleBarStyle::Hidden {
+            return;
+        }
+        titlebar::place(
+            &self.window,
+            self.native_title_bar,
+            self.title_bar_height,
+            self.traffic_lights,
+        );
+    }
+
     /// Measure again and tell the page, after anything that changes the sums.
     fn remeasure(&mut self) -> titlebar::Metrics {
-        let metrics = match self.title_bar_style {
+        let mut metrics = match self.title_bar_style {
             TitleBarStyle::Hidden => titlebar::measure_with(
                 &self.window,
                 self.native_title_bar,
@@ -148,6 +182,10 @@ impl WindowEntry {
             ),
             TitleBarStyle::Default => titlebar::Metrics::none(),
         };
+        // Nothing is drawn there any more, so nothing has to be left clear.
+        if self.buttons_hidden {
+            metrics.inset_left = 0.0;
+        }
         self.publish_title_bar(metrics);
         metrics
     }
@@ -274,6 +312,7 @@ impl WindowManager {
         // Measured before anything is moved, and kept: the numbers come off
         // the window buttons themselves.
         let native = titlebar::native(&window);
+        let buttons_hidden = config.title_bar_buttons == TitleBarButtons::Hidden;
         let title_bar = match config.title_bar_style {
             TitleBarStyle::Hidden => titlebar::measure_with(
                 &window,
@@ -282,6 +321,14 @@ impl WindowManager {
                 config.traffic_light_position.map(|i| (i.x, i.y)),
             ),
             TitleBarStyle::Default => titlebar::Metrics::none(),
+        };
+        let title_bar = if buttons_hidden {
+            titlebar::Metrics {
+                inset_left: 0.0,
+                ..title_bar
+            }
+        } else {
+            title_bar
         };
         let webview = build_webview(rt, &window, proxy, label, url, title_bar)?;
         let size = window.inner_size().to_logical::<f64>(window.scale_factor());
@@ -294,6 +341,7 @@ impl WindowManager {
             title_bar_style: config.title_bar_style,
             title_bar_height: config.title_bar_height,
             traffic_lights: config.traffic_light_position.map(|i| (i.x, i.y)),
+            buttons_hidden: config.title_bar_buttons == TitleBarButtons::Hidden,
             native_title_bar: native,
             decorations: config.decorations,
             focused: false,
@@ -379,6 +427,7 @@ fn build_window(
         // the content view runs the full height of the window, the bar itself
         // is transparent, and the title text is gone.
         builder = builder
+            .with_titlebar_buttons_hidden(config.title_bar_buttons == TitleBarButtons::Hidden)
             .with_fullsize_content_view(true)
             .with_titlebar_transparent(true)
             .with_title_hidden(true);

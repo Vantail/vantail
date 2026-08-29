@@ -50,6 +50,11 @@ struct Style {
 }
 
 #[derive(Deserialize)]
+struct Buttons {
+    buttons: crate::config::TitleBarButtons,
+}
+
+#[derive(Deserialize)]
 struct Height {
     /// `None` means the platform's own.
     #[serde(default)]
@@ -345,6 +350,23 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
             let entry = ctx.windows.require_mut(&label)?;
             Ok(json!(entry.set_traffic_lights(Some((x, y)))))
         }
+
+        // Hand the window buttons to the application, or take them back.
+        // Answers with the metrics, whose `insetLeft` is then zero - the same
+        // signal the platforms without any already give.
+        "window.setTitleBarButtons" => {
+            let Buttons { buttons } = Request::params(method, params)?;
+            let label = entry.label.clone();
+            let entry = ctx.windows.require_mut(&label)?;
+            Ok(json!(entry.set_buttons_hidden(
+                buttons == crate::config::TitleBarButtons::Hidden
+            )))
+        }
+        "window.titleBarButtons" => Ok(json!(if entry.buttons_hidden {
+            "hidden"
+        } else {
+            "system"
+        })),
 
         // Back to the middle of the bar, which is where they belong unless
         // an application has a reason otherwise.

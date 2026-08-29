@@ -100,6 +100,14 @@ pub struct WindowConfig {
     /// Rarely needed: `title_bar_height` already centres them.
     #[serde(default)]
     pub traffic_light_position: Option<Inset>,
+    /// Whether the platform draws the window buttons, or the application does.
+    ///
+    /// macOS keeps its traffic lights when the title bar is hidden, and they
+    /// are a fixed size. `hidden` takes them away so an application can draw
+    /// its own - bigger, or in its own style - the way it already has to on
+    /// the platforms that keep nothing.
+    #[serde(default)]
+    pub title_bar_buttons: TitleBarButtons,
     /// How tall the bar the application draws should be.
     ///
     /// Defaults to the height of the platform's own, which is what makes a
@@ -136,6 +144,19 @@ pub struct WindowConfig {
 pub enum TitleBarStyle {
     #[default]
     Default,
+    Hidden,
+}
+
+/// Who draws close, minimise and zoom.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TitleBarButtons {
+    /// The platform's own, where it has any. macOS does; nowhere else does
+    /// once the title bar is hidden.
+    #[default]
+    System,
+    /// None: the application draws them, and `insetLeft` is zero so it knows
+    /// to.
     Hidden,
 }
 

@@ -351,6 +351,15 @@ export function App() {
               {titleBar.metrics.height > 40 ? "Native height" : "Taller bar"}
             </button>
           )}
+          {titleBar.custom && (
+            <button
+              onClick={() =>
+                void titleBar.setButtons(titleBar.ownButtons ? "system" : "hidden")
+              }
+            >
+              {titleBar.ownButtons ? "System buttons" : "Own buttons"}
+            </button>
+          )}
           <button onClick={() => void appWindow.minimize()}>Minimise</button>
           <button onClick={() => void appWindow.toggleMaximize()}>
             Maximise

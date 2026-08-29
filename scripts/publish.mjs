@@ -39,19 +39,38 @@ function flag(name, fallback) {
 
 const platformPackages = resolve(flag("packages", "dist-packages"));
 
-/** Whether the registry can answer for this spec. */
-function known(spec) {
-  const args = ["view", spec, "version"];
+/**
+ * How long to wait on the registry before giving up on a question.
+ *
+ * npm's own default is to retry with backoff for minutes, which is right for
+ * a publish and wrong for a question. Everything below is a question asked
+ * before anything is sent, and a registry that is not answering should stop
+ * the run rather than hang it - point these at a host that does not resolve
+ * and without a bound they never come back at all.
+ */
+const PROBE = {
+  encoding: "utf8",
+  stdio: ["ignore", "pipe", "ignore"],
+  timeout: 20_000,
+};
+
+/** Ask npm once rather than waiting out its retry schedule. */
+const NO_RETRIES = ["--fetch-retries", "0", "--fetch-retry-maxtimeout", "5000"];
+
+/** The registry and credential flags every probe passes through. */
+function probeFlags() {
+  const args = [...NO_RETRIES];
   const registry = flag("registry");
   if (registry) args.push("--registry", registry);
   const userconfig = flag("userconfig");
   if (userconfig) args.push("--userconfig", userconfig);
+  return args;
+}
 
+/** Whether the registry can answer for this spec. */
+function known(spec) {
   try {
-    const out = execFileSync("npm", args, {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
+    const out = execFileSync("npm", ["view", spec, "version", ...probeFlags()], PROBE);
     return out.trim().length > 0;
   } catch {
     return false;
@@ -220,10 +239,11 @@ const PUBLISH = [
  */
 function isAuthenticated() {
   try {
-    const who = execFileSync("npm", ["whoami", "--registry", registry, ...AUTH], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
+    const who = execFileSync(
+      "npm",
+      ["whoami", "--registry", registry, ...NO_RETRIES, ...AUTH],
+      PROBE,
+    );
     return who.trim().length > 0;
   } catch {
     return false;

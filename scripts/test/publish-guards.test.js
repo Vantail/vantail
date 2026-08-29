@@ -17,23 +17,42 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const script = join(repoRoot, "scripts", "publish.mjs");
 
 /**
+ * How long a rehearsal may take before it counts as stuck.
+ *
+ * Generous: the slowest of these asks a real registry several questions.
+ */
+const DEADLINE = 90_000;
+
+/**
  * Always a dry run: this must never be able to send anything.
  *
  * A trailing object is extra environment, for the cases where behaviour
  * depends on it rather than on the arguments.
+ *
+ * Killed if it outstays the deadline, which is the only way a hang here can
+ * become a test failure. `node --test`'s own timeout does not help: it gives
+ * up on the test but not on the child, so the run stays alive holding a
+ * process that is waiting on a registry that will never answer. That is how
+ * this file once turned a seven-second suite into a job CI had to time out.
  */
 function publish(...args) {
   const extraEnv = typeof args.at(-1) === "object" ? args.pop() : {};
 
   return new Promise((resolve) => {
-    execFile(
+    const child = execFile(
       process.execPath,
       [script, "--dry-run", ...args],
       { cwd: repoRoot, env: { ...process.env, ...extraEnv } },
       (error, stdout, stderr) => {
-        resolve({ code: error?.code ?? 0, output: `${stdout}${stderr}` });
+        clearTimeout(overdue);
+        resolve({
+          code: error?.code ?? 0,
+          output: `${stdout}${stderr}`,
+          killed: error?.signal === "SIGKILL",
+        });
       },
     );
+    const overdue = setTimeout(() => child.kill("SIGKILL"), DEADLINE);
   });
 }
 
@@ -77,10 +96,16 @@ test("the flag is what lets a release reach npmjs", async () => {
 });
 
 test("gets past the registry check for a private one", async () => {
-  const { output } = await publish(
+  // `.test` is reserved and resolves nowhere, so every question this script
+  // asks the registry before sending anything goes unanswered. It has to give
+  // up rather than wait: npm retries with backoff by default, so a probe with
+  // no bound on it never comes back at all.
+  const { output, killed } = await publish(
     "--registry",
     "https://registry.example.test",
   );
+
+  assert.ok(!killed, `an unreachable registry hung for ${DEADLINE}ms`);
   // It stops later, on there being no built platform packages - which is proof
   // it accepted the registry and moved on.
   assert.doesNotMatch(output, /Refusing to publish/);
