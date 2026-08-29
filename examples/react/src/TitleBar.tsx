@@ -26,11 +26,30 @@ import {
  * Everything after that is a state update, which is what makes it React's
  * problem rather than the DOM's.
  */
+/**
+ * How tall this application draws its title bar.
+ *
+ * A plain number, because that is all it takes. With `titleBarStyle: "hidden"`
+ * the page runs to the top edge of the window, so a bar is however many pixels
+ * the design says - no platform involved, and the same on all three of them.
+ *
+ * `titleBarMetrics().height` is a different question: how tall the *platform's*
+ * bar is, which matters for reserving room and not for this.
+ */
+export const BAR_HEIGHT = 44;
+
 export function useTitleBar() {
   // Read synchronously for the initial state: `titleBarMetrics()` comes off
   // the injected bridge, so there is nothing to await.
   const [metrics, setMetrics] = useState<TitleBarMetrics>(
-    () => titleBarMetrics() ?? { height: 0, insetLeft: 0, insetRight: 0 },
+    () =>
+      titleBarMetrics() ?? {
+        height: 0,
+        insetLeft: 0,
+        insetRight: 0,
+        buttonTop: 0,
+        buttonHeight: 0,
+      },
   );
   const [style, setStyleState] = useState<TitleBarStyle>("default");
 
@@ -114,6 +133,18 @@ export function TitleBar({
   // than the platform's name: it stays right if a platform changes its mind.
   const ownControls = metrics.insetLeft === 0;
 
+  // The bar this application draws, which is its own decision - see
+  // `BAR_HEIGHT`. At least as tall as the room the platform reserved, or the
+  // window buttons would hang off the bottom of it.
+  //
+  // The controls inside are centred in it, and the system's window buttons are
+  // not: macOS puts those near the top, so in a bar much taller than its own
+  // they sit a little above everything else. `titleBarMetrics()` reports
+  // `buttonTop` and `buttonHeight` for applications that would rather line a
+  // row up with them than with the middle - a two-row bar usually wants that,
+  // and a one-row bar this close to the platform's own height does not.
+  const barHeight = Math.max(BAR_HEIGHT, metrics.height);
+
   // macOS greys its traffic lights when the window is not in front, and an
   // application drawing its own should do the same - coloured dots on a
   // background window are the tell of a title bar that is only a picture of
@@ -128,13 +159,13 @@ export function TitleBar({
       onDoubleClick={maximise}
       style={
         {
-          height: metrics.height,
+          height: barHeight,
           paddingLeft: metrics.insetLeft,
           paddingRight: metrics.insetRight,
-          // Everything inside is sized off this, so asking for a taller bar
-          // scales the controls with it instead of leaving them adrift in the
-          // middle of too much space.
-          "--tb-height": `${metrics.height}px`,
+          // Everything inside is sized off this, so a taller bar scales the
+          // controls with it instead of leaving them adrift in the middle of
+          // too much space.
+          "--tb-height": `${barHeight}px`,
         } as React.CSSProperties
       }
     >

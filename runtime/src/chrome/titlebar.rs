@@ -25,6 +25,20 @@ pub struct Metrics {
     /// The same on the trailing edge. Zero on macOS, where the lights are
     /// always on the left.
     pub inset_right: f64,
+    /// The gap above the system's window buttons.
+    ///
+    /// What a bar taller than the buttons needs in order to line anything up
+    /// with them. `insetLeft` says how much room they take across; this says
+    /// where they sit down the bar, which is not something an application can
+    /// work out: the platform does not always centre them, and only it knows
+    /// where it put them.
+    ///
+    /// Zero, with `button_height`, where there are no system buttons - hidden,
+    /// or a platform that loses them with the title bar - which is the same
+    /// signal `inset_left` gives.
+    pub button_top: f64,
+    /// How tall those buttons are.
+    pub button_height: f64,
 }
 
 impl Metrics {
@@ -35,116 +49,87 @@ impl Metrics {
             height: 0.0,
             inset_left: 0.0,
             inset_right: 0.0,
+            button_top: 0.0,
+            button_height: 0.0,
         }
     }
 }
 
 /// Where the window buttons should be: the answer to "where do they go",
 /// separate from the AppKit calls that put them there.
+/// Make the title bar `height` tall, and put the window buttons in it.
+///
+/// The trick is which view to resize. The buttons live in an `NSTitlebarView`
+/// inside an `NSTitlebarContainerView`, and it is the *container* whose frame
+/// is in the window's coordinates - so it is the one that can be grown and
+/// re-pinned to the top edge. Growing the inner view instead sets an origin
+/// against a parent barely thirty points tall, which puts it hundreds of
+/// points above the window and takes the buttons out of sight with it. That is
+/// what "resizing the container makes the lights vanish" turned out to be:
+/// they did not vanish, they left.
+///
+/// With the container the right size, the buttons go a margin up from its
+/// bottom edge, which is the same margin down from its top - so they land
+/// centred in whatever height was asked for, by arithmetic rather than by
+/// asking macOS to centre them.
+///
+/// AppKit undoes all of this on every relayout, so it has to be applied again
+/// after every resize - which is what `reapply_title_bar` is for. That is the
+/// same shape Electron's `WindowButtonsProxy` has, and the reason this is
+/// possible at all: the technique came from reading it.
 #[cfg(target_os = "macos")]
-#[derive(Debug, Clone, Copy)]
-struct Placement {
-    x: f64,
-    top: f64,
-    native: Native,
-}
-
-/// Where a button belongs in its container, given where the platform put it.
-#[cfg(target_os = "macos")]
-fn button_origin(
-    place: &Placement,
-    index: usize,
-    container_height: f64,
-    button_height: f64,
-) -> objc2_foundation::NSPoint {
-    objc2_foundation::NSPoint::new(
-        button_origin_x(&place.native, index, place.x),
-        // The container AppKit gives us is only as tall as the bar in force,
-        // and it cannot be grown by hand - resizing it makes the buttons
-        // vanish, and letting them past its bottom edge draws them somewhere
-        // AppKit will not hit-test. `set_tall` is the way to more room. So a
-        // gap larger than the container has room for stops rather than
-        // descending: live and slightly high beats centred and dead.
-        (container_height - place.top - button_height).max(0.0),
-    )
-}
-
-/// Where a button belongs across the bar, given where the platform put it.
-///
-/// Absolute rather than a nudge from wherever the button happens to be now.
-/// The placement has to be repeatable - AppKit undoes it on every resize, so
-/// it is applied again and again - and a relative shift applied twice moves
-/// the lights twice. Anchoring to the measured native positions means running
-/// it a hundred times during a drag lands them in the same place as running
-/// it once, while keeping the spacing the system chose between the three.
-#[cfg(target_os = "macos")]
-fn button_origin_x(native: &Native, index: usize, x: f64) -> f64 {
-    x + native.button_x[index] - native.button_x[0]
-}
-
-/// Put the traffic lights where `place` says, now.
-///
-/// Done by moving the buttons rather than through tao's
-/// `set_traffic_light_inset`. That resizes the title bar container and lets
-/// AppKit re-lay the buttons inside it, and on current macOS the resize does
-/// not stick: the container measures 32 again by the time anything reads it,
-/// so the lights never move vertically however the inset is calculated.
-/// Setting the frames is the part that holds.
-///
-/// The container is anchored to the top of the window, so `top` is a gap
-/// above the buttons - expressed here in its bottom-left coordinates.
-///
-/// It only holds between AppKit's own layouts, which is the limit of what
-/// moving these buttons can do. Three ways of doing better were measured and
-/// none of them works:
-///
-/// - Correcting from inside the layout, on the buttons'
-///   `NSViewFrameDidChangeNotification`. The notification arrives, but a
-///   frame set while AppKit is laying out is discarded - read it straight
-///   back and it is the platform's position again.
-/// - Moving the buttons into a view of our own, so they are no longer in the
-///   container AppKit lays out. The reparenting takes, and AppKit repositions
-///   them regardless: it finds them through `standardWindowButton:`, not by
-///   looking at its own subviews.
-/// - Letting the `Resized` event be the only correction. It is what happens
-///   now, and it is a frame late by construction: AppKit lays the title bar
-///   out and draws before the event loop hears about the resize.
-///
-/// So a moved set of lights sits at the platform's position for the duration
-/// of a live drag and returns when the mouse comes up. An application that
-/// needs controls which never move should take the platform's away with
-/// `titleBarButtons: "hidden"` and draw its own, which nothing here touches.
-#[cfg(target_os = "macos")]
-fn place_window_buttons(window: &tao::window::Window, place: &Placement) {
+fn grow(
+    window: &tao::window::Window,
+    height: f64,
+    lights: Option<(f64, f64)>,
+    home_x: f64,
+) -> Option<f64> {
     use objc2_app_kit::NSWindowButton;
+    use objc2_foundation::NSPoint;
 
-    let Some(ns) = (unsafe { ns_of(window) }) else {
-        return;
-    };
+    let ns = unsafe { ns_of(window) }?;
 
-    for (index, kind) in [
+    let buttons: Vec<_> = [
         NSWindowButton::CloseButton,
         NSWindowButton::MiniaturizeButton,
         NSWindowButton::ZoomButton,
     ]
     .into_iter()
-    .enumerate()
-    {
-        let Some(button) = ns.standardWindowButton(kind) else {
-            continue;
-        };
-        let Some(container) = (unsafe { button.superview() }) else {
-            continue;
-        };
+    .filter_map(|kind| ns.standardWindowButton(kind))
+    .collect();
+    let first = buttons.first()?;
+    let inner = unsafe { first.superview() }?;
+    let container = unsafe { inner.superview() }?;
 
-        let frame = button.frame();
-        button.setFrameOrigin(button_origin(
-            place,
-            index,
-            container.frame().size.height,
-            frame.size.height,
-        ));
+    let button_height = first.frame().size.height;
+    let mut frame = container.frame();
+    frame.size.height = height.max(button_height);
+    // Without this the container grows off the top of the window: its frame is
+    // in coordinates that count up from the bottom.
+    frame.origin.y = ns.frame().size.height - frame.size.height;
+    container.setFrame(frame);
+
+    // `top` is a gap measured down from the top of the bar, which is how an
+    // application thinks about it; the frames count up from the bottom.
+    let top = match lights {
+        Some((_, top)) => top,
+        None => ((frame.size.height - button_height) / 2.0).max(0.0),
+    };
+    let y = (frame.size.height - top - button_height).max(0.0);
+
+    // Keep the spacing the system chose between the three: only the group
+    // moves, and the gaps are the platform's. The offsets are taken from where
+    // the buttons are now, which is fine because only the group's leading edge
+    // is being decided here - and that comes from `home_x`, the position the
+    // platform gave them, not from wherever they were last put.
+    let start = first.frame().origin.x;
+    let offsets: Vec<f64> = buttons.iter().map(|b| b.frame().origin.x - start).collect();
+    let leading = lights.map(|(x, _)| x).unwrap_or(home_x);
+    for (button, offset) in buttons.iter().zip(offsets) {
+        button.setFrameOrigin(NSPoint::new(leading + offset, y));
     }
+
+    Some(frame.size.height)
 }
 
 #[cfg(target_os = "macos")]
@@ -164,30 +149,25 @@ pub struct Native {
     pub height: f64,
     /// The whole run reserved on the leading edge: gap, buttons, gap.
     pub inset_left: f64,
-    /// Where the platform put each of close, minimise and zoom across the
-    /// bar, measured rather than derived.
-    ///
-    /// Kept as three numbers rather than a start and a stride because the
-    /// gaps are the system's to choose, and because moving the group has to
-    /// be repeatable: every placement is worked out from these, so it lands
-    /// in the same spot however many times it runs.
-    ///
-    /// macOS only, and not merely unused elsewhere: nowhere else keeps its
-    /// window buttons when the title bar goes, so there is nothing to
-    /// measure and nothing to move.
-    #[cfg(target_os = "macos")]
-    pub button_x: [f64; 3],
-    /// How tall the window buttons are, which is what centring them needs.
+    /// How tall the window buttons are, as measured.
     #[cfg(target_os = "macos")]
     pub button_height: f64,
-}
-
-#[cfg(target_os = "macos")]
-impl Native {
-    /// Where the leading edge of the first button sits by default.
-    fn inset_start(&self) -> f64 {
-        self.button_x[0]
-    }
+    /// Where the leading edge of the first button sits, as measured.
+    ///
+    /// Kept so "put them back" has something to put them back to. Reading it
+    /// off the buttons at the time would answer with wherever they were last
+    /// moved to, which is how re-centring them quietly stopped re-centring
+    /// them.
+    #[cfg(target_os = "macos")]
+    pub button_x: f64,
+    /// The gap the platform leaves above the buttons, measured.
+    ///
+    /// Not derived by centring them in the bar, because the platform does not
+    /// always centre them: in a two-row bar the buttons belong to the top row
+    /// and sit well above the middle. Computing a centre and setting it would
+    /// move them 8px on every resize - which is a jump you can see, and did.
+    #[cfg(target_os = "macos")]
+    pub button_top: f64,
 }
 
 /// Show or hide the platform's own window buttons.
@@ -216,128 +196,65 @@ pub fn set_buttons_hidden(window: &tao::window::Window, hidden: bool) {
 #[cfg(not(target_os = "macos"))]
 pub fn set_buttons_hidden(_window: &tao::window::Window, _hidden: bool) {}
 
-/// How tall the bar is.
+/// The numbers to hand the page, for a bar of `height`.
 ///
-/// On macOS the platform's own answer, whatever was asked for. The system
-/// draws the window buttons and only it decides where they go, so a height
-/// that disagreed with the bar they are centred in would line an application's
-/// toolbar up with nothing. `set_tall` is what turns a request for more room
-/// into more room; this reports what that actually came to.
-///
-/// Everywhere else there are no system buttons and no system bar, the
-/// application draws the whole thing, and the number it asked for is the
-/// answer.
-fn height_with(native: &Native, requested: Option<f64>) -> f64 {
-    #[cfg(target_os = "macos")]
-    {
-        let _ = requested;
-        native.height
+/// `system_buttons` false - the platform's buttons hidden, or a platform that
+/// loses them along with the title bar - means nothing is reserved and there
+/// is nothing to line up with, which is the signal an application uses to
+/// decide it has to draw its own.
+pub fn metrics_for(native: Native, height: f64, system_buttons: bool) -> Metrics {
+    if !system_buttons {
+        return Metrics {
+            height,
+            inset_left: 0.0,
+            inset_right: 0.0,
+            button_top: 0.0,
+            button_height: 0.0,
+        };
     }
-    #[cfg(not(target_os = "macos"))]
-    {
-        requested.filter(|h| *h > 0.0).unwrap_or(native.height)
-    }
-}
-
-/// Put the window buttons where the current settings say they belong.
-///
-/// Separate from measuring because it has to run far more often than the
-/// numbers change: AppKit re-lays the title bar out on every resize, undoing
-/// any frame that was set, so a window whose lights were moved needs them put
-/// back on each `Resized` - and telling the page its metrics a hundred times
-/// during a drag, to say nothing they did not already know, is not something
-/// to do on the way.
-pub fn place(
-    window: &tao::window::Window,
-    native: Native,
-    requested: Option<f64>,
-    lights: Option<(f64, f64)>,
-) {
-    #[cfg(target_os = "macos")]
-    {
-        // An explicit position wins; otherwise centre them in whatever height
-        // is in force, including the platform's own - going back to it has to
-        // move the lights back too.
-        let (x, top) = lights.unwrap_or((
-            native.inset_start(),
-            ((height_with(&native, requested) - native.button_height) / 2.0).max(0.0),
-        ));
-        place_window_buttons(window, &Placement { x, top, native });
-    }
-    // Nothing to place: the platforms that lose their window buttons with the
-    // title bar have none to move.
-    #[cfg(not(target_os = "macos"))]
-    let _ = (window, native, requested, lights);
-}
-
-/// Measure a window's title bar, honouring a height the application asked for.
-///
-/// `requested` taller than the platform's own is the browser-toolbar case: the
-/// height reported to the page changes, and the traffic lights move to the
-/// middle of the new height. Everything else stays the platform's.
-pub fn measure_with(
-    window: &tao::window::Window,
-    native: Native,
-    requested: Option<f64>,
-    lights: Option<(f64, f64)>,
-) -> Metrics {
-    place(window, native, requested, lights);
 
     Metrics {
-        height: height_with(&native, requested),
+        height,
         inset_left: native.inset_left,
         inset_right: 0.0,
+        #[cfg(target_os = "macos")]
+        button_top: native.button_top,
+        #[cfg(target_os = "macos")]
+        button_height: native.button_height,
+        #[cfg(not(target_os = "macos"))]
+        button_top: 0.0,
+        #[cfg(not(target_os = "macos"))]
+        button_height: 0.0,
     }
 }
 
-/// Ask macOS for its taller title bar, or give the ordinary one back.
+/// Shape the title bar to `requested`, and answer with the height it became.
 ///
-/// A window with a unified toolbar gets a 40pt bar in place of the usual 28,
-/// and - the part that matters - macOS centres the window buttons in it
-/// itself. Nothing here moves them, so nothing has to keep moving them: they
-/// are right in the middle of every frame of a corner drag, which no amount of
-/// repositioning achieves. Moving them is a correction applied after AppKit
-/// has laid the title bar out and drawn it, and there is no earlier hook: a
-/// frame set from inside the layout is discarded, and taking the buttons out
-/// of the container AppKit lays out does not stop it repositioning them,
-/// because it finds them through `standardWindowButton:`.
-///
-/// The height is the platform's rather than the application's. macOS has
-/// exactly one taller bar it will centre the buttons in, so asking for 44 gets
-/// 40 - and 40 is what the page is told, which is the number to size a toolbar
-/// from. The toolbar itself is empty and draws nothing; it is here for the
-/// geometry.
+/// Any height, not one of a handful: the window buttons are centred in the bar
+/// by arithmetic, so there is nothing to round to. The only floor is the
+/// buttons themselves having to fit.
 #[cfg(target_os = "macos")]
-pub fn set_tall(window: &tao::window::Window, tall: bool) {
-    use objc2::{MainThreadMarker, MainThreadOnly};
-    use objc2_app_kit::{NSToolbar, NSWindowToolbarStyle};
-    use objc2_foundation::ns_string;
-
-    let Some(ns) = (unsafe { ns_of(window) }) else {
-        return;
-    };
-
-    if !tall {
-        ns.setToolbar(None);
-        return;
-    }
-    if ns.toolbar().is_some() {
-        return;
-    }
-
-    // Safety: windows are only built and changed on the event loop's thread,
-    // which is the main one.
-    let mtm = unsafe { MainThreadMarker::new_unchecked() };
-    let toolbar = NSToolbar::initWithIdentifier(NSToolbar::alloc(mtm), ns_string!("vantail.bar"));
-    ns.setToolbar(Some(&toolbar));
-    // The one style macOS centres the window buttons in. `unified` and
-    // `expanded` give taller bars too, but leave the buttons up near the top,
-    // which is the look this exists to avoid.
-    ns.setToolbarStyle(NSWindowToolbarStyle::UnifiedCompact);
+pub fn fit(
+    window: &tao::window::Window,
+    requested: Option<f64>,
+    platform: Native,
+    lights: Option<(f64, f64)>,
+) -> f64 {
+    let height = requested.filter(|h| *h > 0.0).unwrap_or(platform.height);
+    grow(window, height, lights, platform.button_x).unwrap_or(platform.height)
 }
 
+/// No system buttons to move and no container to grow: the application draws
+/// the whole bar, and the number it asked for is the answer.
 #[cfg(not(target_os = "macos"))]
-pub fn set_tall(_window: &tao::window::Window, _tall: bool) {}
+pub fn fit(
+    _window: &tao::window::Window,
+    requested: Option<f64>,
+    platform: Native,
+    _lights: Option<(f64, f64)>,
+) -> f64 {
+    requested.filter(|h| *h > 0.0).unwrap_or(platform.height)
+}
 
 /// Measure the platform's own title bar, before anything has been moved.
 ///
@@ -367,14 +284,17 @@ pub fn native(window: &tao::window::Window) -> Native {
     let content = ns.contentLayoutRect();
     let height = frame.size.height - content.size.height;
 
-    let (inset_left, button_x, button_height) = match (
+    let (inset_left, button_height, button_top, button_x) = match (
         ns.standardWindowButton(NSWindowButton::CloseButton),
-        ns.standardWindowButton(NSWindowButton::MiniaturizeButton),
         ns.standardWindowButton(NSWindowButton::ZoomButton),
     ) {
-        (Some(close), Some(minimise), Some(zoom)) => {
+        (Some(close), Some(zoom)) => {
+            // The container is what the frames are relative to, so the gap
+            // above the buttons has to be read against it.
+            let container = unsafe { close.superview() }
+                .map(|view| view.frame().size.height)
+                .unwrap_or_default();
             let close = close.frame();
-            let minimise = minimise.frame();
             let zoom = zoom.frame();
             // The gap to the left of the first light, repeated after the last
             // one - which is what makes a toolbar look spaced by the system
@@ -382,12 +302,13 @@ pub fn native(window: &tao::window::Window) -> Native {
             let right_edge = zoom.origin.x + zoom.size.width;
             (
                 right_edge + close.origin.x,
-                [close.origin.x, minimise.origin.x, zoom.origin.x],
                 close.size.height,
+                container - close.origin.y - close.size.height,
+                close.origin.x,
             )
         }
         // A window without the standard buttons has nothing to leave room for.
-        _ => (0.0, [0.0; 3], 0.0),
+        _ => (0.0, 0.0, 0.0, 0.0),
     };
 
     if height <= 0.0 {
@@ -397,8 +318,9 @@ pub fn native(window: &tao::window::Window) -> Native {
     Native {
         height,
         inset_left,
-        button_x,
         button_height,
+        button_top,
+        button_x,
     }
 }
 
@@ -419,9 +341,11 @@ fn native_fallback() -> Native {
         height: fallback().height,
         inset_left: 0.0,
         #[cfg(target_os = "macos")]
-        button_x: [0.0; 3],
-        #[cfg(target_os = "macos")]
         button_height: 0.0,
+        #[cfg(target_os = "macos")]
+        button_top: 0.0,
+        #[cfg(target_os = "macos")]
+        button_x: 0.0,
     }
 }
 
@@ -438,12 +362,30 @@ fn fallback() -> Metrics {
         },
         inset_left: 0.0,
         inset_right: 0.0,
+        // Only reached when the measurement failed, so there is nothing
+        // trustworthy to say about where the buttons are.
+        button_top: 0.0,
+        button_height: 0.0,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What a real window reports.
+    fn measured() -> Native {
+        Native {
+            height: 32.0,
+            inset_left: 78.0,
+            #[cfg(target_os = "macos")]
+            button_height: 14.0,
+            #[cfg(target_os = "macos")]
+            button_top: 9.0,
+            #[cfg(target_os = "macos")]
+            button_x: 9.0,
+        }
+    }
 
     #[test]
     fn an_ordinary_title_bar_reserves_nothing() {
@@ -461,76 +403,55 @@ mod tests {
         assert!(fallback().height > 20.0);
     }
 
-    /// What a real window reports: three lights, evenly spaced.
-    #[cfg(target_os = "macos")]
-    fn measured() -> Native {
-        Native {
-            height: 28.0,
-            inset_left: 78.0,
-            button_x: [7.0, 27.0, 47.0],
-            button_height: 12.0,
+    #[test]
+    fn the_reported_height_is_the_one_that_was_asked_for() {
+        // Any height, on every platform: the window buttons are centred in
+        // the bar by arithmetic, so there is nothing to round to.
+        let metrics = metrics_for(measured(), 44.0, true);
+        assert_eq!(metrics.height, 44.0);
+        assert_eq!(metrics_for(measured(), 57.0, true).height, 57.0);
+    }
+
+    #[test]
+    fn where_the_buttons_are_is_reported_alongside_the_room_they_take() {
+        let metrics = metrics_for(measured(), 44.0, true);
+        assert_eq!(metrics.inset_left, 78.0);
+        // Only macOS keeps window buttons once the title bar is gone, so only
+        // there is there anything to line up with.
+        if cfg!(target_os = "macos") {
+            assert_eq!(metrics.button_top, 9.0);
+            assert_eq!(metrics.button_height, 14.0);
+        } else {
+            assert_eq!(metrics.button_top, 0.0);
+            assert_eq!(metrics.button_height, 0.0);
         }
     }
 
     #[test]
-    #[cfg(target_os = "macos")]
-    fn moving_the_lights_keeps_the_spacing_the_system_chose() {
-        let native = measured();
-        let placed = [0, 1, 2].map(|i| button_origin_x(&native, i, 12.0));
-        // The group lands where it was asked to, and the gaps are still the
-        // platform's rather than a guess.
-        assert_eq!(placed, [12.0, 32.0, 52.0]);
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn placing_twice_lands_where_placing_once_did() {
-        let native = measured();
-        // Stand in for the buttons themselves. AppKit puts them back on every
-        // resize, so the placement runs again on each frame of a drag -
-        // anything cumulative walks the lights across the bar while the user
-        // holds the corner, which is exactly what a relative nudge did.
-        let mut positions = native.button_x;
-        for _ in 0..5 {
-            for (index, position) in positions.iter_mut().enumerate() {
-                *position = button_origin_x(&native, index, 12.0);
-            }
-        }
-        assert_eq!(positions, [12.0, 32.0, 52.0]);
-    }
-
-    #[test]
-    #[cfg(not(target_os = "macos"))]
-    fn an_asked_for_height_wins_where_the_application_draws_the_whole_bar() {
-        let native = native_fallback();
-        assert_eq!(height_with(&native, Some(44.0)), 44.0);
-        // Nonsense heights fall back rather than collapsing the bar.
-        assert_eq!(height_with(&native, Some(0.0)), native.height);
-        assert_eq!(height_with(&native, None), native.height);
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn the_reported_height_is_the_bar_that_exists() {
-        // Asking for more room is answered by `set_tall` giving a taller bar,
-        // and this reports what that came to. Reporting the request instead
-        // would put the number the page sizes its toolbar from out of step
-        // with the bar macOS centres the window buttons in.
-        let native = measured();
-        assert_eq!(height_with(&native, Some(44.0)), native.height);
-        assert_eq!(height_with(&native, None), native.height);
+    fn an_application_drawing_its_own_buttons_is_told_nothing_is_reserved() {
+        // The same signal Windows and Linux always give, so a page that draws
+        // its own controls when nothing is reserved needs no new branch.
+        let metrics = metrics_for(measured(), 44.0, false);
+        assert_eq!(metrics.height, 44.0);
+        assert_eq!(metrics.inset_left, 0.0);
+        assert_eq!(metrics.button_top, 0.0);
+        assert_eq!(metrics.button_height, 0.0);
     }
 
     #[test]
     fn metrics_serialise_the_way_the_bridge_expects() {
         let json = serde_json::to_value(Metrics {
-            height: 28.0,
+            height: 44.0,
             inset_left: 78.0,
             inset_right: 0.0,
+            button_top: 15.0,
+            button_height: 14.0,
         })
         .unwrap();
-        assert_eq!(json["height"], 28.0);
+        assert_eq!(json["height"], 44.0);
         assert_eq!(json["insetLeft"], 78.0);
         assert_eq!(json["insetRight"], 0.0);
+        assert_eq!(json["buttonTop"], 15.0);
+        assert_eq!(json["buttonHeight"], 14.0);
     }
 }

@@ -512,20 +512,33 @@ describe(
         `expected taller than ${results.nativeHeight}, got ${results.tallMetrics.height}`,
       );
 
+      // Exactly what was asked for, on every platform. The window buttons are
+      // centred in the bar by arithmetic rather than by asking macOS for one
+      // of its own title bars, so there is no set of heights to round to.
+      assert.equal(results.tallMetrics.height, 48);
+      assert.equal(results.ceilingMetrics.height, 4000);
+
+      // Where the window buttons sit down the bar, which is what a taller one
+      // needs to line anything up with them. Reported because it cannot be
+      // worked out: the platform does not always centre them.
       if (process.platform === "darwin") {
-        // The height is the platform's, not the number asked for. macOS draws
-        // the window buttons and centres them in the bar it provides; saying
-        // 48 while they sit centred in 40 would line a toolbar up with
-        // nothing. It is also the only arrangement whose buttons stay put
-        // while the window is being resized.
         assert.ok(
-          results.tallMetrics.height <= 48,
-          `the platform's taller bar should be no taller than the request, got ${results.tallMetrics.height}`,
+          results.tallMetrics.buttonHeight > 0,
+          "macOS keeps its window buttons, so their size should be reported",
+        );
+        assert.ok(
+          results.tallMetrics.buttonTop > 0,
+          "macOS leaves a gap above its window buttons; 0 means it was not measured",
+        );
+        assert.ok(
+          results.tallMetrics.buttonTop + results.tallMetrics.buttonHeight <=
+            results.tallMetrics.height,
+          `buttons at ${results.tallMetrics.buttonTop}+${results.tallMetrics.buttonHeight} do not fit a bar of ${results.tallMetrics.height}`,
         );
       } else {
-        // Nowhere else has system buttons in the bar, so the number asked for
-        // is the number - the application draws all of it.
-        assert.equal(results.tallMetrics.height, 48);
+        // Nowhere else keeps them once the title bar is gone.
+        assert.equal(results.tallMetrics.buttonTop, 0);
+        assert.equal(results.tallMetrics.buttonHeight, 0);
       }
 
       // Whatever that height came to, everywhere the page can read it agrees.
@@ -560,6 +573,10 @@ describe(
         height: 0,
         insetLeft: 0,
         insetRight: 0,
+        // Nothing is being drawn up there by the application, so there is
+        // nothing to line up with the window buttons either.
+        buttonTop: 0,
+        buttonHeight: 0,
       });
       // And the CSS variable is set either way, so `var()` never falls back.
       assert.equal(results.mainTitleBarCss, "0px");
@@ -1147,6 +1164,11 @@ try {
   const nativeHeight = titleBarMetrics().height;
   const nativeInsetLeft = titleBarMetrics().insetLeft;
   results.tallMetrics = await appWindow.setTitleBarHeight(48);
+  // Asking for something no platform can provide: whatever comes back is the
+  // tallest bar there is, which is what tells a request that was met from one
+  // that ran out of room.
+  results.ceilingMetrics = await appWindow.setTitleBarHeight(4000);
+  await appWindow.setTitleBarHeight(48);
   results.tallCss = readCss();
   results.tallSync = titleBarMetrics();
   // Moving them by hand, and putting them back.

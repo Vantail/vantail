@@ -60,12 +60,12 @@ pub struct WindowEntry {
     /// when the bar changes shape, because a taller one puts the window
     /// buttons somewhere else.
     pub native_title_bar: titlebar::Native,
-    /// What the platform's ordinary bar measures, kept as the reference for
-    /// "is this request for more room than the plain bar has". Reading it off
-    /// `native_title_bar` would not do: once the taller bar is in force that
-    /// is 40, and a request for 30 would turn it off, which would make it 28,
-    /// which would turn it back on.
-    pub native_short: titlebar::Native,
+    /// What the platform's own title bar measured, taken once before anything
+    /// grew it or moved anything in it. Both the height to fall back to and
+    /// the position to put the window buttons back to - neither can be read
+    /// off a window that has already been changed, which is how "put them
+    /// back" quietly stopped putting them back.
+    pub platform_bar: titlebar::Native,
     // Only the platforms that toggle the frame need this; macOS switches the
     // title bar without touching the decorations at all.
     #[cfg_attr(target_os = "macos", allow(dead_code))]
@@ -167,16 +167,11 @@ impl WindowEntry {
     /// on the next call that happened to remeasure. Nothing about the metrics
     /// changes with the width, so this places them again and leaves the page
     /// alone.
-    pub fn reapply_title_bar(&self) {
+    pub fn reapply_title_bar(&mut self) {
         if self.title_bar_style != TitleBarStyle::Hidden {
             return;
         }
-        titlebar::place(
-            &self.window,
-            self.native_title_bar,
-            self.title_bar_height,
-            self.traffic_lights,
-        );
+        self.refit();
     }
 
     /// Put the platform's bar into the shape the request asks for.
@@ -186,31 +181,31 @@ impl WindowEntry {
     /// in the taller bar and keeps them there while the window is resized,
     /// which moving them cannot do. The measurement is retaken because the
     /// buttons are somewhere else afterwards.
-    fn refit(&mut self) {
-        let tall = self.title_bar_style == TitleBarStyle::Hidden
-            && self
-                .title_bar_height
-                .is_some_and(|height| height > self.native_short.height);
-        titlebar::set_tall(&self.window, tall);
+    /// Shape the title bar to the height in force, and measure what resulted.
+    ///
+    /// Only while the platform is still drawing the buttons. With them hidden
+    /// there is no container worth growing - the application draws the bar and
+    /// everything in it - and the height it asked for is simply the answer.
+    fn refit(&mut self) -> f64 {
+        let wanted = if self.title_bar_style == TitleBarStyle::Hidden && !self.buttons_hidden {
+            self.title_bar_height
+        } else {
+            None
+        };
+        let height = titlebar::fit(&self.window, wanted, self.platform_bar, self.traffic_lights);
         self.native_title_bar = titlebar::native(&self.window);
+        height
     }
 
     /// Measure again and tell the page, after anything that changes the sums.
     fn remeasure(&mut self) -> titlebar::Metrics {
-        self.refit();
-        let mut metrics = match self.title_bar_style {
-            TitleBarStyle::Hidden => titlebar::measure_with(
-                &self.window,
-                self.native_title_bar,
-                self.title_bar_height,
-                self.traffic_lights,
-            ),
+        let height = self.refit();
+        let metrics = match self.title_bar_style {
+            TitleBarStyle::Hidden => {
+                titlebar::metrics_for(self.native_title_bar, height, !self.buttons_hidden)
+            }
             TitleBarStyle::Default => titlebar::Metrics::none(),
         };
-        // Nothing is drawn there any more, so nothing has to be left clear.
-        if self.buttons_hidden {
-            metrics.inset_left = 0.0;
-        }
         self.publish_title_bar(metrics);
         metrics
     }
@@ -336,34 +331,24 @@ impl WindowManager {
         // and only when the application is the one drawing up there.
         // Measured before anything is moved, and kept: the numbers come off
         // the window buttons themselves.
-        // Measured before the taller bar is asked for, so it stays the
-        // reference for what "taller" means.
-        let native_short = titlebar::native(&window);
-        titlebar::set_tall(
+        let buttons_hidden = config.title_bar_buttons == TitleBarButtons::Hidden;
+        // Taken before anything grows the bar: it cannot be measured back off
+        // a window whose title bar has already been made taller.
+        let platform_bar = titlebar::native(&window);
+        let height = titlebar::fit(
             &window,
-            config.title_bar_style == TitleBarStyle::Hidden
-                && config
-                    .title_bar_height
-                    .is_some_and(|height| height > native_short.height),
+            if config.title_bar_style == TitleBarStyle::Hidden && !buttons_hidden {
+                config.title_bar_height
+            } else {
+                None
+            },
+            platform_bar,
+            config.traffic_light_position.map(|i| (i.x, i.y)),
         );
         let native = titlebar::native(&window);
-        let buttons_hidden = config.title_bar_buttons == TitleBarButtons::Hidden;
         let title_bar = match config.title_bar_style {
-            TitleBarStyle::Hidden => titlebar::measure_with(
-                &window,
-                native,
-                config.title_bar_height,
-                config.traffic_light_position.map(|i| (i.x, i.y)),
-            ),
+            TitleBarStyle::Hidden => titlebar::metrics_for(native, height, !buttons_hidden),
             TitleBarStyle::Default => titlebar::Metrics::none(),
-        };
-        let title_bar = if buttons_hidden {
-            titlebar::Metrics {
-                inset_left: 0.0,
-                ..title_bar
-            }
-        } else {
-            title_bar
         };
         let webview = build_webview(rt, &window, proxy, label, url, title_bar)?;
         let size = window.inner_size().to_logical::<f64>(window.scale_factor());
@@ -378,7 +363,7 @@ impl WindowManager {
             traffic_lights: config.traffic_light_position.map(|i| (i.x, i.y)),
             buttons_hidden: config.title_bar_buttons == TitleBarButtons::Hidden,
             native_title_bar: native,
-            native_short,
+            platform_bar,
             decorations: config.decorations,
             focused: false,
             size,

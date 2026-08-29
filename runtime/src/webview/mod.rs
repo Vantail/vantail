@@ -45,6 +45,8 @@ pub fn title_bar_script(metrics: crate::chrome::titlebar::Metrics) -> String {
     root.style.setProperty('--vantail-titlebar-height', metrics.height + 'px');
     root.style.setProperty('--vantail-titlebar-inset-left', metrics.insetLeft + 'px');
     root.style.setProperty('--vantail-titlebar-inset-right', metrics.insetRight + 'px');
+    root.style.setProperty('--vantail-titlebar-button-top', metrics.buttonTop + 'px');
+    root.style.setProperty('--vantail-titlebar-button-height', metrics.buttonHeight + 'px');
   }}
 }})();"#,
         metrics = json!(metrics)
@@ -89,6 +91,8 @@ pub fn init_script(
     root.style.setProperty('--vantail-titlebar-height', metrics.height + 'px');
     root.style.setProperty('--vantail-titlebar-inset-left', metrics.insetLeft + 'px');
     root.style.setProperty('--vantail-titlebar-inset-right', metrics.insetRight + 'px');
+    root.style.setProperty('--vantail-titlebar-button-top', metrics.buttonTop + 'px');
+    root.style.setProperty('--vantail-titlebar-button-height', metrics.buttonHeight + 'px');
     return true;
   }}
   // At document-start `<html>` normally exists already; when it does not,

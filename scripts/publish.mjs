@@ -164,6 +164,40 @@ const publishedAt = (name, version) => known(`${name}@${version}`);
 const everPublished = (name) => known(name);
 
 /**
+ * Whether the newest version of a package was published by a trusted
+ * publisher rather than by somebody's account.
+ *
+ * A stand-in for the question that actually matters - "is trusted publishing
+ * configured for this name" - which the registry does not answer directly. It
+ * records who published each version, and a version published through OIDC
+ * carries the publisher that did it.
+ *
+ * So this can be wrong in one direction: a name whose trusted publisher was
+ * set up *after* its last release looks like an account publish and is not.
+ * That is why what it feeds is a warning and not a refusal - being told to
+ * check something is cheap, and being stopped from releasing on a guess is
+ * not.
+ */
+function publishedByTrustedPublisher(name) {
+  try {
+    const id = execFileSync(
+      ...npmSpawn([
+        "view",
+        `${name}@latest`,
+        "_npmUser.trustedPublisher.id",
+        "--json",
+        ...probeFlags(),
+      ]),
+      PROBE,
+    );
+    return id.trim().length > 0;
+  } catch {
+    // Unknown, and unknown is not "no" - see `known`.
+    return true;
+  }
+}
+
+/**
  * Publish a subset, by package name.
  *
  * For adding a package to a version that is already out, or re-sending one
@@ -446,6 +480,31 @@ if (!isAuthenticated()) {
     ...patchedNames(),
   ].filter((name) => everPublished(name) === false);
   reportUnanswered();
+
+  // Existing, but perhaps not set up for this to publish them. Trusted
+  // publishing is configured per package, so a scope that mostly works can
+  // still have one name that stops the release - and by then the packages
+  // ahead of it are public. Said before anything is sent, and said as a
+  // warning: the signal underneath is a good guess rather than an answer.
+  const byAccount = [
+    ...built.map((target) => target.package),
+    ...patchedNames(),
+  ].filter(
+    (name) => everPublished(name) === true && !publishedByTrustedPublisher(name),
+  );
+
+  if (byAccount.length > 0) {
+    console.warn(
+      `\nLast published from an account rather than by a trusted publisher:\n` +
+        byAccount.map((name) => `  ${name}`).join("\n") +
+        `\n\nThis run has no account to fall back on, so any of those whose\n` +
+        `trusted publisher is not configured on ${registry} will stop it -\n` +
+        `leaving the packages ahead of them published and the rest not.\n` +
+        `Configure them under the package's Settings, then re-run: a release\n` +
+        `skips what is already at this version, so it picks up where it\n` +
+        `stopped.\n`,
+    );
+  }
 
   if (brandNew.length > 0) {
     console.error(

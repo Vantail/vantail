@@ -63,7 +63,8 @@ export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
  * The room a hidden title bar left behind, in logical pixels.
  *
  * Also set on `:root` as `--vantail-titlebar-height`,
- * `--vantail-titlebar-inset-left` and `--vantail-titlebar-inset-right`, before
+ * `--vantail-titlebar-inset-left`, `--vantail-titlebar-inset-right`,
+ * `--vantail-titlebar-button-top` and `--vantail-titlebar-button-height`, before
  * the page lays out - which is usually the form you want, since CSS can then
  * size the toolbar without JavaScript running at all.
  */
@@ -74,6 +75,20 @@ export interface TitleBarMetrics {
   insetLeft: number;
   /** The same on the trailing edge. `0` on macOS. */
   insetRight: number;
+  /**
+   * The gap above the system's window buttons, and how tall they are.
+   *
+   * What a bar taller than the buttons needs in order to line anything up with
+   * them: `insetLeft` says how much room they take across, and this says where
+   * they sit down the bar. Not something to work out from `height` - the
+   * platform does not always centre them, and only it knows where it put them.
+   *
+   * Both `0` where there are no system buttons: hidden, or a platform that
+   * loses them along with the title bar.
+   */
+  buttonTop: number;
+  /** How tall those buttons are. */
+  buttonHeight: number;
 }
 
 export interface VantailBridge {

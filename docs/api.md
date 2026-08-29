@@ -148,26 +148,54 @@ await appWindow.setTitleBarHeight(48);   // taller
 await appWindow.setTitleBarHeight(null); // the platform's own again
 ```
 
-On macOS this asks the platform for its taller title bar, and **the height you
-get back is the platform's rather than the one you asked for** - ask for 48 and
-`titleBarMetrics().height` says 40. That is not a rounding error, it is the
-whole point: macOS draws the window buttons and centres them in the bar it
-provides, and it keeps them centred while the window is resized. Size your
-toolbar from the reported number - the CSS variable already is - and the lights
-line up with it, always.
+On macOS this asks the platform for a taller title bar, and **the height you get
+back is the platform's rather than the one you asked for.** That is not a
+rounding error, it is the whole point: macOS draws the window buttons and
+centres them in the bar it provides, and it keeps them centred while the window
+is resized. Size your toolbar from the reported number - the CSS variable
+already is - and the lights line up with it, always.
 
-The alternative is to make the bar whatever height you like and move the
-buttons into it by hand, which is what this used to do. It cannot be made to
-work: AppKit lays the title bar out and draws it *before* the resize reaches
-the application, so the correction is always a frame late and the lights sit at
-the platform's position for the whole of a corner drag. There is no earlier
-hook - a frame set from inside the layout is discarded, and moving the buttons
-into a view of your own does not help, because AppKit finds them through
-`standardWindowButton:` rather than by looking at its own subviews. All three
-were measured before settling on the platform's own bar.
+On macOS this also moves the window buttons: they end up centred in the bar you
+asked for, instead of sitting near the top where a 28pt title bar left them.
+Any height, and the number you ask for is the number you get and the number
+reported back.
 
-Everywhere else there are no system buttons in the bar and the application
-draws all of it, so the number you ask for is the number you get.
+That is done by growing the `NSTitlebarContainerView` and re-pinning it to the
+top of the window, then placing the buttons a margin up from its bottom edge.
+It is the same technique Electron's `WindowButtonsProxy` uses, and it is worth
+knowing which view: the buttons live in an `NSTitlebarView` *inside* that
+container, and growing the inner one sets an origin against a parent barely
+thirty points tall - which puts it hundreds of points above the window and
+takes the buttons with it. "Resizing the container makes the lights vanish" is
+what that looks like from outside.
+
+AppKit undoes it on every relayout, so the runtime reapplies it on every
+resize. That is one frame behind AppKit's own layout, which is a property of
+the approach rather than of this implementation - Electron reapplies in the
+same place.
+
+You do not need `titleBarHeight` to have a tall toolbar. With
+`titleBarStyle: "hidden"` the page already runs to the top edge, so a bar is
+however many pixels you draw. What this adds is the window buttons being
+centred in it rather than left up in the corner.
+
+**To draw the controls yourself, take the buttons.** You then own their size,
+colour and hover behaviour - and you own getting them right, which for the
+green button means more than it looks:
+
+```ts
+window: {
+  titleBarStyle: "hidden",
+  titleBarHeight: 60,
+  titleBarButtons: "hidden",   // and draw your own
+}
+```
+
+`titleBarMetrics().height` then reports 60, `insetLeft` is 0, and nothing in
+the bar is drawn by anyone but you - so nothing constrains it, and there is
+nothing to keep in step during a resize either. You do have to draw the three
+controls yourself; `examples/react` does, and sizes them from the height so
+they scale with it.
 
 `insetLeft` does change with the taller bar: macOS starts its buttons a little
 further in there, and the reported inset says so.
@@ -228,20 +256,17 @@ placement is worked out from where the platform originally put each button
 rather than from where it sits now, so running it on every frame of a drag
 lands them in the same place as running it once.
 
-**A `trafficLightPosition` of your own is not held during a live resize**, for
-the reason given under `titleBarHeight` above: the correction lands a frame
-after AppKit has drawn. Leave it unset and the lights stay exactly where the
-platform centres them, through the drag and after it. Set it and they sit at
-the platform's position while a corner is being dragged, and move to yours when
-the mouse comes up.
+Both `titleBarHeight` and `trafficLightPosition` are reapplied on every resize,
+because AppKit puts the buttons back where it wants them on every relayout and
+does so before the event loop hears about it. So the correction is a frame
+behind, and whether that shows during a fast drag is something to look at on
+your own machine - it is the same arrangement Electron ships, not something
+particular to this runtime.
 
-So there are two arrangements that hold still, and one that does not:
-
-| | during a drag |
-|---|---|
-| `titleBarHeight`, no explicit position | stays put - macOS centres them |
-| `titleBarButtons: "hidden"`, your own controls | stays put - nothing system-drawn is involved |
-| `trafficLightPosition` set | sits at the platform's position until the mouse comes up |
+The one thing immune to it is drawing the controls yourself with
+`titleBarButtons: "hidden"`: nothing system-drawn is involved, so there is
+nothing to correct. The cost is the green button, which is more than a shape -
+see below.
 
 ### Switching at runtime
 

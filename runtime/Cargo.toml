@@ -119,5 +119,6 @@ objc2-app-kit = { version = "0.3", features = [
   # A unified toolbar is what makes macOS itself centre the window buttons in
   # a taller title bar, rather than us moving them and losing the argument.
   "NSToolbar",
+  "NSToolbarItem",
 ] }
 objc2-foundation = { version = "0.3", features = ["NSNotification", "NSString", "NSThread"] }

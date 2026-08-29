@@ -128,9 +128,10 @@ test("gets past the registry check for a private one", async () => {
  * that answers for everything. Nothing about npm's config handling depends on
  * DNS, so nothing here should either.
  *
- * `answer` decides what it is: a registry that has the packages, one that has
- * never heard of them, or - by never being started - one that refuses the
- * connection.
+ * `answer` decides what it is: a registry that has the packages published by a
+ * trusted publisher, one whose packages were last published from an account,
+ * one that has never heard of them, or - by never being started - one that
+ * refuses the connection.
  */
 function registryServing(answer) {
   const server = createServer((request, response) => {
@@ -145,13 +146,27 @@ function registryServing(answer) {
       return response.end(`{"error":"Not found"}`);
     }
     // The smallest packument `npm view <name> version` will read.
+    //
+    // `_npmUser` is how the registry records who published a version, and a
+    // trusted publisher leaves its mark there - which is the only thing that
+    // distinguishes a name a release can publish from one it cannot.
     const name = decodeURIComponent(request.url.replace(/^\//, ""));
+    const publisher =
+      answer === "account"
+        ? { name: "someone", email: "someone@example.com" }
+        : {
+            name: "GitHub Actions",
+            email: "npm-oidc-no-reply@github.com",
+            trustedPublisher: { id: "github" },
+          };
     response.writeHead(200, { "content-type": "application/json" });
     response.end(
       JSON.stringify({
         name,
         "dist-tags": { latest: "9.9.9" },
-        versions: { "9.9.9": { name, version: "9.9.9" } },
+        versions: {
+          "9.9.9": { name, version: "9.9.9", _npmUser: publisher },
+        },
       }),
     );
   });
@@ -289,6 +304,46 @@ test("says why it could not ask, not whatever npm printed first", async () => {
     /ECONNREFUSED/,
     "the reason should be the failure npm actually hit",
   );
+});
+
+/**
+ * A package the release cannot publish should be named before it tries.
+ *
+ * Trusted publishing is configured per package, so a scope that mostly works
+ * can still hold one name that stops a release dead - and by then everything
+ * ahead of it is public and cannot be taken back. That is not hypothetical: it
+ * is how 0.1.15 got one platform package onto the registry and nothing else.
+ *
+ * A warning rather than a refusal, because the signal underneath - who
+ * published the last version - is a good guess and not an answer. A name
+ * configured since its last release looks like an account publish and is not.
+ */
+test("warns about packages a trusted publisher has not published", async () => {
+  const registry = await registryServing("account");
+  try {
+    const { output, code } = await probeRun(registry.url);
+
+    assert.equal(code, 0, "a warning must not stop the release on its own");
+    assert.match(output, /Last published from an account/);
+    assert.match(output, /@vantail\/shared/);
+  } finally {
+    await registry.close();
+  }
+});
+
+test("says nothing when a trusted publisher published them", async () => {
+  const registry = await registryServing("everything");
+  try {
+    const { output } = await probeRun(registry.url);
+
+    assert.doesNotMatch(
+      output,
+      /Last published from an account/,
+      "warned about packages that are already published the right way",
+    );
+  } finally {
+    await registry.close();
+  }
 });
 
 /**

@@ -15,11 +15,10 @@ export default defineConfig({
     height: 700,
     minWidth: 560,
     minHeight: 420,
-    // This example draws its own title bar - see `src/TitleBar.tsx`. Asking
-    // for more room than the plain bar has gets the platform's taller one,
-    // which is the arrangement whose window buttons stay centred while the
-    // window is being resized. The height that comes back is the platform's,
-    // and `--vantail-titlebar-height` is what the toolbar is sized from.
+    // This example draws its own title bar - see `src/TitleBar.tsx`. The
+    // height is its own, and `titleBarHeight` tells the runtime so the
+    // platform's window buttons are centred in it rather than left up at the
+    // top where a 28pt bar would have put them.
     titleBarStyle: "hidden",
     titleBarHeight: 44,
   },
