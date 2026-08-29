@@ -27,6 +27,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runtimeBuilds } from "./lib/runtime-builds.mjs";
+import { npmCommand } from "./lib/npm.mjs";
 import { isVersion } from "./lib/runtime-version.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -38,6 +39,9 @@ function flag(name, fallback) {
 }
 
 const platformPackages = resolve(flag("packages", "dist-packages"));
+
+/** What to spawn for npm on this platform. */
+const NPM = npmCommand();
 
 /**
  * How long to wait on the registry before giving up on a question.
@@ -93,7 +97,7 @@ function probeFlags() {
  */
 function known(spec) {
   try {
-    const out = execFileSync("npm", ["view", spec, "version", ...probeFlags()], PROBE);
+    const out = execFileSync(NPM, ["view", spec, "version", ...probeFlags()], PROBE);
     return out.trim().length > 0;
   } catch (error) {
     const said = `${error.stderr ?? ""}`;
@@ -189,7 +193,7 @@ function configuredRegistry() {
   const where = existsSync(npmrc) ? ["--userconfig", npmrc] : [];
 
   for (const key of ["@vantail:registry", "registry"]) {
-    const value = execFileSync("npm", ["config", "get", key, ...where], {
+    const value = execFileSync(NPM, ["config", "get", key, ...where], {
       encoding: "utf8",
     }).trim();
     if (value && value !== "undefined" && value !== "null") return value;
@@ -309,7 +313,7 @@ const PUBLISH = [
 function isAuthenticated() {
   try {
     const who = execFileSync(
-      "npm",
+      NPM,
       ["whoami", "--registry", registry, ...NO_RETRIES, ...AUTH],
       PROBE,
     );
@@ -462,7 +466,7 @@ for (const target of built) {
     continue;
   }
   console.log(`  ${target.package}`);
-  run("npm", PUBLISH, { cwd: directoryFor(target) });
+  run(NPM, PUBLISH, { cwd: directoryFor(target) });
 }
 
 // ---------------------------------------------------------------------------
@@ -588,7 +592,7 @@ try {
       continue;
     }
     console.log(`  ${entry.name}${note}`);
-    run("npm", PUBLISH, { cwd: join(root, entry.directory) });
+    run(NPM, PUBLISH, { cwd: join(root, entry.directory) });
   }
 } finally {
   // Put them back either way, so a failed publish does not leave the working

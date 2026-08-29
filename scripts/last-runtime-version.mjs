@@ -18,6 +18,8 @@
  */
 
 import { execFileSync } from "node:child_process";
+
+import { npmCommand } from "./lib/npm.mjs";
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,7 +48,7 @@ function versionsOf(name) {
 
   let raw;
   try {
-    raw = execFileSync("npm", args, {
+    raw = execFileSync(npmCommand(), args, {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
