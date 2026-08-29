@@ -99,6 +99,14 @@ jobs:
               exit 0
             fi
 
+            # A dev build never builds runtimes, so if there are none it can
+            # point at, there is nothing for it to publish against.
+            if ! node scripts/last-runtime-version.mjs --check --registry https://registry.npmjs.org; then
+              echo "::warning::No published runtime for a dev build to point at. Cut a release to build them."
+              echo "ready=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
             # Nothing shippable in this push means nothing to publish. A
             # force push or a new branch reports no useful `before`, so those
             # go ahead rather than guess.
@@ -137,13 +145,24 @@ jobs:
             exit 0
           fi
 
-          if [ "$(node scripts/runtime-changed.mjs --base "$PREV")" = "false" ]; then
-            echo "::notice::The runtime has not changed since $PREV. Reusing its binaries and skipping the native builds."
-            echo "build_runtimes=false" >> "$GITHUB_OUTPUT"
-          else
+          if [ "$(node scripts/runtime-changed.mjs --base "$PREV")" != "false" ]; then
             echo "The runtime has changed since $PREV."
             echo "build_runtimes=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          # The Rust has not moved, but reuse only works if there is something
+          # to reuse. A variant added since the last release has never been
+          # published, and pointing at it would fail every install - so the
+          # answer is to build the runtimes, not to fail the release.
+          if ! node scripts/last-runtime-version.mjs --check --registry https://registry.npmjs.org; then
+            echo "::notice::No publishable runtime to reuse, so the native builds run after all."
+            echo "build_runtimes=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "::notice::The runtime has not changed since $PREV. Reusing its binaries and skipping the native builds."
+          echo "build_runtimes=false" >> "$GITHUB_OUTPUT"
 
   # One job per published target. A native runner for each rather than
   # cross-compilation, because the runtime links against the platform's

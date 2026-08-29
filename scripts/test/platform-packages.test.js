@@ -205,6 +205,27 @@ describe("publish script", () => {
 });
 
 describe("release workflow", () => {
+  it("builds the runtimes when there are none to reuse", async () => {
+    // The failure this prevents: a release that cannot reuse binaries used to
+    // stop at the publish step, after the native builds had already been
+    // skipped - so there was no way through it at all. Deciding in the plan
+    // is what lets the same run build what it needs.
+    const workflow = await readFile(join(root, ".github/workflows/release.yml"), "utf8");
+    assert.match(
+      workflow,
+      /last-runtime-version\.mjs --check/,
+      "the plan has to ask whether reuse is possible before skipping the builds",
+    );
+
+    const { parse } = await import("yaml");
+    const decide = parse(workflow)
+      .jobs.plan.steps.find((step) => step.id === "decide")
+      .run;
+    // The check has to turn into building, not into failing.
+    assert.match(decide, /--check[\s\S]*build_runtimes=true/);
+  });
+
+
   it("builds exactly the targets that get published", async () => {
     // Drift here is silent and expensive: a target missing from the matrix
     // means the release fails halfway through, after some packages are up.
