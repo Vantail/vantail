@@ -205,17 +205,29 @@ const PUBLISH = [
 ];
 
 /**
- * Whether this run has a token, as opposed to relying on trusted publishing.
+ * Whether this run is authenticated as an account, rather than relying on
+ * trusted publishing.
  *
  * It decides whether a package that does not exist yet can be created: npm's
  * OIDC publishing works against a package whose trusted publisher is already
  * configured, and there is nothing to configure until the package exists. The
- * first publish of a name needs a token.
+ * first publish of a name has to come from an account.
+ *
+ * Asked of npm rather than worked out from files. Credentials arrive through
+ * `npm login` writing `~/.npmrc`, through the project `.npmrc`, or through the
+ * environment, and checking only some of those would refuse to let somebody
+ * publish while they were perfectly well logged in.
  */
-function hasAuthToken() {
-  if (process.env.NODE_AUTH_TOKEN || process.env.NPM_TOKEN) return true;
-  if (!existsSync(projectNpmrc)) return false;
-  return /_authToken\s*=/.test(readFileSync(projectNpmrc, "utf8"));
+function isAuthenticated() {
+  try {
+    const who = execFileSync("npm", ["whoami", "--registry", registry, ...AUTH], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return who.trim().length > 0;
+  } catch {
+    return false;
+  }
 }
 
 /** The workspace packages this run would publish, by name. */
@@ -322,7 +334,7 @@ for (const directory of WORKSPACE_ORDER) {
 // binaries that do not exist.
 // Checked on a dry run too: a rehearsal that cannot tell you the release
 // would stop half way is not much of a rehearsal.
-if (!hasAuthToken()) {
+if (!isAuthenticated()) {
   const brandNew = [
     ...built.map((target) => target.package),
     ...patchedNames(),
@@ -332,12 +344,14 @@ if (!hasAuthToken()) {
     console.error(
       `\nThese packages do not exist on ${registry} yet:\n` +
         brandNew.map((name) => `  ${name}`).join("\n") +
-        `\n\nThis run has no npm token, so it is publishing through trusted\n` +
+        `\n\nThis run is not logged in, so it is publishing through trusted\n` +
         `publishing - and that works against a package whose trusted publisher\n` +
         `is already configured. There is nothing to configure until the package\n` +
-        `exists, so the first publish of a name has to carry a token.\n\n` +
-        `Either publish these once from a machine with one, or configure them\n` +
-        `on the registry first. Nothing has been published by this run.`,
+        `exists, so the first publish of a name has to come from an account.\n\n` +
+        `From a machine of your own:\n` +
+        `  npm login\n` +
+        `  node scripts/publish.mjs --i-mean-it-publish-publicly --packages dist-packages\n\n` +
+        `Nothing has been published by this run.`,
     );
     process.exit(1);
   }
