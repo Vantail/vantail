@@ -476,21 +476,34 @@ mod tests {
     /// `hold` is how long the reader keeps the device per iteration: a few
     /// microseconds for a non-blocking read, or the whole timeout for a
     /// blocking one. That difference is the entire point.
+    ///
+    /// `holds` caps how many times it takes the device before giving up for
+    /// good. Only the blocking case needs it, and it needs it badly: that
+    /// loop releases the device and asks for it straight back, a futex hands
+    /// nothing to the thread waiting on it, and so a caller can be kept out
+    /// for as long as the scheduler feels like. Unbounded is fine for
+    /// demonstrating the bug and not fine for a test that has to finish.
     fn reader(
         device: Arc<Mutex<()>>,
         turnstile: Arc<Turnstile>,
         running: Arc<AtomicBool>,
         hold: Duration,
         polling: bool,
+        holds: Option<usize>,
     ) -> std::thread::JoinHandle<()> {
         std::thread::spawn(move || {
+            let mut taken = 0;
             while running.load(Ordering::Relaxed) {
+                if holds.is_some_and(|limit| taken >= limit) {
+                    return;
+                }
                 if polling && turnstile.busy() {
                     std::thread::sleep(POLL_INTERVAL);
                     continue;
                 }
                 {
                     let _held = device.lock().expect("poisoned");
+                    taken += 1;
                     std::thread::sleep(hold);
                 }
                 // The old loop had nothing here: it asked for the device
@@ -503,7 +516,7 @@ mod tests {
     }
 
     /// What a run of calls costs, which is what drawing to a device is.
-    fn sequential(calls: usize, hold: Duration, polling: bool) -> Duration {
+    fn sequential(calls: usize, hold: Duration, polling: bool, holds: Option<usize>) -> Duration {
         let device = Arc::new(Mutex::new(()));
         let turnstile = Arc::new(Turnstile::default());
         let running = Arc::new(AtomicBool::new(true));
@@ -514,6 +527,7 @@ mod tests {
             Arc::clone(&running),
             hold,
             polling,
+            holds,
         );
 
         // Let the reader get into its loop first.
@@ -542,7 +556,9 @@ mod tests {
         // Drawing images to a device is dozens of writes in a row. Against a
         // reader that blocked for 50ms per read, 48 of them measured 1361ms.
         // Holding the device only for the read itself is what fixes that.
-        let taken = sequential(48, Duration::from_micros(50), true);
+        // No cap: the turnstile is what keeps this one bounded, and capping
+        // the reader would hide it failing to.
+        let taken = sequential(48, Duration::from_micros(50), true, None);
 
         assert!(
             taken < Duration::from_millis(250),
@@ -555,7 +571,15 @@ mod tests {
         // The shape of the old bug, kept so the number above means something.
         // Four calls is enough to show it and cheap enough to run every time;
         // the real thing starved for seconds at a stretch.
-        let taken = sequential(4, Duration::from_millis(25), false);
+        //
+        // The reader is capped at sixteen holds, which puts a ceiling of about
+        // 400ms on the whole thing. Without one there is no ceiling at all:
+        // this loop takes the device straight back after releasing it, so how
+        // long the caller waits is entirely up to the scheduler - on Linux
+        // this ran for over a minute. The cap does not soften what is being
+        // shown, because the claim is a floor: four calls behind a reader that
+        // holds for 25ms cannot be quick.
+        let taken = sequential(4, Duration::from_millis(25), false, Some(16));
 
         assert!(
             taken > Duration::from_millis(60),
