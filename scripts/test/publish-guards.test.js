@@ -9,7 +9,8 @@
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { createServer } from "node:http";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,13 +39,16 @@ const DEADLINE = 90_000;
  * this file once turned a seven-second suite into a job CI had to time out.
  */
 function publish(...args) {
-  const extraEnv = typeof args.at(-1) === "object" ? args.pop() : {};
+  // A trailing object is options: `cwd` if the run needs a working directory
+  // of its own, everything else extra environment.
+  const { cwd = repoRoot, ...extraEnv } =
+    typeof args.at(-1) === "object" ? args.pop() : {};
 
   return new Promise((resolve) => {
     const child = execFile(
       process.execPath,
       [script, "--dry-run", ...args],
-      { cwd: repoRoot, env: { ...process.env, ...extraEnv } },
+      { cwd, env: { ...process.env, ...extraEnv } },
       (error, stdout, stderr) => {
         clearTimeout(overdue);
         resolve({
@@ -115,30 +119,88 @@ test("gets past the registry check for a private one", async () => {
 });
 
 /**
+ * A registry of our own, on the loopback address.
+ *
+ * Earlier versions of these tests pointed npm at `registry.example.test` and
+ * read the failure text. That is not a registry, it is whatever the machine's
+ * resolver decides to do with a name that does not exist - which is one thing
+ * on a laptop, another on a Linux runner, and another again behind a resolver
+ * that answers for everything. Nothing about npm's config handling depends on
+ * DNS, so nothing here should either.
+ *
+ * `answer` decides what it is: a registry that has the packages, one that has
+ * never heard of them, or - by never being started - one that refuses the
+ * connection.
+ */
+function registryServing(answer) {
+  const server = createServer((request, response) => {
+    // Authentication has to fail, or the run takes itself for a logged-in
+    // publisher and skips the very checks these tests are about.
+    if (request.url.startsWith("/-/whoami")) {
+      response.writeHead(401, { "content-type": "application/json" });
+      return response.end(`{"error":"unauthenticated"}`);
+    }
+    if (answer === "missing") {
+      response.writeHead(404, { "content-type": "application/json" });
+      return response.end(`{"error":"Not found"}`);
+    }
+    // The smallest packument `npm view <name> version` will read.
+    const name = decodeURIComponent(request.url.replace(/^\//, ""));
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(
+      JSON.stringify({
+        name,
+        "dist-tags": { latest: "9.9.9" },
+        versions: { "9.9.9": { name, version: "9.9.9" } },
+      }),
+    );
+  });
+
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () =>
+      resolve({
+        url: `http://127.0.0.1:${server.address().port}`,
+        close: () => new Promise((done) => server.close(done)),
+      }),
+    );
+  });
+}
+
+/**
  * A run that gets as far as asking the registry anything.
  *
- * Three things have to be arranged or it stops earlier than the code under
- * test. A home directory of its own, because an `.npmrc` in the real one can
- * set the very keys a bad config would collide with - which is exactly why the
- * bad config reached CI. A directory standing in for a built platform package,
- * because the run refuses to go on with nothing to publish against, and a
- * developer's checkout has one lying about while a fresh clone does not - so
- * without this the test passes locally and tests nothing on a runner. And a
- * registry on a host that does not resolve, so none of it needs the network.
+ * Two things have to be arranged or it stops earlier than the code under test.
+ * A home directory of its own, because an `.npmrc` in the real one can set the
+ * very keys a bad config would collide with - which is exactly why the bad
+ * config reached CI in the first place. And a directory standing in for a
+ * built platform package, because the run refuses to go on with nothing to
+ * publish against, and a developer's checkout has one lying about while a
+ * fresh clone does not - so without this the test passes locally and tests
+ * nothing on a runner.
  */
-function probeRun() {
+function probeRun(registry) {
   const home = mkdtempSync(join(tmpdir(), "vantail-npm-home-"));
   const packages = mkdtempSync(join(tmpdir(), "vantail-packages-"));
   mkdirSync(join(packages, "runtime-darwin-arm64"));
 
-  return publish(
-    "--registry",
-    "https://registry.example.test",
-    "--partial",
-    "--packages",
-    packages,
-    { HOME: home, USERPROFILE: home, npm_config_userconfig: join(home, ".npmrc") },
-  );
+  // A working directory of its own, holding the scope mapping.
+  //
+  // `--registry` is not the last word for a scoped name: an `@vantail:registry`
+  // line beats it outright, and npm reads one from the project `.npmrc` in the
+  // working directory. The release job writes exactly such a file, pointing the
+  // scope at npmjs - so a test run from the checkout would quietly ask the real
+  // registry about the real packages and conclude whatever npmjs happened to
+  // say. Running from elsewhere, with the mapping set here, is what makes the
+  // registry named below the one that answers.
+  const from = mkdtempSync(join(tmpdir(), "vantail-cwd-"));
+  writeFileSync(join(from, ".npmrc"), `@vantail:registry=${registry}\n`);
+
+  return publish("--registry", registry, "--partial", "--packages", packages, {
+    cwd: from,
+    HOME: home,
+    USERPROFILE: home,
+    npm_config_userconfig: join(home, ".npmrc"),
+  });
 }
 
 /**
@@ -150,43 +212,71 @@ function probeRun() {
  * registry says no", and a release stopped dead insisting that six packages
  * which had been published for months did not exist.
  *
- * A home directory of its own is the whole point: an `.npmrc` in the real one
- * can set the very keys that would mask this, which is exactly why it reached
- * CI. The registry is a host that does not resolve, so nothing here needs the
- * network - a config npm rejects fails before the request, and looks nothing
- * like a host it could not reach.
+ * The registry here answers everything, so if the run cannot get an answer out
+ * of it, the fault is on our side of the wire.
  */
 test("hands npm a configuration it accepts", async () => {
-  const { output } = await probeRun();
+  const registry = await registryServing("everything");
+  try {
+    const { output } = await probeRun(registry.url);
 
-  assert.doesNotMatch(
-    output,
-    /minTimeout|Unknown user config|invalid config/i,
-    "npm rejected the configuration the probes gave it",
-  );
-  // And what it did report is a registry it could not reach, which is the
-  // failure this run is actually supposed to have. Asserted rather than
-  // assumed: without it, a run that stopped before ever asking the registry
-  // would pass this test by saying nothing at all.
-  assert.match(output, /Could not ask/);
-  assert.match(output, /ENOTFOUND|ETIMEDOUT|EAI_AGAIN|getaddrinfo/);
+    assert.doesNotMatch(
+      output,
+      /minTimeout|Unknown user config|invalid config/i,
+      "npm rejected the configuration the probes gave it",
+    );
+    assert.doesNotMatch(
+      output,
+      /Could not ask/,
+      "the registry answered everything, so nothing should have gone unasked",
+    );
+    assert.doesNotMatch(output, /do not exist on .* yet/);
+  } finally {
+    await registry.close();
+  }
 });
 
 /**
  * A registry that cannot be reached is not a registry that said no.
  *
- * The refusal below it exists to stop a release half way through; firing it on
- * a question that never got an answer stops a release that was fine.
+ * The refusal exists to stop a release half way through; firing it on a
+ * question that never got an answer stops a release that was fine.
  */
 test("does not call a package missing when it could not ask", async () => {
-  const { output } = await probeRun();
+  // Started and stopped, so it is a port nothing is listening on: the
+  // connection is refused rather than left hanging.
+  const registry = await registryServing("everything");
+  await registry.close();
+
+  const { output } = await probeRun(registry.url);
 
   assert.match(output, /Could not ask/, "the registry checks never ran");
   assert.doesNotMatch(
     output,
     /do not exist on .* yet/,
-    "an unreachable registry was read as an empty one",
+    "a registry it could not reach was read as an empty one",
   );
+});
+
+/**
+ * And a registry that really does say no still stops the release.
+ *
+ * The other half of the same coin: having taught the script to tell silence
+ * from a "no", the "no" has to still count. Trusted publishing cannot create a
+ * name that does not exist yet, and finding that out half way through is how a
+ * release ends up partly public.
+ */
+test("still refuses when the registry says the package is new", async () => {
+  const registry = await registryServing("missing");
+  try {
+    const { output, code } = await probeRun(registry.url);
+
+    assert.notEqual(code, 0, "the run should have stopped");
+    assert.match(output, /do not exist on .* yet/);
+    assert.match(output, /Nothing has been published by this run/);
+  } finally {
+    await registry.close();
+  }
 });
 
 /**
