@@ -111,3 +111,48 @@ test("asks for provenance on CI and not on a laptop", async () => {
   const ci = await publish(...npmjs, { GITHUB_ACTIONS: "true" });
   assert.match(ci.output, /Provenance: yes/);
 });
+
+test("stops before publishing anything when a package cannot be created", async () => {
+  // The failure this prevents: `@vantail/runtime-darwin-arm64@0.1.11` went
+  // out, then the sqlcipher package beside it was refused - leaving a release
+  // half published, with a resolver naming binaries that do not exist.
+  //
+  // npm's trusted publishing works against a package whose publisher is
+  // already configured, and there is nothing to configure until the package
+  // exists. So a run with no token cannot create a name, and it should say so
+  // before it sends the first tarball rather than in the middle.
+  const { code, output } = await publish(
+    "--i-mean-it-publish-publicly",
+    "--only",
+    "@vantail/definitely-not-a-real-package",
+    { NODE_AUTH_TOKEN: "", NPM_TOKEN: "" },
+  );
+
+  // Either it refuses for this reason, or it got no further - what must never
+  // happen is publishing some and discovering the rest cannot go.
+  if (code !== 0) {
+    assert.doesNotMatch(
+      output,
+      /^\+ @vantail\//m,
+      "nothing may be published before the check that would stop the run",
+    );
+  }
+});
+
+test("a dry run rehearses the checks rather than only the arguments", async () => {
+  // A rehearsal that cannot tell you the release would stop half way is not
+  // much of a rehearsal, so the registry checks run here too.
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(join(repoRoot, "scripts", "publish.mjs"), "utf8"),
+  );
+  assert.match(
+    source,
+    /Checked on a dry run too/,
+    "the pre-flight has to run on a dry run",
+  );
+  assert.match(
+    source,
+    /already at \$\{version\}/,
+    "an interrupted release has to be resumable rather than conflict",
+  );
+});

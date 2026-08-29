@@ -22,7 +22,7 @@
 
 import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -39,14 +39,9 @@ function flag(name, fallback) {
 
 const platformPackages = resolve(flag("packages", "dist-packages"));
 
-/**
- * Whether the registry already has this package at this version.
- *
- * Only asked on the path that reuses an older release's binaries, where
- * naming a package that was never published makes the whole install fail.
- */
-function publishedAt(name, version) {
-  const args = ["view", `${name}@${version}`, "version"];
+/** Whether the registry can answer for this spec. */
+function known(spec) {
+  const args = ["view", spec, "version"];
   const registry = flag("registry");
   if (registry) args.push("--registry", registry);
   const userconfig = flag("userconfig");
@@ -62,6 +57,19 @@ function publishedAt(name, version) {
     return false;
   }
 }
+
+/**
+ * Whether the registry already has this package at this version.
+ *
+ * Asked twice over: on the path that reuses an older release's binaries, where
+ * naming a package that was never published makes the whole install fail; and
+ * before each publish, so a release that stopped half way can be run again and
+ * pick up where it left off.
+ */
+const publishedAt = (name, version) => known(`${name}@${version}`);
+
+/** Whether this package exists on the registry at all. */
+const everPublished = (name) => known(name);
 
 /**
  * Publish a subset, by package name.
@@ -196,6 +204,28 @@ const PUBLISH = [
   ...(provenance ? ["--provenance"] : []),
 ];
 
+/**
+ * Whether this run has a token, as opposed to relying on trusted publishing.
+ *
+ * It decides whether a package that does not exist yet can be created: npm's
+ * OIDC publishing works against a package whose trusted publisher is already
+ * configured, and there is nothing to configure until the package exists. The
+ * first publish of a name needs a token.
+ */
+function hasAuthToken() {
+  if (process.env.NODE_AUTH_TOKEN || process.env.NPM_TOKEN) return true;
+  if (!existsSync(projectNpmrc)) return false;
+  return /_authToken\s*=/.test(readFileSync(projectNpmrc, "utf8"));
+}
+
+/** The workspace packages this run would publish, by name. */
+function patchedNames() {
+  return WORKSPACE_ORDER.map(
+    (directory) =>
+      JSON.parse(readFileSync(join(root, directory, "package.json"), "utf8")).name,
+  ).filter((name) => wanted(name));
+}
+
 /** Publishing order: dependencies before the things that depend on them. */
 const WORKSPACE_ORDER = [
   "packages/shared",
@@ -283,11 +313,48 @@ for (const directory of WORKSPACE_ORDER) {
 }
 
 // ---------------------------------------------------------------------------
+// Can everything here actually be published?
+// ---------------------------------------------------------------------------
+
+// Asked before anything is sent. A name that cannot be created fails at the
+// moment it is reached, and by then the packages before it are already public
+// - which is how a release ends up half out, with a resolver pointing at
+// binaries that do not exist.
+// Checked on a dry run too: a rehearsal that cannot tell you the release
+// would stop half way is not much of a rehearsal.
+if (!hasAuthToken()) {
+  const brandNew = [
+    ...built.map((target) => target.package),
+    ...patchedNames(),
+  ].filter((name) => !everPublished(name));
+
+  if (brandNew.length > 0) {
+    console.error(
+      `\nThese packages do not exist on ${registry} yet:\n` +
+        brandNew.map((name) => `  ${name}`).join("\n") +
+        `\n\nThis run has no npm token, so it is publishing through trusted\n` +
+        `publishing - and that works against a package whose trusted publisher\n` +
+        `is already configured. There is nothing to configure until the package\n` +
+        `exists, so the first publish of a name has to carry a token.\n\n` +
+        `Either publish these once from a machine with one, or configure them\n` +
+        `on the registry first. Nothing has been published by this run.`,
+    );
+    process.exit(1);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // The binaries
 // ---------------------------------------------------------------------------
 
 console.log("Platform runtimes:");
 for (const target of built) {
+  // A release that stopped half way can be run again: what is already out at
+  // this version is left alone rather than failing on a version conflict.
+  if (!dryRun && publishedAt(target.package, version)) {
+    console.log(`  ${target.package}  (already at ${version})`);
+    continue;
+  }
   console.log(`  ${target.package}`);
   run("npm", PUBLISH, { cwd: directoryFor(target) });
 }
@@ -407,6 +474,10 @@ try {
   for (const entry of patched) {
     const note =
       entry.changed.length > 0 ? `  (${entry.changed.join(", ")})` : "";
+    if (!dryRun && publishedAt(entry.name, version)) {
+      console.log(`  ${entry.name}  (already at ${version})`);
+      continue;
+    }
     console.log(`  ${entry.name}${note}`);
     run("npm", PUBLISH, { cwd: join(root, entry.directory) });
   }
