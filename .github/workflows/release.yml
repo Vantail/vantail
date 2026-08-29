@@ -157,11 +157,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Two builds of every target. `default` is what nearly every
-        # application uses; `sqlcipher` adds database encryption and about
-        # 3 MB of crypto with it, which is why it is a separate package rather
-        # than something everybody carries. See `docs/packaging.md`.
+        # Both of these are axes, and both have to be: `include` does not add
+        # a job per entry. An include object whose keys are not axes is merged
+        # into every existing combination, and several of them overwrite each
+        # other - which silently left one target built twice instead of five
+        # targets built twice.
+        #
+        # `default` is what nearly every application uses; `sqlcipher` adds
+        # database encryption and about 3 MB of crypto with it, which is why
+        # it is a separate package rather than something everybody carries.
+        # See `docs/packaging.md`.
         variant: [default, sqlcipher]
+        target:
+          - aarch64-apple-darwin
+          - x86_64-pc-windows-msvc
+          - aarch64-pc-windows-msvc
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+        # Only to attach a runner to each target. These keys match an existing
+        # axis, so they extend those combinations rather than making new ones.
         include:
           - target: aarch64-apple-darwin
             runner: macos-14
@@ -193,7 +207,10 @@ jobs:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          # Per variant as well as per target: the two builds of a target
+          # compile different SQLite, and sharing one cache between them means
+          # each eviction costs the other a full rebuild.
+          key: ${{ matrix.target }}-${{ matrix.variant }}
 
       - name: Build
         shell: bash

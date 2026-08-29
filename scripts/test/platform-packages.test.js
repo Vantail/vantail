@@ -214,12 +214,28 @@ describe("release workflow", () => {
       await readFile(join(root, "packages/runtime/platforms.json"), "utf8"),
     );
 
+    const matrix = workflow.jobs.runtime.strategy.matrix;
     const declared = platforms.targets.map((target) => target.rust).sort();
-    const built = workflow.jobs.runtime.strategy.matrix.include
-      .map((entry) => entry.target)
-      .sort();
 
-    assert.deepEqual(built, declared);
+    // `target` has to be an axis, not something only `include` mentions.
+    // An include object whose keys are not axes is merged into every existing
+    // combination rather than adding a job of its own, and several of them
+    // overwrite each other - so five entries produced one target, twice, and
+    // the release got two packages instead of ten.
+    assert.ok(
+      Array.isArray(matrix.target),
+      "`target` must be a matrix axis; `include` alone does not create jobs",
+    );
+    assert.deepEqual([...matrix.target].sort(), declared);
+
+    // And `include` may only attach a runner to a target that already exists,
+    // which is what keeps it from quietly inventing combinations.
+    for (const entry of matrix.include) {
+      assert.ok(
+        matrix.target.includes(entry.target),
+        `include names ${entry.target}, which is not one of the targets`,
+      );
+    }
   });
 
   it("builds every variant of every target", async () => {
@@ -229,18 +245,29 @@ describe("release workflow", () => {
       await readFile(join(root, "packages/runtime/platforms.json"), "utf8"),
     );
 
-    // The matrix crosses `variant` with `include`, so the job count is the
-    // number of packages - and a variant missing here is one that never gets
-    // built, however well the rest of the pipeline handles it.
-    const variants = workflow.jobs.runtime.strategy.matrix.variant ?? ["default"];
+    // The job count comes from the axes crossed with each other - counting
+    // `include` entries instead is what hid a matrix that built one target
+    // twice rather than five targets twice.
+    const matrix = workflow.jobs.runtime.strategy.matrix;
+    const variants = matrix.variant ?? ["default"];
+
     assert.deepEqual(
       [...variants].sort(),
       platforms.variants.map((variant) => variant.id).sort(),
     );
     assert.equal(
-      variants.length * workflow.jobs.runtime.strategy.matrix.include.length,
+      variants.length * matrix.target.length,
       runtimeBuilds(platforms).length,
+      "every target has to be built once per variant",
     );
+
+    // Every target needs a runner, or its jobs have nothing to run on.
+    for (const target of matrix.target) {
+      assert.ok(
+        matrix.include.some((entry) => entry.target === target && entry.runner),
+        `${target} has no runner`,
+      );
+    }
   });
 
   it("gives every target a runner of its own architecture", async () => {
