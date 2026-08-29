@@ -193,9 +193,14 @@ jobs:
           - aarch64-pc-windows-msvc
           - x86_64-unknown-linux-gnu
           - aarch64-unknown-linux-gnu
-        # Only to attach a runner to each target. These keys match an existing
-        # axis, so they extend those combinations rather than making new ones.
+        # These only attach values to combinations that already exist: each
+        # entry's keys match an axis, so nothing new is created.
         include:
+          - variant: default
+            features: ""
+          - variant: sqlcipher
+            features: "--features database-encryption"
+
           - target: aarch64-apple-darwin
             runner: macos-14
           - target: x86_64-pc-windows-msvc
@@ -224,6 +229,24 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      # `openssl-src` shells out to Perl to configure OpenSSL, and the answer
+      # has to be Strawberry Perl. Named explicitly rather than left to PATH,
+      # so a runner image that ships a different one cannot quietly break the
+      # encrypted build.
+      - name: Perl for the vendored OpenSSL build
+        if: runner.os == 'Windows' && matrix.variant == 'sqlcipher'
+        shell: pwsh
+        run: |
+          $perl = "C:\Strawberry\perl\bin\perl.exe"
+          if (-not (Test-Path $perl)) {
+            choco install strawberryperl -y --no-progress
+          }
+          if (-not (Test-Path $perl)) {
+            throw "No Strawberry Perl at $perl, and the vendored OpenSSL build needs one."
+          }
+          & $perl --version
+          "OPENSSL_SRC_PERL=$perl" >> $env:GITHUB_ENV
+
       - uses: Swatinem/rust-cache@v2
         with:
           # Per variant as well as per target: the two builds of a target
@@ -231,17 +254,14 @@ jobs:
           # each eviction costs the other a full rebuild.
           key: ${{ matrix.target }}-${{ matrix.variant }}
 
+      # Deliberately the runner's default shell rather than bash. On Windows,
+      # Git Bash puts MSYS's `perl` ahead of Strawberry Perl, and MSYS Perl
+      # cannot configure OpenSSL for an MSVC target - it is missing modules
+      # `Configure` needs. The vendored OpenSSL that SQLCipher pulls in shells
+      # out to whatever `perl` resolves to, so the shell choice decides
+      # whether the build works.
       - name: Build
-        shell: bash
-        run: |
-          # The suffix is empty for the default build, so its artifact keeps
-          # the bare target name.
-          if [ "${{ matrix.variant }}" = "sqlcipher" ]; then
-            cargo build --release --locked --target ${{ matrix.target }} \
-              --features database-encryption
-          else
-            cargo build --release --locked --target ${{ matrix.target }}
-          fi
+        run: cargo build --release --locked --target ${{ matrix.target }} ${{ matrix.features }}
 
       # The runtime has to at least start and answer, or the binary is not
       # worth publishing.

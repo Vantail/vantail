@@ -118,6 +118,23 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
+      # `--all-features` includes `database-encryption`, which builds OpenSSL
+      # from source, and `openssl-src` shells out to Perl to configure it.
+      # MSYS Perl cannot do that for an MSVC target, so say which Perl rather
+      # than leaving it to PATH.
+      - name: Perl for the vendored OpenSSL build
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $perl = "C:\Strawberry\perl\bin\perl.exe"
+          if (-not (Test-Path $perl)) {
+            choco install strawberryperl -y --no-progress
+          }
+          if (-not (Test-Path $perl)) {
+            throw "No Strawberry Perl at $perl, and the vendored OpenSSL build needs one."
+          }
+          "OPENSSL_SRC_PERL=$perl" >> $env:GITHUB_ENV
+
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v5
         with:

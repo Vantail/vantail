@@ -249,9 +249,11 @@ describe("release workflow", () => {
     );
     assert.deepEqual([...matrix.target].sort(), declared);
 
-    // And `include` may only attach a runner to a target that already exists,
-    // which is what keeps it from quietly inventing combinations.
-    for (const entry of matrix.include) {
+    // And `include` may only attach values to combinations that already
+    // exist, which is what keeps it from quietly inventing them. Entries
+    // keyed on `variant` rather than `target` are doing the same for the
+    // other axis.
+    for (const entry of matrix.include.filter((e) => e.target !== undefined)) {
       assert.ok(
         matrix.target.includes(entry.target),
         `include names ${entry.target}, which is not one of the targets`,
@@ -291,11 +293,40 @@ describe("release workflow", () => {
     }
   });
 
+  it("passes the encryption feature to the encrypted build, and only it", async () => {
+    // The build command is one line now, with the difference between the two
+    // builds carried by the matrix. When it was a shell conditional it had to
+    // run under bash, and on Windows that put MSYS's Perl ahead of Strawberry
+    // Perl - which cannot configure the OpenSSL that SQLCipher needs.
+    const { parse } = await import("yaml");
+    const workflow = parse(await readFile(join(root, ".github/workflows/release.yml"), "utf8"));
+    const runtime = workflow.jobs.runtime;
+    const build = runtime.steps.find((step) => step.name === "Build");
+
+    assert.ok(build, "the runtime job needs a Build step");
+    assert.equal(
+      build.shell,
+      undefined,
+      "the build has to use the runner's default shell; bash changes which Perl is found",
+    );
+
+    const features = Object.fromEntries(
+      runtime.strategy.matrix.include
+        .filter((entry) => entry.variant !== undefined)
+        .map((entry) => [entry.variant, entry.features]),
+    );
+    assert.equal(features.default, "");
+    assert.match(features.sqlcipher, /--features database-encryption/);
+  });
+
   it("gives every target a runner of its own architecture", async () => {
     const { parse } = await import("yaml");
     const workflow = parse(await readFile(join(root, ".github/workflows/release.yml"), "utf8"));
 
-    for (const entry of workflow.jobs.runtime.strategy.matrix.include) {
+    const withRunner = workflow.jobs.runtime.strategy.matrix.include.filter(
+      (entry) => entry.target !== undefined,
+    );
+    for (const entry of withRunner) {
       // Native runners rather than cross-compilation: the runtime links
       // against the platform's webview, tray and HID libraries.
       const wantsArm = entry.target.startsWith("aarch64");
