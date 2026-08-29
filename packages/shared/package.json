@@ -1,6 +1,6 @@
 {
   "name": "@vantail/shared",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Shared types, error codes and config schema for Vantail.",
   "license": "MIT",
   "repository": {
