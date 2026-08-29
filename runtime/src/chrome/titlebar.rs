@@ -105,8 +105,14 @@ pub struct Native {
     /// The whole run reserved on the leading edge: gap, buttons, gap.
     pub inset_left: f64,
     /// Where the first button starts, measured rather than derived.
+    ///
+    /// macOS only, and not merely unused elsewhere: nowhere else keeps its
+    /// window buttons when the title bar goes, so there is nothing to
+    /// measure and nothing to move.
+    #[cfg(target_os = "macos")]
     pub inset_start: f64,
     /// How tall the window buttons are, which is what centring them needs.
+    #[cfg(target_os = "macos")]
     pub button_height: f64,
 }
 
@@ -134,8 +140,10 @@ pub fn measure_with(
         ));
         place_window_buttons(window, x, top, native.inset_start);
     }
+    // Nothing to place: the platforms that lose their window buttons with the
+    // title bar have none to move.
     #[cfg(not(target_os = "macos"))]
-    let _ = lights;
+    let _ = (window, lights);
 
     Metrics {
         height,
@@ -221,7 +229,9 @@ fn native_fallback() -> Native {
     Native {
         height: fallback().height,
         inset_left: 0.0,
+        #[cfg(target_os = "macos")]
         inset_start: 0.0,
+        #[cfg(target_os = "macos")]
         button_height: 0.0,
     }
 }

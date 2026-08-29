@@ -15,6 +15,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { after, before, describe, it } from "node:test";
 
+import { runtimeBuilds } from "../lib/runtime-builds.mjs";
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const scratch = [];
 
@@ -36,14 +38,9 @@ describe("platform packages", () => {
 
   before(async () => {
     platforms = JSON.parse(await readFile(join(root, "packages/runtime/platforms.json"), "utf8"));
-    builds = platforms.targets.flatMap((target) =>
-      platforms.variants.map((variant) => ({
-        ...target,
-        variant,
-        package: `${target.package}${variant.suffix}`,
-        dir: `${target.rust}${variant.suffix}`,
-      })),
-    );
+    // The same helper the packaging and publish scripts use, so this test
+    // cannot agree with one of them and not the other.
+    builds = runtimeBuilds(platforms);
 
     // A stand-in for every build, so the script is exercised for all ten
     // rather than only the one this machine can compile.
@@ -188,6 +185,25 @@ describe("platform packages", () => {
   });
 });
 
+describe("publish script", () => {
+  it("publishes every build the packaging script produces", async () => {
+    // These two used to work the list out separately, and the publish one
+    // kept only the plain names - so the encrypted packages would have been
+    // built, never declared, and never installed by anyone.
+    const source = await readFile(join(root, "scripts/publish.mjs"), "utf8");
+    assert.match(
+      source,
+      /runtimeBuilds\(platforms\)/,
+      "publish.mjs has to enumerate builds the same way the packaging script does",
+    );
+    assert.doesNotMatch(
+      source,
+      /platforms\.targets\.filter/,
+      "enumerating `platforms.targets` misses every variant",
+    );
+  });
+});
+
 describe("release workflow", () => {
   it("builds exactly the targets that get published", async () => {
     // Drift here is silent and expensive: a target missing from the matrix
@@ -204,6 +220,27 @@ describe("release workflow", () => {
       .sort();
 
     assert.deepEqual(built, declared);
+  });
+
+  it("builds every variant of every target", async () => {
+    const { parse } = await import("yaml");
+    const workflow = parse(await readFile(join(root, ".github/workflows/release.yml"), "utf8"));
+    const platforms = JSON.parse(
+      await readFile(join(root, "packages/runtime/platforms.json"), "utf8"),
+    );
+
+    // The matrix crosses `variant` with `include`, so the job count is the
+    // number of packages - and a variant missing here is one that never gets
+    // built, however well the rest of the pipeline handles it.
+    const variants = workflow.jobs.runtime.strategy.matrix.variant ?? ["default"];
+    assert.deepEqual(
+      [...variants].sort(),
+      platforms.variants.map((variant) => variant.id).sort(),
+    );
+    assert.equal(
+      variants.length * workflow.jobs.runtime.strategy.matrix.include.length,
+      runtimeBuilds(platforms).length,
+    );
   });
 
   it("gives every target a runner of its own architecture", async () => {

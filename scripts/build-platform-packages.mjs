@@ -20,6 +20,8 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { runtimeBuilds } from "./lib/runtime-builds.mjs";
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 function flag(name, fallback) {
@@ -49,16 +51,7 @@ const built = [];
 const missing = [];
 
 /** Every target crossed with every variant: one package each. */
-const builds = platforms.targets.flatMap((target) =>
-  platforms.variants.map((variant) => ({
-    ...target,
-    variant,
-    package: `${target.package}${variant.suffix}`,
-    // The default variant keeps the bare target name, so the artifact layout
-    // an existing pipeline produces still lines up.
-    dir: `${target.rust}${variant.suffix}`,
-  })),
-);
+const builds = runtimeBuilds(platforms);
 
 for (const target of builds) {
   const executable = target.platform === "win32" ? "vantail-runtime.exe" : "vantail-runtime";

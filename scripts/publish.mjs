@@ -26,6 +26,8 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { runtimeBuilds } from "./lib/runtime-builds.mjs";
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dryRun = process.argv.includes("--dry-run");
 
@@ -197,15 +199,19 @@ const platforms = JSON.parse(
 const directoryFor = (target) =>
   join(platformPackages, target.package.replace("@vantail/", ""));
 
-const built = platforms.targets.filter(
+// Every variant of every target, not just the plain ones: a package that is
+// built and not published is one nobody can install.
+const allBuilds = runtimeBuilds(platforms);
+
+const built = allBuilds.filter(
   (target) => existsSync(directoryFor(target)) && wanted(target.package),
 );
 const missing = only
   ? []
-  : platforms.targets.filter((target) => !existsSync(directoryFor(target)));
+  : allBuilds.filter((target) => !existsSync(directoryFor(target)));
 
 if (missing.length > 0) {
-  const names = missing.map((target) => target.rust).join(", ");
+  const names = missing.map((target) => target.dir).join(", ");
   // A release must carry every platform: half a release leaves an application
   // that installs on one machine and not the next.
   if (!process.argv.includes("--partial")) {
@@ -311,7 +317,7 @@ for (const directory of WORKSPACE_ORDER) {
     manifest.name === "@vantail/runtime" &&
     (built.length > 0 || runtimeVersion)
   ) {
-    const targets = runtimeVersion ? platforms.targets : built;
+    const targets = runtimeVersion ? allBuilds : built;
     const at = runtimeVersion ?? version;
     manifest.optionalDependencies = Object.fromEntries(
       targets.map((target) => [target.package, at]),

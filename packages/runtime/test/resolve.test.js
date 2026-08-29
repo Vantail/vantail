@@ -12,7 +12,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
-import { resolveRuntimeBinary, runtimePackageName } from "../dist/index.js";
+import {
+  resolveRuntimeBinary,
+  runtimeBinaryName,
+  runtimePackageName,
+} from "../dist/index.js";
 
 const scratch = [];
 after(async () => {
@@ -135,19 +139,33 @@ describe("runtime variants", () => {
     );
   });
 
-  it("uses the local build whatever variant is asked for", () => {
-    // Inside this repository there is one binary and it is whatever you last
+  it("uses the local build whatever variant is asked for", async () => {
+    // Inside a checkout there is one binary and it is whatever you last
     // compiled. Pretending otherwise would mean `vantail dev` refusing to run
-    // against a runtime that is sitting right there.
+    // against a runtime sitting right there.
+    //
+    // Built here rather than leaning on this repository's own `target/`: on a
+    // CI runner that has not compiled the runtime yet, that directory is
+    // empty, and a test that needs it is testing the machine.
+    const checkout = await mkdtemp(join(tmpdir(), "vantail-variant-"));
+    scratch.push(checkout);
+    await mkdir(join(checkout, "runtime"), { recursive: true });
+    await writeFile(join(checkout, "runtime", "Cargo.toml"), "[package]\n", "utf8");
+    await mkdir(join(checkout, "target", "release"), { recursive: true });
+    await writeFile(
+      join(checkout, "target", "release", runtimeBinaryName("linux")),
+      "release",
+      "utf8",
+    );
+
     delete process.env.VANTAIL_RUNTIME_BIN;
-    // Any directory: the fallback also searches from the module's own
-    // location, which is inside this repository.
     const resolved = resolveRuntimeBinary({
-      cwd: tmpdir(),
-      platform: process.platform,
-      arch: process.arch,
+      cwd: checkout,
+      platform: "linux",
+      arch: "x64",
       variant: "sqlcipher",
     });
     assert.equal(resolved.source, "workspace");
+    assert.equal(resolved.profile, "release");
   });
 });
