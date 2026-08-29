@@ -519,7 +519,15 @@ describe(
 
       // Placing the lights by hand and re-centring both answer with the
       // metrics, and neither changes the height they are being placed in.
-      assert.equal(results.movedLights.height, 48);
+      if (process.platform === "darwin") {
+        assert.equal(results.movedLights.moved, true);
+        assert.equal(results.movedLights.height, 48);
+      } else {
+        // Refused, and said why - rather than pretending it moved something
+        // that is not there.
+        assert.equal(results.movedLights.moved, false);
+        assert.equal(results.movedLights.code, "UNSUPPORTED");
+      }
       assert.equal(results.centredLights.height, 48);
     });
 
@@ -1119,7 +1127,16 @@ try {
   results.tallCss = readCss();
   results.tallSync = titleBarMetrics();
   // Moving them by hand, and putting them back.
-  results.movedLights = await appWindow.setTrafficLightPosition(12, 14);
+  // macOS is the only platform with traffic lights to move - everywhere else
+  // the title bar takes its buttons with it - so this is UNSUPPORTED there,
+  // which is the answer rather than a silent no-op. Asked for either way, so
+  // the test can check the right one happened.
+  results.movedLights = await appWindow
+    .setTrafficLightPosition(12, 14)
+    .then((metrics) => ({ moved: true, height: metrics.height }))
+    .catch((error) => ({ moved: false, code: error.code }));
+  // Re-centring is not platform-specific: with nothing to move it is simply a
+  // re-measure, so it answers with the metrics everywhere.
   results.centredLights = await appWindow.centerTrafficLights();
   results.backToNative = await appWindow.setTitleBarHeight(null);
   results.nativeHeight = nativeHeight;
