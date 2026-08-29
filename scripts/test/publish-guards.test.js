@@ -9,7 +9,7 @@
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -115,6 +115,33 @@ test("gets past the registry check for a private one", async () => {
 });
 
 /**
+ * A run that gets as far as asking the registry anything.
+ *
+ * Three things have to be arranged or it stops earlier than the code under
+ * test. A home directory of its own, because an `.npmrc` in the real one can
+ * set the very keys a bad config would collide with - which is exactly why the
+ * bad config reached CI. A directory standing in for a built platform package,
+ * because the run refuses to go on with nothing to publish against, and a
+ * developer's checkout has one lying about while a fresh clone does not - so
+ * without this the test passes locally and tests nothing on a runner. And a
+ * registry on a host that does not resolve, so none of it needs the network.
+ */
+function probeRun() {
+  const home = mkdtempSync(join(tmpdir(), "vantail-npm-home-"));
+  const packages = mkdtempSync(join(tmpdir(), "vantail-packages-"));
+  mkdirSync(join(packages, "runtime-darwin-arm64"));
+
+  return publish(
+    "--registry",
+    "https://registry.example.test",
+    "--partial",
+    "--packages",
+    packages,
+    { HOME: home, USERPROFILE: home, npm_config_userconfig: join(home, ".npmrc") },
+  );
+}
+
+/**
  * The registry probes have to hand npm a configuration it will accept.
  *
  * This is not hypothetical. A `--fetch-retry-maxtimeout` of 5s sat below npm's
@@ -130,12 +157,7 @@ test("gets past the registry check for a private one", async () => {
  * like a host it could not reach.
  */
 test("hands npm a configuration it accepts", async () => {
-  const home = mkdtempSync(join(tmpdir(), "vantail-npm-home-"));
-  const { output } = await publish(
-    "--registry",
-    "https://registry.example.test",
-    { HOME: home, USERPROFILE: home, npm_config_userconfig: join(home, ".npmrc") },
-  );
+  const { output } = await probeRun();
 
   assert.doesNotMatch(
     output,
@@ -143,7 +165,9 @@ test("hands npm a configuration it accepts", async () => {
     "npm rejected the configuration the probes gave it",
   );
   // And what it did report is a registry it could not reach, which is the
-  // failure this run is actually supposed to have.
+  // failure this run is actually supposed to have. Asserted rather than
+  // assumed: without it, a run that stopped before ever asking the registry
+  // would pass this test by saying nothing at all.
   assert.match(output, /Could not ask/);
   assert.match(output, /ENOTFOUND|ETIMEDOUT|EAI_AGAIN|getaddrinfo/);
 });
@@ -155,13 +179,9 @@ test("hands npm a configuration it accepts", async () => {
  * a question that never got an answer stops a release that was fine.
  */
 test("does not call a package missing when it could not ask", async () => {
-  const home = mkdtempSync(join(tmpdir(), "vantail-npm-home-"));
-  const { output } = await publish(
-    "--registry",
-    "https://registry.example.test",
-    { HOME: home, USERPROFILE: home, npm_config_userconfig: join(home, ".npmrc") },
-  );
+  const { output } = await probeRun();
 
+  assert.match(output, /Could not ask/, "the registry checks never ran");
   assert.doesNotMatch(
     output,
     /do not exist on .* yet/,
