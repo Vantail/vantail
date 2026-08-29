@@ -74,6 +74,21 @@ struct OpenParams {
     /// Fail rather than create the file. Default `false`.
     #[serde(default)]
     read_only: bool,
+    /// Encrypt the file, with a key the runtime reads from the OS credential
+    /// store under this name.
+    ///
+    /// The key never crosses into JavaScript, which is the point: a page that
+    /// has been taken over can ask for the database it was already allowed to
+    /// open, and still cannot read the key out to take the file elsewhere.
+    #[serde(default)]
+    key_secret: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KeyParams {
+    /// The credential store entry to create the key in.
+    secret: String,
 }
 
 #[derive(Deserialize)]
@@ -286,6 +301,16 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, id: &str, method: &str, params: Value) ->
     let queued = match method {
         "database.open" => return Some(open(rt, method, params)),
 
+        // Making the key is its own call so the key never has to exist in
+        // JavaScript, even for the moment it takes to store it.
+        "database.createKey" => {
+            if let Err(error) = rt.permissions.require(rt.permissions.secrets, method) {
+                return Some(Err(error));
+            }
+            let params: Result<KeyParams, _> = Request::params(method, params);
+            return Some(params.and_then(|p| create_key(rt, &p.secret)));
+        }
+
         "database.query" => Request::params::<StatementParams>(method, params).and_then(|p| {
             rt.databases.hand(
                 p.id,
@@ -365,7 +390,22 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, id: &str, method: &str, params: Value) ->
 }
 
 fn open(rt: &Arc<Runtime>, method: &str, params: Value) -> ApiResult {
-    let OpenParams { path, read_only } = Request::params(method, params)?;
+    let OpenParams {
+        path,
+        read_only,
+        key_secret,
+    } = Request::params(method, params)?;
+
+    // Reading the key is reading a secret, so it needs that permission too:
+    // `database` says this application may keep a database, not that it may
+    // help itself to the credential store.
+    let key = match &key_secret {
+        Some(name) => {
+            rt.permissions.require(rt.permissions.secrets, method)?;
+            Some(read_key(rt, name)?)
+        }
+        None => None,
+    };
 
     // A database is a file, so it goes through the same scope a file write
     // does - `$APPDATA/**` and the rest all work exactly as they read.
@@ -387,7 +427,7 @@ fn open(rt: &Arc<Runtime>, method: &str, params: Value) -> ApiResult {
 
     let spawned = std::thread::Builder::new()
         .name(format!("vantail-db-{id}"))
-        .spawn(move || serve(runtime, id, resolved, read_only, ready, inbox));
+        .spawn(move || serve(runtime, id, resolved, read_only, key, ready, inbox));
 
     if let Err(error) = spawned {
         rt.databases.remove(id);
@@ -422,10 +462,11 @@ fn serve(
     id: u32,
     path: PathBuf,
     read_only: bool,
+    key: Option<String>,
     ready: Sender<ApiResult>,
     inbox: Receiver<Job>,
 ) {
-    let connection = match connect(&path, read_only) {
+    let connection = match connect(&path, read_only, key.as_deref()) {
         Ok(connection) => {
             let _ = ready.send(Ok(Value::Null));
             connection
@@ -443,7 +484,7 @@ fn serve(
     rt.databases.remove(id);
 }
 
-fn connect(path: &PathBuf, read_only: bool) -> Result<Connection, ApiError> {
+fn connect(path: &PathBuf, read_only: bool, key: Option<&str>) -> Result<Connection, ApiError> {
     use rusqlite::OpenFlags;
 
     let flags = if read_only {
@@ -456,6 +497,12 @@ fn connect(path: &PathBuf, read_only: bool) -> Result<Connection, ApiError> {
 
     let connection = Connection::open_with_flags(path, flags)
         .map_err(|e| failed(&format!("Could not open `{}`", path.display()), &e))?;
+
+    // Before anything else touches the file. SQLCipher will refuse a key
+    // given after the connection has already read something.
+    if let Some(key) = key {
+        apply_key(&connection, key, path)?;
+    }
 
     if !read_only {
         // Write-ahead logging, because the alternative is a rollback journal
@@ -728,6 +775,105 @@ fn close(connection: Connection) -> ApiResult {
 }
 
 // ---------------------------------------------------------------------------
+// Keys
+// ---------------------------------------------------------------------------
+
+/// How many bytes of key SQLCipher is handed. 256 bits, as a raw key.
+const KEY_BYTES: usize = 32;
+
+/// Hand the key to SQLCipher, then prove it was the right one.
+///
+/// `x'...'` is SQLCipher's raw-key form: the bytes are used as the key
+/// directly rather than run through PBKDF2 as a passphrase, which is what you
+/// want for a key that was random to begin with.
+///
+/// The check afterwards matters. Keying a connection never fails on its own -
+/// it is the first read that discovers the file will not decrypt - so without
+/// this a wrong key would surface later as an unrelated-looking error in the
+/// middle of an application's first query.
+#[cfg(feature = "database-encryption")]
+fn apply_key(connection: &Connection, key: &str, path: &PathBuf) -> Result<(), ApiError> {
+    connection
+        .pragma_update(None, "key", format!("x'{key}'"))
+        .map_err(|e| failed("Could not key the database", &e))?;
+
+    connection
+        .prepare("select count(*) from sqlite_schema")
+        .and_then(|mut statement| statement.query_row([], |row| row.get::<_, i64>(0)))
+        .map(|_| ())
+        .map_err(|_| {
+            ApiError::new(
+                crate::error::code::PERMISSION_DENIED,
+                format!(
+                    "`{}` did not decrypt with that key. Either the key is wrong, or the file \
+                     is a plain unencrypted database.",
+                    path.display()
+                ),
+            )
+        })
+}
+
+/// The same call in a build without SQLCipher, which cannot honour it.
+///
+/// Refusing is the only safe answer: carrying on would open the file
+/// unencrypted and hand back a working database, and the application would
+/// have no way to tell that its ledger was in the clear.
+#[cfg(not(feature = "database-encryption"))]
+fn apply_key(_connection: &Connection, _key: &str, _path: &PathBuf) -> Result<(), ApiError> {
+    Err(ApiError::unsupported(
+        "This runtime was built without database encryption. Rebuild with the \
+         `database-encryption` feature, or open the database without `keySecret`.",
+    ))
+}
+
+/// Read a key out of the OS credential store.
+fn read_key(rt: &Runtime, secret: &str) -> Result<String, ApiError> {
+    let stored = crate::api::secrets::read(rt, secret)?.ok_or_else(|| {
+        ApiError::new(
+            crate::error::code::NOT_FOUND,
+            format!(
+                "There is no key stored as `{secret}`. Create one with \
+                 `database.createKey` before opening an encrypted database."
+            ),
+        )
+    })?;
+
+    // Stored as hex, so what comes back is the key rather than a passphrase
+    // that happened to survive a round trip through the credential store.
+    if stored.len() != KEY_BYTES * 2 || !stored.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(ApiError::invalid_params(format!(
+            "`{secret}` does not hold a database key. `database.createKey` writes one."
+        )));
+    }
+    Ok(stored)
+}
+
+/// Make a key and put it straight into the credential store.
+///
+/// Generated here rather than in the application so the key has no reason to
+/// exist in the webview at all - not in a variable, not in a promise, not in
+/// a heap snapshot. The application never sees it, and does not need to.
+fn create_key(rt: &Runtime, secret: &str) -> ApiResult {
+    if crate::api::secrets::read(rt, secret)?.is_some() {
+        return Err(ApiError::new(
+            crate::error::code::ALREADY_EXISTS,
+            format!(
+                "`{secret}` already holds a key. Overwriting it would make every database \
+                 it opened unreadable, so it has to be removed on purpose first."
+            ),
+        ));
+    }
+
+    let mut bytes = [0_u8; KEY_BYTES];
+    getrandom::fill(&mut bytes)
+        .map_err(|e| ApiError::internal(format!("Could not generate a key: {e}")))?;
+
+    let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+    crate::api::secrets::write(rt, secret, &hex)?;
+    Ok(Value::Null)
+}
+
+// ---------------------------------------------------------------------------
 // Values
 // ---------------------------------------------------------------------------
 
@@ -984,6 +1130,115 @@ mod tests {
 
         let error = execute(&connection, "insert into child values (9)", &[], false).unwrap_err();
         assert!(error.message.contains("FOREIGN KEY"), "{}", error.message);
+    }
+
+    /// A scratch directory this test owns, cleaned up on the way out.
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "vantail-db-{name}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&dir).expect("scratch directory");
+        dir
+    }
+
+    #[cfg(feature = "database-encryption")]
+    #[test]
+    fn an_encrypted_database_is_unreadable_without_its_key() {
+        let dir = scratch("encrypted");
+        let path = dir.join("ledger.sqlite");
+        let key = "0".repeat(64);
+
+        {
+            let connection = connect(&path, false, Some(&key)).expect("opens");
+            connection
+                .execute_batch(
+                    "create table entry(note text); insert into entry values ('secret');",
+                )
+                .unwrap();
+        }
+
+        // The bytes on disk are not a SQLite file: an unencrypted database
+        // starts with "SQLite format 3", and this must not.
+        let bytes = std::fs::read(&path).expect("the file exists");
+        assert!(
+            !bytes.starts_with(b"SQLite format 3"),
+            "the file is in the clear"
+        );
+        assert!(
+            !String::from_utf8_lossy(&bytes).contains("secret"),
+            "the row is readable in the raw file"
+        );
+
+        // The right key reads it back.
+        let reopened = connect(&path, false, Some(&key)).expect("reopens");
+        let out = query(&reopened, "select note from entry", &[], false).unwrap();
+        assert_eq!(out["rows"][0]["note"], json!("secret"));
+        drop(reopened);
+
+        // The wrong one is refused, and says so rather than failing later in
+        // the middle of somebody's first query.
+        let wrong = "1".repeat(64);
+        let error = connect(&path, false, Some(&wrong)).expect_err("wrong key");
+        assert_eq!(error.code, crate::error::code::PERMISSION_DENIED);
+        assert!(
+            error.message.contains("did not decrypt"),
+            "{}",
+            error.message
+        );
+
+        // And so is opening it as a plain database.
+        assert!(connect(&path, false, None).is_err_or_unreadable());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Opening an encrypted file without a key either fails outright or opens
+    /// a handle that cannot read anything. Either is a refusal; neither hands
+    /// back readable rows.
+    #[cfg(feature = "database-encryption")]
+    trait Unreadable {
+        fn is_err_or_unreadable(self) -> bool;
+    }
+
+    #[cfg(feature = "database-encryption")]
+    impl Unreadable for Result<Connection, ApiError> {
+        fn is_err_or_unreadable(self) -> bool {
+            match self {
+                Err(_) => true,
+                Ok(connection) => query(&connection, "select note from entry", &[], false).is_err(),
+            }
+        }
+    }
+
+    #[cfg(not(feature = "database-encryption"))]
+    #[test]
+    fn a_build_without_encryption_refuses_a_key_rather_than_ignoring_it() {
+        // The dangerous outcome is opening the file in the clear and handing
+        // back a working database, so this has to be an error.
+        let dir = scratch("nokey");
+        let path = dir.join("ledger.sqlite");
+        let error = connect(&path, false, Some(&"0".repeat(64))).expect_err("no sqlcipher");
+        assert_eq!(error.code, crate::error::code::UNSUPPORTED);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn an_application_can_choose_its_own_durability() {
+        // The runtime opens with `synchronous = NORMAL`, which in WAL mode
+        // cannot corrupt the database but can lose the last commits to a
+        // power cut. A ledger may want to pay for FULL instead, so check that
+        // saying so from the application actually takes.
+        let connection = memory();
+
+        let before = query(&connection, "pragma synchronous", &[], false).unwrap();
+        assert!(before["rows"][0]["synchronous"].is_number());
+
+        execute(&connection, "pragma synchronous = FULL", &[], false).unwrap();
+        let after = query(&connection, "pragma synchronous", &[], false).unwrap();
+        // 2 is FULL; 1 is NORMAL.
+        assert_eq!(after["rows"][0]["synchronous"], json!(2));
     }
 
     #[test]

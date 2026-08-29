@@ -172,10 +172,24 @@ pub mod secrets {
     use crate::error::{ApiError, ApiResult};
     use crate::state::Runtime;
 
-    pub fn dispatch(_rt: &Runtime, _method: &str, _params: Value) -> ApiResult {
-        Err(ApiError::unsupported(
+    fn unsupported() -> ApiError {
+        ApiError::unsupported(
             "This runtime was built without the credential store. Rebuild with the `secrets` feature enabled.",
-        ))
+        )
+    }
+
+    pub fn dispatch(_rt: &Runtime, _method: &str, _params: Value) -> ApiResult {
+        Err(unsupported())
+    }
+
+    /// The plumbing `database` uses to read a key. Without a credential store
+    /// there is nowhere for one to have been kept.
+    pub fn read(_rt: &Runtime, _key: &str) -> Result<Option<String>, ApiError> {
+        Err(unsupported())
+    }
+
+    pub fn write(_rt: &Runtime, _key: &str, _value: &str) -> Result<(), ApiError> {
+        Err(unsupported())
     }
 }
 pub mod shell;

@@ -248,8 +248,12 @@ export interface PermissionsConfig {
    *
    * This is the capability; `filesystem.write` is still what says where a
    * database may live. Both are needed.
+   *
+   * `{ encryption: true }` additionally says this application encrypts its
+   * database, which needs the `sqlcipher` runtime build - `vantail dev` and
+   * `vantail package` pick it up from here.
    */
-  database?: boolean;
+  database?: boolean | { encryption?: boolean };
   /**
    * Service types the application may discover, e.g. `_hub._tcp.local`.
    * `true` allows any, which is a different request from "find me the lights".

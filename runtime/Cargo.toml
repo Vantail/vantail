@@ -48,7 +48,19 @@ websocket = ["network", "dep:tungstenite"]
 # `database.*` - SQLite, compiled in rather than linked against whatever the
 # machine happens to have. By far the largest optional capability at +885 KB;
 # see `docs/architecture.md` for why it is bundled and not the system copy.
-database = ["dep:rusqlite"]
+database = ["dep:rusqlite", "rusqlite/bundled", "rusqlite/backup"]
+# `database.open({ keySecret })` - SQLCipher instead of plain SQLite, so the
+# file on disk is encrypted at rest.
+#
+# Off by default because of what it costs: SQLCipher needs a crypto library,
+# and vendoring OpenSSL so the binary keeps working on a machine that has none
+# measured at +3.19 MB - the runtime goes from 4.13 MB to 7.25 MB. That is a
+# 75% increase paid by every application, including the many that encrypt
+# nothing. See `docs/architecture.md`.
+database-encryption = [
+  "database",
+  "rusqlite/bundled-sqlcipher-vendored-openssl",
+]
 
 [dependencies]
 tao = "0.37"
@@ -76,7 +88,9 @@ mdns-sd = { version = "0.21", optional = true }
 notify = { version = "8.2", optional = true }
 
 ureq = { version = "3.4", optional = true }
-rusqlite = { version = "0.40", optional = true, features = ["bundled", "backup"] }
+# The system CSPRNG, for generating a database key the application never sees.
+getrandom = "0.4"
+rusqlite = { version = "0.40", optional = true, default-features = false }
 tungstenite = { version = "0.30", optional = true, default-features = false, features = [
   "handshake",
   # Shares the rustls and webpki-roots that `ureq` already brings in, so the

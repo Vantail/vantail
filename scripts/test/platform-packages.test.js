@@ -31,18 +31,28 @@ async function temporary(prefix) {
 describe("platform packages", () => {
   let out;
   let platforms;
+  /** Every target crossed with every variant - one package each. */
+  let builds;
 
   before(async () => {
     platforms = JSON.parse(await readFile(join(root, "packages/runtime/platforms.json"), "utf8"));
+    builds = platforms.targets.flatMap((target) =>
+      platforms.variants.map((variant) => ({
+        ...target,
+        variant,
+        package: `${target.package}${variant.suffix}`,
+        dir: `${target.rust}${variant.suffix}`,
+      })),
+    );
 
-    // A stand-in for every target, so the script is exercised for all five
-    // rather than only the one this machine can build.
+    // A stand-in for every build, so the script is exercised for all ten
+    // rather than only the one this machine can compile.
     const binaries = await temporary("vantail-binaries-");
-    for (const target of platforms.targets) {
+    for (const target of builds) {
       const name = target.platform === "win32" ? "vantail-runtime.exe" : "vantail-runtime";
-      await mkdir(join(binaries, target.rust), { recursive: true });
-      await writeFile(join(binaries, target.rust, name), "#!/bin/sh\necho 0.1.0\n", "utf8");
-      await chmod(join(binaries, target.rust, name), 0o755);
+      await mkdir(join(binaries, target.dir), { recursive: true });
+      await writeFile(join(binaries, target.dir, name), "#!/bin/sh\necho 0.1.0\n", "utf8");
+      await chmod(join(binaries, target.dir, name), 0o755);
     }
 
     out = await temporary("vantail-packages-");
@@ -53,8 +63,8 @@ describe("platform packages", () => {
     );
   });
 
-  it("produces one package per published target", async () => {
-    for (const target of platforms.targets) {
+  it("produces one package per published build", async () => {
+    for (const target of builds) {
       const directory = join(out, target.package.replace("@vantail/", ""));
       const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
       assert.equal(manifest.name, target.package);
@@ -66,7 +76,7 @@ describe("platform packages", () => {
 
   it("every package version matches the repository's", async () => {
     const expected = JSON.parse(await readFile(join(root, "package.json"), "utf8")).version;
-    for (const target of platforms.targets) {
+    for (const target of builds) {
       const manifest = JSON.parse(
         await readFile(join(out, target.package.replace("@vantail/", ""), "package.json"), "utf8"),
       );
@@ -75,12 +85,48 @@ describe("platform packages", () => {
   });
 
   it("names the Windows binary with an .exe", async () => {
-    const windows = platforms.targets.filter((target) => target.platform === "win32");
+    const windows = builds.filter((target) => target.platform === "win32");
     assert.ok(windows.length > 0);
     for (const target of windows) {
       const directory = join(out, target.package.replace("@vantail/", ""));
       await readFile(join(directory, "bin", "vantail-runtime.exe"));
     }
+  });
+
+  it("publishes an encrypted build beside every ordinary one", async () => {
+    // The whole point of the variant: an application that encrypts its
+    // database installs a different binary, and one that does not never
+    // downloads three megabytes of crypto it will not use.
+    for (const target of platforms.targets) {
+      const plain = join(out, target.package.replace("@vantail/", ""), "package.json");
+      const encrypted = join(
+        out,
+        `${target.package.replace("@vantail/", "")}-sqlcipher`,
+        "package.json",
+      );
+      const a = JSON.parse(await readFile(plain, "utf8"));
+      const b = JSON.parse(await readFile(encrypted, "utf8"));
+
+      assert.equal(b.name, `${target.package}-sqlcipher`);
+      // Same machine, different build: npm still installs exactly one of each
+      // platform's pair, and only for this platform.
+      assert.deepEqual(b.os, a.os);
+      assert.deepEqual(b.cpu, a.cpu);
+      assert.equal(b.version, a.version);
+    }
+  });
+
+  it("declares every build as an optional dependency of the resolver", async () => {
+    const declared = JSON.parse(
+      await readFile(join(out, "runtime.optional-dependencies.json"), "utf8"),
+    );
+    for (const target of builds) {
+      assert.ok(
+        declared[target.package],
+        `${target.package} is built but not declared, so nobody would install it`,
+      );
+    }
+    assert.equal(Object.keys(declared).length, builds.length);
   });
 
   it("refuses to publish a half-built matrix", async () => {

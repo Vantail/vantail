@@ -110,6 +110,19 @@ export interface OpenOptions {
   path: string;
   /** Open an existing database without being able to change it. */
   readOnly?: boolean;
+  /**
+   * Encrypt the file, with a key the runtime reads from the OS credential
+   * store under this name. Make it with {@link database.createKey}.
+   *
+   * The key never crosses into JavaScript, which is the point: a page that
+   * has been taken over can ask for the database it was already allowed to
+   * open, and still cannot read the key out to take the file elsewhere.
+   *
+   * Needs `permissions.secrets` as well as `permissions.database`, and a
+   * runtime built with the `database-encryption` feature - one without it
+   * refuses rather than quietly opening the file in the clear.
+   */
+  keySecret?: string;
 }
 
 /**
@@ -148,6 +161,27 @@ export interface OpenOptions {
  * means nothing.
  */
 export const database = {
+  /**
+   * Generate a database key and put it straight into the credential store.
+   *
+   * Generated in the runtime rather than by your application, so the key has
+   * no reason to exist in the webview at all - not in a variable, not in a
+   * promise, not in a heap snapshot. You never see it, and do not need to.
+   *
+   * ```ts
+   * if (!(await secrets.has("ledger-key"))) {
+   *   await database.createKey("ledger-key");
+   * }
+   * const db = await database.open({ path, keySecret: "ledger-key" });
+   * ```
+   *
+   * Refuses if that name already holds a key: overwriting one would make
+   * every database it opened permanently unreadable, so removing it has to be
+   * a thing you did on purpose.
+   */
+  createKey: (secret: string): Promise<null> =>
+    invoke<null>("database.createKey", { secret }),
+
   open: async (options: OpenOptions): Promise<Database> => {
     const opened = await invoke<{ id: number; path: string }>(
       "database.open",

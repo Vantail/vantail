@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
-import { resolveRuntimeBinary } from "../dist/index.js";
+import { resolveRuntimeBinary, runtimePackageName } from "../dist/index.js";
 
 const scratch = [];
 after(async () => {
@@ -94,5 +94,60 @@ describe("workspace fallback", () => {
     } finally {
       delete process.env.VANTAIL_RUNTIME_BIN;
     }
+  });
+});
+
+describe("runtime variants", () => {
+  it("names the default build without a suffix", () => {
+    // The name every existing application already depends on.
+    assert.equal(
+      runtimePackageName("darwin", "arm64"),
+      "@vantail/runtime-darwin-arm64",
+    );
+    assert.equal(
+      runtimePackageName("darwin", "arm64", "default"),
+      "@vantail/runtime-darwin-arm64",
+    );
+  });
+
+  it("names the encrypted build as its own package", () => {
+    // A separate package rather than a flag, because it is a different
+    // binary: SQLCipher is about 3 MB of crypto that most applications should
+    // not be carrying.
+    assert.equal(
+      runtimePackageName("darwin", "arm64", "sqlcipher"),
+      "@vantail/runtime-darwin-arm64-sqlcipher",
+    );
+    assert.equal(
+      runtimePackageName("win32", "x64", "sqlcipher"),
+      "@vantail/runtime-win32-x64-sqlcipher",
+    );
+  });
+
+  it("names the variant's package when there is none installed", () => {
+    // The lookup cannot be made to fail from inside this repository - the
+    // workspace fallback deliberately finds the local `cargo build` - so what
+    // is worth pinning is the name it would tell you to install, which is not
+    // the same package as everyone else's.
+    assert.equal(
+      runtimePackageName(process.platform, process.arch, "sqlcipher"),
+      `@vantail/runtime-${process.platform}-${process.arch}-sqlcipher`,
+    );
+  });
+
+  it("uses the local build whatever variant is asked for", () => {
+    // Inside this repository there is one binary and it is whatever you last
+    // compiled. Pretending otherwise would mean `vantail dev` refusing to run
+    // against a runtime that is sitting right there.
+    delete process.env.VANTAIL_RUNTIME_BIN;
+    // Any directory: the fallback also searches from the module's own
+    // location, which is inside this repository.
+    const resolved = resolveRuntimeBinary({
+      cwd: tmpdir(),
+      platform: process.platform,
+      arch: process.arch,
+      variant: "sqlcipher",
+    });
+    assert.equal(resolved.source, "workspace");
   });
 });

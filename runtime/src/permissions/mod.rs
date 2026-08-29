@@ -64,8 +64,12 @@ pub struct PermissionsConfig {
     /// Where the database may live is still `filesystem.write`, so this is
     /// the capability and that is the reach - the same split every other
     /// path-taking capability has.
+    ///
+    /// `{ encryption: true }` additionally says the application needs
+    /// SQLCipher, which is a different runtime build - see
+    /// `docs/packaging.md`.
     #[serde(default)]
-    pub database: bool,
+    pub database: DatabaseConfig,
     /// Service types the application may discover. Default: none.
     #[serde(default)]
     pub mdns: TextScopeConfig,
@@ -138,7 +142,7 @@ impl Default for PermissionsConfig {
             updater: false,
             network: network::NetworkConfig::default(),
             secrets: false,
-            database: false,
+            database: DatabaseConfig::default(),
             mdns: TextScopeConfig::default(),
             hid: HidConfig::default(),
         }
@@ -554,6 +558,37 @@ pub struct Permissions {
     granted: Mutex<Grants>,
 }
 
+/// Whether an application may keep a database, and whether it needs the
+/// encrypted build to do it.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(untagged, rename_all = "camelCase")]
+pub enum DatabaseConfig {
+    #[default]
+    Off,
+    /// `database: true` - a database, unencrypted.
+    On(bool),
+    /// `database: { encryption: true }` - and this application needs the
+    /// runtime that can encrypt one.
+    Detailed {
+        #[serde(default)]
+        encryption: bool,
+    },
+}
+
+impl DatabaseConfig {
+    pub fn allowed(self) -> bool {
+        match self {
+            DatabaseConfig::Off => false,
+            DatabaseConfig::On(on) => on,
+            DatabaseConfig::Detailed { .. } => true,
+        }
+    }
+
+    pub fn encryption(self) -> bool {
+        matches!(self, DatabaseConfig::Detailed { encryption: true })
+    }
+}
+
 /// Which side of the filesystem a check is for.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Access {
@@ -593,6 +628,18 @@ impl Permissions {
             });
         }
 
+        // Said at startup rather than discovered at the first `open`: an
+        // application whose ledger is supposed to be encrypted should not get
+        // as far as writing rows before finding out this runtime cannot.
+        if config.database.encryption() && !cfg!(feature = "database-encryption") {
+            return Err(
+                "`permissions.database.encryption` needs the `sqlcipher` runtime build, and \
+                 this runtime was built without it. Install \
+                 `@vantail/runtime-<platform>-<arch>-sqlcipher`, or drop the `encryption` flag."
+                    .to_string(),
+            );
+        }
+
         Ok(Self {
             fs_read: PathScope::compile(&config.filesystem.read, vars)?,
             fs_write: PathScope::compile(&config.filesystem.write, vars)?,
@@ -614,7 +661,7 @@ impl Permissions {
             updater: config.updater,
             network: network::NetworkScope::compile(&config.network, vars)?,
             secrets: config.secrets,
-            database: config.database,
+            database: config.database.allowed(),
             mdns: TextScope::compile(&config.mdns)?,
             hid: config.hid.clone(),
             granted: Mutex::new(Grants::default()),

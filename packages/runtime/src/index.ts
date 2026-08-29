@@ -9,6 +9,9 @@
  *    hacking on the runtime itself.
  * 2. `@vantail/runtime-<platform>-<arch>` - the published binary, installed
  *    as an optional dependency so only the current platform is downloaded.
+ *    An application that needs database encryption uses the `sqlcipher`
+ *    variant of the same package instead, which is a separate build because
+ *    the crypto it carries costs about 3 MB.
  * 3. A `cargo build` inside this repository - how Vantail's own examples run
  *    before anything is published.
  */
@@ -19,6 +22,15 @@ import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export type RuntimeSource = "env" | "package" | "workspace";
+
+/**
+ * Which build of the runtime an application needs.
+ *
+ * `default` is every capability except database encryption. `sqlcipher` is
+ * the same plus SQLCipher, and is roughly 3 MB larger - which is why it is a
+ * variant rather than what everybody gets.
+ */
+export type RuntimeVariant = "default" | "sqlcipher";
 
 export interface RuntimeResolution {
   /** Absolute path to the runtime executable. */
@@ -35,6 +47,14 @@ export interface ResolveOptions {
   cwd?: string;
   platform?: NodeJS.Platform;
   arch?: string;
+  /**
+   * Which build of the runtime to look for. Defaults to `default`.
+   *
+   * Only the published package is variant-specific: `$VANTAIL_RUNTIME_BIN`
+   * and a local `cargo build` are whatever you pointed at or compiled, and
+   * are used as-is.
+   */
+  variant?: RuntimeVariant;
   /**
    * Which local build to prefer when both exist. Only affects the workspace
    * fallback; a published package has no profiles.
@@ -66,8 +86,10 @@ export class RuntimeNotFoundError extends Error {
 export function runtimePackageName(
   platform: NodeJS.Platform = process.platform,
   arch: string = process.arch,
+  variant: RuntimeVariant = "default",
 ): string {
-  return `@vantail/runtime-${platform}-${arch}`;
+  const suffix = variant === "default" ? "" : `-${variant}`;
+  return `@vantail/runtime-${platform}-${arch}${suffix}`;
 }
 
 export function runtimeBinaryName(platform: NodeJS.Platform = process.platform): string {
@@ -78,7 +100,7 @@ export function resolveRuntimeBinary(options: ResolveOptions = {}): RuntimeResol
   const platform = options.platform ?? process.platform;
   const arch = options.arch ?? process.arch;
   const cwd = options.cwd ?? process.cwd();
-  const packageName = runtimePackageName(platform, arch);
+  const packageName = runtimePackageName(platform, arch, options.variant ?? "default");
   const tried: string[] = [];
 
   const override = process.env["VANTAIL_RUNTIME_BIN"];

@@ -8,9 +8,11 @@
  *
  *   node scripts/build-platform-packages.mjs --binaries <dir> --out <dir>
  *
- * `--binaries` holds one subdirectory per Rust target triple, each containing
- * the executable - which is the shape a CI matrix produces when every job
- * uploads its build as an artifact named after its target.
+ * `--binaries` holds one subdirectory per build, each containing the
+ * executable - which is the shape a CI matrix produces when every job uploads
+ * its build as an artifact named after itself. A build is a Rust target plus a
+ * variant: `aarch64-apple-darwin` for the default one, and
+ * `aarch64-apple-darwin-sqlcipher` for the encrypted one.
  */
 
 import { chmod, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -46,9 +48,21 @@ await mkdir(out, { recursive: true });
 const built = [];
 const missing = [];
 
-for (const target of platforms.targets) {
+/** Every target crossed with every variant: one package each. */
+const builds = platforms.targets.flatMap((target) =>
+  platforms.variants.map((variant) => ({
+    ...target,
+    variant,
+    package: `${target.package}${variant.suffix}`,
+    // The default variant keeps the bare target name, so the artifact layout
+    // an existing pipeline produces still lines up.
+    dir: `${target.rust}${variant.suffix}`,
+  })),
+);
+
+for (const target of builds) {
   const executable = target.platform === "win32" ? "vantail-runtime.exe" : "vantail-runtime";
-  const source = join(binaries, target.rust, executable);
+  const source = join(binaries, target.dir, executable);
 
   if (!existsSync(source)) {
     missing.push(target);
@@ -67,7 +81,9 @@ for (const target of platforms.targets) {
       {
         name: target.package,
         version: manifest.version,
-        description: `The Vantail native runtime for ${target.platform} ${target.arch}.`,
+        description:
+          `The Vantail native runtime for ${target.platform} ${target.arch}` +
+          `${target.variant.id === "default" ? "" : ` (${target.variant.id})`}.`,
         license: manifest.license ?? "MIT",
         repository: manifest.repository,
         // npm reads these and installs only the matching package, which is
@@ -87,6 +103,7 @@ for (const target of platforms.targets) {
     `# ${target.package}\n\n` +
       `The [Vantail](${home}) native runtime for ${target.platform} ` +
       `${target.arch}: one executable, and nothing else.\n\n` +
+      `${target.variant.summary}\n\n` +
       `You do not depend on this directly. \`@vantail/runtime\` declares every ` +
       `platform build as an optional dependency, and npm installs only the one ` +
       `matching the \`os\` and \`cpu\` fields here - which is what keeps five ` +
@@ -96,11 +113,11 @@ for (const target of platforms.targets) {
   );
 
   built.push({ ...target, directory });
-  console.log(`  ${target.package.padEnd(34)} ${target.rust}`);
+  console.log(`  ${target.package.padEnd(44)} ${target.dir}`);
 }
 
 if (missing.length > 0) {
-  const names = missing.map((target) => target.rust).join(", ");
+  const names = missing.map((target) => target.dir).join(", ");
   if (required) {
     console.error(`\nMissing binaries for: ${names}`);
     console.error(`Expected them under ${binaries}/<target>/`);
@@ -118,8 +135,11 @@ if (built.length === 0) {
 // has to depend on them. Optional, so an install on an unsupported platform
 // warns rather than fails.
 const resolver = JSON.parse(await readFile(join(root, "packages/runtime/package.json"), "utf8"));
+// Every variant of every platform, all optional: npm installs the ones whose
+// `os` and `cpu` match, and an application that never encrypts anything is
+// still carrying only the binaries for its own machine.
 resolver.optionalDependencies = Object.fromEntries(
-  platforms.targets.map((target) => [target.package, manifest.version]),
+  builds.map((target) => [target.package, manifest.version]),
 );
 await writeFile(
   join(out, "runtime.optional-dependencies.json"),

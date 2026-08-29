@@ -7,10 +7,15 @@
 
 import { spawn } from "node:child_process";
 
-import { resolveRuntimeBinary, RuntimeNotFoundError } from "@vantail/runtime";
+import {
+  resolveRuntimeBinary,
+  RuntimeNotFoundError,
+  type RuntimeVariant,
+} from "@vantail/runtime";
 import { findConfigFile, loadConfig } from "@vantail/shared/load";
 
 import { log, style } from "../log.js";
+import { runtimeVariantFor } from "../runtime-config.js";
 
 interface Check {
   name: string;
@@ -30,7 +35,7 @@ export async function doctor(options: DoctorOptions): Promise<number> {
   checks.push(nodeCheck());
   const project = await configCheck(options, checks);
   await viteCheck(project?.root ?? options.cwd, checks);
-  await runtimeCheck(project?.root ?? options.cwd, checks);
+  await runtimeCheck(project?.root ?? options.cwd, project?.variant ?? "default", checks);
   checks.push(platformCheck());
 
   log.blank();
@@ -64,7 +69,7 @@ function nodeCheck(): Check {
 async function configCheck(
   options: DoctorOptions,
   checks: Check[],
-): Promise<{ root: string } | undefined> {
+): Promise<{ root: string; variant: RuntimeVariant } | undefined> {
   const found = options.config ?? findConfigFile(options.cwd);
   if (!found) {
     checks.push({
@@ -86,7 +91,7 @@ async function configCheck(
       ok: true,
       detail: `${loaded.path} ${style.dim(`(${loaded.config.app.identifier})`)}`,
     });
-    return { root: loaded.root };
+    return { root: loaded.root, variant: runtimeVariantFor(loaded.config) };
   } catch (error) {
     checks.push({
       name: "config",
@@ -115,9 +120,13 @@ async function viteCheck(root: string, checks: Check[]): Promise<void> {
   }
 }
 
-async function runtimeCheck(root: string, checks: Check[]): Promise<void> {
+async function runtimeCheck(
+  root: string,
+  variant: RuntimeVariant,
+  checks: Check[],
+): Promise<void> {
   try {
-    const runtime = resolveRuntimeBinary({ cwd: root });
+    const runtime = resolveRuntimeBinary({ cwd: root, variant });
     const version = await runtimeVersion(runtime.path);
     checks.push({
       name: "runtime",

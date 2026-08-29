@@ -9,6 +9,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import type { ParsedConfig } from "@vantail/shared/load";
+import type { RuntimeVariant } from "@vantail/runtime";
 
 export interface RuntimeConfigInput {
   config: ParsedConfig;
@@ -101,4 +102,22 @@ function withTrayTypes(tray: Record<string, unknown>): Record<string, unknown> {
 
 function absolute(root: string, path: string): string {
   return isAbsolute(path) ? path : resolve(root, path);
+}
+
+/**
+ * Which runtime build this application needs.
+ *
+ * The only thing that changes it today is database encryption: SQLCipher is
+ * about 3 MB of crypto, so it is a separate build rather than something every
+ * application carries. Declaring `permissions.database.encryption` is what
+ * asks for it, and `vantail dev`, `vantail package` and `vantail doctor` all
+ * come here rather than each deciding for themselves.
+ */
+export function runtimeVariantFor(config: {
+  permissions?: { database?: boolean | { encryption?: boolean } };
+}): RuntimeVariant {
+  const database = config.permissions?.database;
+  const encrypted =
+    typeof database === "object" && database !== null && database.encryption === true;
+  return encrypted ? "sqlcipher" : "default";
 }

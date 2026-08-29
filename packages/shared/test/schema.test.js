@@ -204,3 +204,20 @@ test("the config type and the schema agree about network permissions", () => {
   });
   assert.equal(result.ok, true);
 });
+
+test("a database can ask for the encrypted runtime", () => {
+  assert.equal(
+    parseConfig({
+      ...valid,
+      permissions: { database: { encryption: true }, secrets: true },
+    }).ok,
+    true,
+  );
+  // Still a plain boolean, for the many applications that do not encrypt.
+  assert.equal(parseConfig({ ...valid, permissions: { database: true } }).ok, true);
+  // And a typo inside it is caught rather than ignored.
+  assert.equal(
+    parseConfig({ ...valid, permissions: { database: { encryptoin: true } } }).ok,
+    false,
+  );
+});

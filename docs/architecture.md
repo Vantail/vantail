@@ -309,3 +309,38 @@ ledger quietly loses money. Returning a rounded number is never acceptable, so
 an integer that does not fit is an error naming the column, and `bigint: true`
 asks for all of them exactly. That decision came from a downstream application
 that hit the same edge in `sql.js` and had to pass `useBigInt` on every read.
+
+## What encryption costs, measured
+
+`database-encryption` swaps SQLite for SQLCipher, which needs a crypto
+library. Measured on `aarch64-apple-darwin`, release profile:
+
+| Build                                   | Size      | Delta     |
+| --------------------------------------- | --------- | --------- |
+| default                                 | 4,334,976 |           |
+| `+ database-encryption` (vendored OpenSSL) | 7,598,976 | +3.19 MB |
+
+That is a 75% increase, and it is the reason this one feature is off by
+default while `socks`, `websocket` and `database` are on. The rule from those
+three still holds - a non-default feature is not shipped by the release
+workflow, so leaving this off means an application that needs encryption has
+to build the runtime itself. That is a real cost and it is the open question
+on this capability, not a settled answer.
+
+The alternatives were weighed and are worse:
+
+- **Link the system crypto** rather than vendoring. Nothing to bundle, but
+  macOS ships no OpenSSL headers, Windows ships nothing SQLCipher speaks, and
+  a Linux build would then depend on whatever `libssl` the machine has. The
+  binary stops being portable, which is most of what it is for.
+- **Per-platform crypto backends** - CommonCrypto on macOS, something else
+  elsewhere. Much smaller, and three code paths with three risk profiles for
+  a capability whose whole job is not being subtly wrong.
+- **Encrypting values rather than the file.** Cheap, and it gives up every
+  query, index and constraint on the encrypted columns - which is what the
+  database was for.
+
+The key handling is the part worth keeping whatever the packaging answer is:
+the key is generated in the runtime, stored in the OS credential store, and
+read back by the runtime. It never exists in the webview, so a compromised
+page cannot exfiltrate it and use the file elsewhere.

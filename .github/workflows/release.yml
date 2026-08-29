@@ -150,13 +150,18 @@ jobs:
   # webview, tray and HID libraries and cross-compiling those is a source of
   # problems nobody needs on a release day.
   runtime:
-    name: ${{ matrix.target }}
+    name: ${{ matrix.target }}${{ matrix.variant == 'sqlcipher' && ' (sqlcipher)' || '' }}
     needs: plan
     if: needs.plan.outputs.build_runtimes == 'true'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
+        # Two builds of every target. `default` is what nearly every
+        # application uses; `sqlcipher` adds database encryption and about
+        # 3 MB of crypto with it, which is why it is a separate package rather
+        # than something everybody carries. See `docs/packaging.md`.
+        variant: [default, sqlcipher]
         include:
           - target: aarch64-apple-darwin
             runner: macos-14
@@ -190,7 +195,17 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Build
+        shell: bash
+        run: |
+          # The suffix is empty for the default build, so its artifact keeps
+          # the bare target name.
+          if [ "${{ matrix.variant }}" = "sqlcipher" ]; then
+            cargo build --release --locked --target ${{ matrix.target }} \
+              --features database-encryption
+          else
+            cargo build --release --locked --target ${{ matrix.target }}
+          fi
 
       # The runtime has to at least start and answer, or the binary is not
       # worth publishing.
@@ -205,14 +220,17 @@ jobs:
       - name: Collect
         shell: bash
         run: |
-          mkdir -p "dist-runtime/${{ matrix.target }}"
+          SUFFIX=""
+          if [ "${{ matrix.variant }}" = "sqlcipher" ]; then SUFFIX="-sqlcipher"; fi
+          echo "ARTIFACT=${{ matrix.target }}$SUFFIX" >> "$GITHUB_ENV"
+          mkdir -p "dist-runtime/${{ matrix.target }}$SUFFIX"
           cp target/${{ matrix.target }}/release/vantail-runtime* \
-             "dist-runtime/${{ matrix.target }}/"
+             "dist-runtime/${{ matrix.target }}$SUFFIX/"
 
       - uses: actions/upload-artifact@v6
         with:
-          name: ${{ matrix.target }}
-          path: dist-runtime/${{ matrix.target }}
+          name: ${{ env.ARTIFACT }}
+          path: dist-runtime/${{ env.ARTIFACT }}
           if-no-files-found: error
           retention-days: 7
 

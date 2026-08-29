@@ -359,7 +359,12 @@ export const permissionsSchema = z
     updater: z.boolean().optional(),
     network: networkPermissions.optional(),
     secrets: z.boolean().optional(),
-    database: z.boolean().optional(),
+    database: z
+      .union([
+        z.boolean(),
+        z.object({ encryption: z.boolean().optional() }).strict(),
+      ])
+      .optional(),
     mdns: z.union([z.boolean(), z.array(z.string())]).optional(),
     hid: hidPermissions.optional(),
   })

@@ -901,6 +901,29 @@ Connections open with WAL journalling, `synchronous = NORMAL`, and
 `foreign_keys = ON` - SQLite leaves that last one off for compatibility with
 2005, so a declared foreign key is otherwise decoration.
 
+### Durability
+
+Connections open with `journal_mode = WAL` and `synchronous = NORMAL`. That
+pair cannot corrupt the database - a crash or a power cut leaves it
+consistent - but `NORMAL` does not wait for the disk on every commit, so the
+last few committed transactions can be lost to a power cut or an OS crash. It
+is the right default for an application whose data is recoverable or
+re-derivable, and it is much faster.
+
+If losing a committed transaction is not acceptable - a ledger, anything
+holding money or a legal record - say so once, after opening:
+
+```ts
+await db.execute("pragma synchronous = FULL");
+```
+
+`FULL` waits for the write to reach the disk before a commit returns. It costs
+a real amount of write throughput, which is why it is not the default, and it
+is the difference between "cannot corrupt" and "cannot lose".
+
+Any pragma works this way: the runtime sets sensible defaults at open and does
+not stand between the application and SQLite afterwards.
+
 ### Integers, and the money bug
 
 SQLite's INTEGER is 64-bit. A JavaScript number is a double, so anything past
@@ -951,12 +974,61 @@ database is being written to, and the result is a database that opens on its
 own. `checkpoint` folds the write-ahead log back in, which is worth doing if
 you are going to copy the file by hand instead.
 
+### Encryption
+
+```ts
+if (!(await secrets.has("ledger-key"))) {
+  await database.createKey("ledger-key");
+}
+const db = await database.open({ path, keySecret: "ledger-key" });
+```
+
+The file on disk is SQLCipher-encrypted: it does not begin with
+`SQLite format 3`, and nothing in it is readable without the key.
+
+**The key never crosses into JavaScript.** `createKey` generates it in the
+runtime and writes it straight to the OS credential store; `keySecret` names
+that entry and the runtime reads it back itself. So a page that has been taken
+over can ask for the database it was already allowed to open - and still
+cannot read the key out to take the file somewhere else. Passing a key from
+your own code is deliberately not offered, because the moment it exists in the
+webview it exists in a heap snapshot.
+
+`createKey` refuses a name that already holds a key. Overwriting one makes
+every database it opened permanently unreadable, so removing it first has to
+be something you did on purpose.
+
+A wrong key is a `PERMISSION_DENIED` at `open`, not a confusing failure inside
+your first query - the runtime reads the schema once to check before handing
+the connection back.
+
+Needs `permissions.secrets` alongside `permissions.database`: `database` says
+this application may keep a database, not that it may help itself to the
+credential store.
+
+**It needs the other runtime build.** Say so in the config:
+
+```ts
+permissions: { database: { encryption: true }, secrets: true }
+```
+
+That is what makes `vantail dev` and `vantail package` resolve
+`@vantail/runtime-<platform>-<arch>-sqlcipher` instead of the ordinary one.
+They are separate packages because SQLCipher carries its own crypto - the
+encrypted build measures about 3 MB more - and both are optional dependencies
+with `os` and `cpu` set, so an application that does not encrypt anything never
+downloads it. See [packaging](./packaging.md#two-runtime-builds).
+
+A runtime asked for encryption it was not built with refuses at startup, naming
+the package to install, rather than opening the file in the clear. The
+dangerous outcome would be a working database that is not encrypted and gives
+no sign of it.
+
 ### What is not here
 
-No encryption, and no migrations. `secrets` will hold a key but there is
-nothing here to give it to. Migrations are a few lines of `user_version` and
-`execute` in your own code, and a framework's opinion about them would be worth
-less than yours.
+No migrations. They are a few lines of `user_version` and `execute` in your
+own code, and a framework's opinion about them would be worth less than
+yours.
 
 ## mdns
 

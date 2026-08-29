@@ -17,7 +17,11 @@ import { resolveRuntimeBinary } from "@vantail/runtime";
 import { loadConfig } from "@vantail/shared/load";
 
 import { log, style } from "../log.js";
-import { devConfigPath, writeRuntimeConfig } from "../runtime-config.js";
+import {
+  devConfigPath,
+  runtimeVariantFor,
+  writeRuntimeConfig,
+} from "../runtime-config.js";
 import { importVite, inlineConfig, type ProjectContext } from "../vite.js";
 
 export interface DevOptions {
@@ -40,7 +44,10 @@ export async function dev(options: DevOptions): Promise<number> {
   };
 
   // Fail before starting Vite if there is no runtime to start.
-  const runtime = resolveRuntimeBinary({ cwd: project.root });
+  const runtime = resolveRuntimeBinary({
+    cwd: project.root,
+    variant: runtimeVariantFor(project.config),
+  });
   const vite = await importVite(project.root);
 
   const server = await vite.createServer(

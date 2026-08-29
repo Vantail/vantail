@@ -18,6 +18,7 @@ import { buildIcons, loadIcon, type IconSet } from "../icons/index.js";
 import { buildInstaller } from "../installers/index.js";
 import { bundle, safeName, updateTarget } from "../bundle/index.js";
 import { formatBytes, log, style } from "../log.js";
+import { runtimeVariantFor } from "../runtime-config.js";
 import type { ProjectContext } from "../vite.js";
 import { build, resolveDist } from "./build.js";
 
@@ -68,6 +69,8 @@ export async function packageApp(options: PackageOptions): Promise<number> {
   const runtime = resolveRuntimeBinary({
     cwd: project.root,
     prefer: "release",
+    // An application that encrypts its database needs the build that can.
+    variant: runtimeVariantFor(project.config),
   });
 
   if (runtime.source === "workspace") {

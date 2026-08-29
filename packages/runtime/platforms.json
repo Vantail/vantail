@@ -1,10 +1,56 @@
 {
-  "comment": "Targets the runtime is published for. `vantail package` and the release pipeline both read this.",
+  "comment": "Targets and variants the runtime is published for. `vantail package` and the release pipeline both read this.",
   "targets": [
-    { "package": "@vantail/runtime-darwin-arm64", "platform": "darwin", "arch": "arm64", "rust": "aarch64-apple-darwin", "tier": 1 },
-    { "package": "@vantail/runtime-win32-x64", "platform": "win32", "arch": "x64", "rust": "x86_64-pc-windows-msvc", "tier": 1 },
-    { "package": "@vantail/runtime-win32-arm64", "platform": "win32", "arch": "arm64", "rust": "aarch64-pc-windows-msvc", "tier": 2 },
-    { "package": "@vantail/runtime-linux-x64", "platform": "linux", "arch": "x64", "rust": "x86_64-unknown-linux-gnu", "tier": 2 },
-    { "package": "@vantail/runtime-linux-arm64", "platform": "linux", "arch": "arm64", "rust": "aarch64-unknown-linux-gnu", "tier": 2 }
+    {
+      "package": "@vantail/runtime-darwin-arm64",
+      "platform": "darwin",
+      "arch": "arm64",
+      "rust": "aarch64-apple-darwin",
+      "tier": 1
+    },
+    {
+      "package": "@vantail/runtime-win32-x64",
+      "platform": "win32",
+      "arch": "x64",
+      "rust": "x86_64-pc-windows-msvc",
+      "tier": 1
+    },
+    {
+      "package": "@vantail/runtime-win32-arm64",
+      "platform": "win32",
+      "arch": "arm64",
+      "rust": "aarch64-pc-windows-msvc",
+      "tier": 2
+    },
+    {
+      "package": "@vantail/runtime-linux-x64",
+      "platform": "linux",
+      "arch": "x64",
+      "rust": "x86_64-unknown-linux-gnu",
+      "tier": 2
+    },
+    {
+      "package": "@vantail/runtime-linux-arm64",
+      "platform": "linux",
+      "arch": "arm64",
+      "rust": "aarch64-unknown-linux-gnu",
+      "tier": 2
+    }
+  ],
+  "variants": [
+    {
+      "id": "default",
+      "suffix": "",
+      "features": [],
+      "summary": "Every capability except database encryption."
+    },
+    {
+      "id": "sqlcipher",
+      "suffix": "-sqlcipher",
+      "features": [
+        "database-encryption"
+      ],
+      "summary": "The same, plus SQLCipher so a database can be encrypted at rest. About 3 MB larger, which is why it is a separate build rather than the default."
+    }
   ]
 }

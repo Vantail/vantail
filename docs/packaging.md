@@ -71,3 +71,44 @@ vantail package --sign "Developer ID Application: Jane Doe (ABCDE12345)"
 Notarisation is a separate step: run `xcrun notarytool` against the signed
 bundle before distributing it, or macOS will refuse to open it on a machine
 other than the one that built it.
+
+## Two runtime builds
+
+The runtime is published twice for each platform:
+
+| Package | What it is |
+| --- | --- |
+| `@vantail/runtime-<platform>-<arch>` | Every capability except database encryption |
+| `@vantail/runtime-<platform>-<arch>-sqlcipher` | The same, plus SQLCipher |
+
+They exist because SQLCipher carries its own crypto: the encrypted build
+measures about 3 MB more, which is a 75% increase on a runtime that is
+otherwise 4.1 MB. Making everyone carry that so a minority can encrypt a
+database is the wrong trade, and so is making the majority think about it.
+
+You do not choose between them by hand. Say what the application needs:
+
+```ts
+permissions: {
+  database: { encryption: true },
+  secrets: true,
+  filesystem: { read: ["$APPDATA/**"], write: ["$APPDATA/**"] },
+}
+```
+
+`vantail dev`, `vantail package` and `vantail doctor` all read that and resolve
+the matching build. `permissions.database: true` - or leaving it out - gets the
+ordinary one.
+
+Both are optional dependencies of `@vantail/runtime`, with `os` and `cpu` set,
+so npm installs only what matches the machine. An application that does not
+encrypt anything never downloads the encrypted binary.
+
+A runtime that is asked for encryption it was not built with **refuses at
+startup**, naming the package to install. That is deliberate: the alternative
+is finding out at the first `database.open`, after the application has already
+decided its ledger is encrypted.
+
+Inside this repository there is only ever one binary - whatever `cargo build`
+last produced - so the variant is ignored by the workspace fallback. Build with
+`--features database-encryption` when you want to exercise encryption locally.

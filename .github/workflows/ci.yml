@@ -183,3 +183,4 @@ jobs:
       - run: cargo check --no-default-features --features socks
       - run: cargo check --no-default-features --features websocket
       - run: cargo check --no-default-features --features database
+      - run: cargo check --no-default-features --features database-encryption

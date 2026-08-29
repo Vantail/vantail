@@ -87,6 +87,28 @@ pub fn dispatch(rt: &Runtime, method: &str, params: Value) -> ApiResult {
     }
 }
 
+/// Read a secret, for another capability that needs one.
+///
+/// `Ok(None)` when there is no such entry, the same as `secrets.get`. The
+/// caller is responsible for the permission check: this is the plumbing, not
+/// the gate.
+pub fn read(rt: &Runtime, key: &str) -> Result<Option<String>, ApiError> {
+    check_key(key)?;
+    match entry(rt, key)?.get_password() {
+        Ok(value) => Ok(Some(value)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(error) => Err(failed("read", key, error)),
+    }
+}
+
+/// Store a secret on behalf of another capability.
+pub fn write(rt: &Runtime, key: &str, value: &str) -> Result<(), ApiError> {
+    check_key(key)?;
+    entry(rt, key)?
+        .set_password(value)
+        .map_err(|error| failed("store", key, error))
+}
+
 fn entry(rt: &Runtime, key: &str) -> Result<keyring::Entry, ApiError> {
     keyring::Entry::new(&rt.config.app.identifier, key).map_err(|error| {
         ApiError::unsupported(format!(
