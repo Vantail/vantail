@@ -50,12 +50,22 @@ const platformPackages = resolve(flag("packages", "dist-packages"));
  */
 const PROBE = {
   encoding: "utf8",
-  stdio: ["ignore", "pipe", "ignore"],
+  // stderr captured rather than dropped: it is what tells a "no" from a
+  // question that never got asked.
+  stdio: ["ignore", "pipe", "pipe"],
   timeout: 20_000,
 };
 
-/** Ask npm once rather than waiting out its retry schedule. */
-const NO_RETRIES = ["--fetch-retries", "0", "--fetch-retry-maxtimeout", "5000"];
+/**
+ * Ask npm once rather than waiting out its retry schedule.
+ *
+ * Only the retry count. The retry *timeouts* are a trap: npm refuses a
+ * `fetch-retry-maxtimeout` below its own `fetch-retry-mintimeout` of 10s and
+ * fails the command outright with "minTimeout is greater than maxTimeout" - on
+ * every call, for every package. With no retries the timeouts govern nothing
+ * anyway, so there is nothing to say about them.
+ */
+const NO_RETRIES = ["--fetch-retries", "0"];
 
 /** The registry and credential flags every probe passes through. */
 function probeFlags() {
@@ -67,14 +77,47 @@ function probeFlags() {
   return args;
 }
 
-/** Whether the registry can answer for this spec. */
+/**
+ * What the registry says about a spec: `true` it has it, `false` it does not,
+ * `null` it could not be asked.
+ *
+ * The third answer is the point. Reading "could not ask" as "does not exist"
+ * is how a network blip or a bad flag becomes a release that stops with a
+ * confident and wrong explanation - which is what a `fetch-retry-maxtimeout`
+ * below npm's own minimum did: npm refused the config, every probe failed, and
+ * six packages that had been on the registry for months were reported as never
+ * published.
+ *
+ * A 404 is a real answer - the registry was reached and has nothing. Anything
+ * else is silence.
+ */
 function known(spec) {
   try {
     const out = execFileSync("npm", ["view", spec, "version", ...probeFlags()], PROBE);
     return out.trim().length > 0;
-  } catch {
-    return false;
+  } catch (error) {
+    const said = `${error.stderr ?? ""}`;
+    if (/E404|404 Not Found/.test(said)) return false;
+    unanswered.set(spec, said.trim().split("\n")[0] || "no answer from npm");
+    return null;
   }
+}
+
+/** Specs the registry could not be asked about, and why. */
+const unanswered = new Map();
+
+/** Say what went unasked, so a check that did not happen does not read as one that passed. */
+function reportUnanswered() {
+  if (unanswered.size === 0) return;
+  console.warn(
+    `\nCould not ask ${registry} about:\n` +
+      [...unanswered]
+        .map(([spec, why]) => `  ${spec} - ${why}`)
+        .join("\n") +
+      `\n\nTaking those as unknown rather than as missing. A name that really\n` +
+      `is new will still fail at its own publish, with npm's own error.`,
+  );
+  unanswered.clear();
 }
 
 /**
@@ -358,7 +401,8 @@ if (!isAuthenticated()) {
   const brandNew = [
     ...built.map((target) => target.package),
     ...patchedNames(),
-  ].filter((name) => !everPublished(name));
+  ].filter((name) => everPublished(name) === false);
+  reportUnanswered();
 
   if (brandNew.length > 0) {
     console.error(
@@ -385,7 +429,9 @@ console.log("Platform runtimes:");
 for (const target of built) {
   // A release that stopped half way can be run again: what is already out at
   // this version is left alone rather than failing on a version conflict.
-  if (!dryRun && publishedAt(target.package, version)) {
+  // `=== true` deliberately: an unanswered check means publish and let npm
+  // be the one to say it is already there, rather than skipping on a guess.
+  if (!dryRun && publishedAt(target.package, version) === true) {
     console.log(`  ${target.package}  (already at ${version})`);
     continue;
   }
@@ -463,7 +509,10 @@ for (const directory of WORKSPACE_ORDER) {
     // which is how the sqlcipher packages came to be referenced by a release
     // that never built them.
     if (runtimeVersion) {
-      const absent = targets.filter((target) => !publishedAt(target.package, at));
+      const absent = targets.filter(
+        (target) => publishedAt(target.package, at) === false,
+      );
+      reportUnanswered();
       if (absent.length > 0) {
         console.error(
           `\n${absent.map((target) => target.package).join(", ")}\n` +
@@ -508,7 +557,7 @@ try {
   for (const entry of patched) {
     const note =
       entry.changed.length > 0 ? `  (${entry.changed.join(", ")})` : "";
-    if (!dryRun && publishedAt(entry.name, version)) {
+    if (!dryRun && publishedAt(entry.name, version) === true) {
       console.log(`  ${entry.name}  (already at ${version})`);
       continue;
     }

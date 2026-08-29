@@ -9,6 +9,8 @@
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
@@ -110,6 +112,61 @@ test("gets past the registry check for a private one", async () => {
   // it accepted the registry and moved on.
   assert.doesNotMatch(output, /Refusing to publish/);
   assert.match(output, /registry\.example\.test/);
+});
+
+/**
+ * The registry probes have to hand npm a configuration it will accept.
+ *
+ * This is not hypothetical. A `--fetch-retry-maxtimeout` of 5s sat below npm's
+ * own `fetch-retry-mintimeout` of 10s, so npm refused the config and failed
+ * every `npm view` before it made a request. The script read that as "the
+ * registry says no", and a release stopped dead insisting that six packages
+ * which had been published for months did not exist.
+ *
+ * A home directory of its own is the whole point: an `.npmrc` in the real one
+ * can set the very keys that would mask this, which is exactly why it reached
+ * CI. The registry is a host that does not resolve, so nothing here needs the
+ * network - a config npm rejects fails before the request, and looks nothing
+ * like a host it could not reach.
+ */
+test("hands npm a configuration it accepts", async () => {
+  const home = mkdtempSync(join(tmpdir(), "vantail-npm-home-"));
+  const { output } = await publish(
+    "--registry",
+    "https://registry.example.test",
+    { HOME: home, USERPROFILE: home, npm_config_userconfig: join(home, ".npmrc") },
+  );
+
+  assert.doesNotMatch(
+    output,
+    /minTimeout|Unknown user config|invalid config/i,
+    "npm rejected the configuration the probes gave it",
+  );
+  // And what it did report is a registry it could not reach, which is the
+  // failure this run is actually supposed to have.
+  assert.match(output, /Could not ask/);
+  assert.match(output, /ENOTFOUND|ETIMEDOUT|EAI_AGAIN|getaddrinfo/);
+});
+
+/**
+ * A registry that cannot be reached is not a registry that said no.
+ *
+ * The refusal below it exists to stop a release half way through; firing it on
+ * a question that never got an answer stops a release that was fine.
+ */
+test("does not call a package missing when it could not ask", async () => {
+  const home = mkdtempSync(join(tmpdir(), "vantail-npm-home-"));
+  const { output } = await publish(
+    "--registry",
+    "https://registry.example.test",
+    { HOME: home, USERPROFILE: home, npm_config_userconfig: join(home, ".npmrc") },
+  );
+
+  assert.doesNotMatch(
+    output,
+    /do not exist on .* yet/,
+    "an unreachable registry was read as an empty one",
+  );
 });
 
 /**
