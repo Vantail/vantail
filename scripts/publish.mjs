@@ -27,6 +27,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runtimeBuilds } from "./lib/runtime-builds.mjs";
+import { isVersion } from "./lib/runtime-version.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dryRun = process.argv.includes("--dry-run");
@@ -37,6 +38,30 @@ function flag(name, fallback) {
 }
 
 const platformPackages = resolve(flag("packages", "dist-packages"));
+
+/**
+ * Whether the registry already has this package at this version.
+ *
+ * Only asked on the path that reuses an older release's binaries, where
+ * naming a package that was never published makes the whole install fail.
+ */
+function publishedAt(name, version) {
+  const args = ["view", `${name}@${version}`, "version"];
+  const registry = flag("registry");
+  if (registry) args.push("--registry", registry);
+  const userconfig = flag("userconfig");
+  if (userconfig) args.push("--userconfig", userconfig);
+
+  try {
+    const out = execFileSync("npm", args, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return out.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Publish a subset, by package name.
@@ -126,6 +151,17 @@ const tag = flag("tag", version.includes("-") ? "dev" : "latest");
  * instead, which are the ones that exist.
  */
 const runtimeVersion = flag("runtime-version", undefined);
+
+if (runtimeVersion !== undefined && !isVersion(runtimeVersion)) {
+  // This value becomes the version every platform package is depended on at.
+  // Anything that is not a version is an install failure for every user, and
+  // it has happened: `[object Object]` was published once and then read back
+  // and re-published by the release after it.
+  console.error(
+    `--runtime-version is ${JSON.stringify(runtimeVersion)}, which is not a version.`,
+  );
+  process.exit(1);
+}
 
 /**
  * npm reads a project `.npmrc` from the working directory only - it does not
@@ -319,6 +355,27 @@ for (const directory of WORKSPACE_ORDER) {
   ) {
     const targets = runtimeVersion ? allBuilds : built;
     const at = runtimeVersion ?? version;
+
+    // Reusing an older release's binaries can only name the packages that
+    // release actually published. A variant added since then does not exist
+    // at that version, and depending on it makes the whole install fail -
+    // which is how the sqlcipher packages came to be referenced by a release
+    // that never built them.
+    if (runtimeVersion) {
+      const absent = targets.filter((target) => !publishedAt(target.package, at));
+      if (absent.length > 0) {
+        console.error(
+          `\n${absent.map((target) => target.package).join(", ")}\n` +
+            `${absent.length === 1 ? "does" : "do"} not exist at ${at}, so this ` +
+            `release cannot point at ${absent.length === 1 ? "it" : "them"}.\n\n` +
+            `A build that is new since the last release has to be built before ` +
+            `it can be depended on:\nre-run the release with the native builds ` +
+            `enabled.`,
+        );
+        process.exit(1);
+      }
+    }
+
     manifest.optionalDependencies = Object.fromEntries(
       targets.map((target) => [target.package, at]),
     );

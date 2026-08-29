@@ -14,6 +14,8 @@
 
 import { execFileSync } from "node:child_process";
 
+import { isVersion, versionsFrom } from "./lib/runtime-version.mjs";
+
 function flag(name) {
   const at = process.argv.indexOf(`--${name}`);
   return at === -1 ? undefined : process.argv[at + 1];
@@ -41,9 +43,9 @@ try {
   process.exit(1);
 }
 
-let versions;
+let parsed;
 try {
-  versions = Object.values(JSON.parse(raw || "{}") ?? {});
+  parsed = JSON.parse(raw || "{}") ?? {};
 } catch {
   console.error(
     `Could not parse what the registry returned: ${raw.slice(0, 200)}`,
@@ -51,7 +53,20 @@ try {
   process.exit(1);
 }
 
-const unique = [...new Set(versions.map(String))];
+const found = versionsFrom(parsed);
+const bad = found.filter((value) => !isVersion(value));
+
+if (bad.length > 0) {
+  console.error(
+    `@vantail/runtime names its platform packages at something that is not a\n` +
+      `version: ${bad.map((value) => JSON.stringify(value)).join(", ")}\n\n` +
+      `Publishing that would make every binary unresolvable. Release with the\n` +
+      `native builds enabled so the versions are written fresh.`,
+  );
+  process.exit(1);
+}
+
+const unique = found;
 
 if (unique.length === 0) {
   console.error(

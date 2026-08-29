@@ -38,7 +38,10 @@ the replacement for the rest.
 ```text
 app            identity, lifecycle, and an event bus between windows
 appWindow      size, position, state, fullscreen, always-on-top, devtools
-               createWindow, getWindow, listWindows for more than one
+               titleBarStyle for drawing your own, titleBarMetrics to size it
+               createWindow, getWindow, listWindows, currentWindow for more
+               than one, and onWindowCreated / onWindowReady / onWindowClosed
+               to hear about them
 
 filesystem     read, write, copy, rename, watch - text and binary
 dialog         open, save, message, confirm - drawn by the OS
@@ -53,10 +56,13 @@ autostart      starting when the user logs in
 power          notices when the machine suspends and resumes
 screen         the monitors attached, in logical pixels
 os             platform, architecture, and per-application directories
+path           joining and splitting paths, without a round trip
 
 process        run another program, stream its output
 shell          hand a URL or file to whatever owns it
-network        HTTP from the runtime, past CORS
+network        HTTP from the runtime, past CORS - buffered, streamed,
+               or upgraded to a WebSocket
+database       SQLite in a file the user owns, optionally encrypted
 mdns           discover services on the local network
 hid            talk to USB HID hardware
 secrets        the platform keychain

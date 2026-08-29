@@ -91,8 +91,8 @@ installable without waiting for a release.
 
 ```bash
 node scripts/version.mjs patch
-git commit -am "Release 0.1.7"
-git tag -a v0.1.7 -m "Release 0.1.7"
+git commit -am "Release 0.1.9"
+git tag -a v0.1.9 -m "Release 0.1.9"
 git push --follow-tags
 ```
 

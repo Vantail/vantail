@@ -28,6 +28,22 @@ async function packages() {
   );
 }
 
+/** Every value `@vantail/api` exports - the modules an application imports. */
+async function publicApi() {
+  const source = await readFile(join(root, "packages/api/src/index.ts"), "utf8");
+  return [
+    ...new Set(
+      [...source.matchAll(/export \{([^}]*)\} from/gs)]
+        .flatMap((match) => match[1].split(","))
+        .map((name) => name.trim())
+        // `export { type Foo }` is a type, not a module somebody imports.
+        .filter((name) => name && !name.startsWith("type "))
+        // `appWindow as window` is one API under two names.
+        .map((name) => (name.includes(" as ") ? name.split(" as ")[1].trim() : name)),
+    ),
+  ];
+}
+
 describe("package readmes", () => {
   it("exists for every package that gets published", async () => {
     const missing = [];
@@ -88,6 +104,31 @@ describe("package readmes", () => {
       source,
       /\$\{manifest\.repository\}/,
       "the generator interpolates the repository object, which renders as [object Object]",
+    );
+  });
+});
+
+describe("the api readme keeps up with the api", () => {
+  it("names every module `@vantail/api` exports", async () => {
+    // A README is the first thing anyone reads and the last thing anyone
+    // updates. Shipping a capability that the package page does not mention
+    // is the same as not shipping it for everyone who looks there first.
+    const readme = await readFile(join(root, "packages/api/README.md"), "utf8");
+    const api = await publicApi();
+
+    // Helpers and error plumbing are documented in prose rather than in the
+    // list of modules, which is what the list is for.
+    const prose = new Set(["invoke", "listen", "isVantail", "runtimeVersion", "windowLabel", "VantailError", "ErrorCode"]);
+
+    const missing = api
+      .filter((name) => !prose.has(name))
+      .filter((name) => !new RegExp(`\\b${name}\\b`).test(readme));
+
+    assert.deepEqual(
+      missing,
+      [],
+      `packages/api/README.md does not mention: ${missing.join(", ")}.\n` +
+        "Add it to the list of what is in the package.",
     );
   });
 });
