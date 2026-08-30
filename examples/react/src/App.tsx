@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 
+import { MenuBar } from "./MenuBar.js";
+import { appMenu, INITIAL_MENU_STATE } from "./menu.js";
+import { DRAWS_OWN_MENU } from "./platform.js";
 import { TitleBar, useTitleBar, type Place } from "./TitleBar.js";
 
 /**
@@ -50,7 +53,7 @@ export function App() {
   const [file, setFile] = useState<OpenFile | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [platform, setPlatform] = useState<string>("");
-  const [wrap, setWrap] = useState(true);
+  const [wrap, setWrap] = useState(INITIAL_MENU_STATE.wrap);
   const [windows, setWindows] = useState<string[]>([]);
   const [trayOn, setTrayOn] = useState(false);
   const [display, setDisplay] = useState<string>("");
@@ -72,7 +75,17 @@ export function App() {
     const stopMenu = menu.onClick(({ id }) => {
       if (id === "open") void open();
       if (id === "settings") void openSettings();
-      if (id === "wrap") void menu.isChecked("wrap").then(setWrap);
+      // The application holds this, not the menu. macOS ticks its own
+      // checkbox on the way through and `menu.isChecked` would answer for
+      // it - but each popup this application opens builds a fresh menu, so
+      // asking that one what it thinks is asking something a second old.
+      // Owning the flag and pushing it back down works the same on all three.
+      if (id === "wrap") {
+        setWrap((on) => {
+          void menu.setChecked("wrap", !on);
+          return !on;
+        });
+      }
     });
 
     // The runtime already brings the window back on a tray click; this is
@@ -122,6 +135,19 @@ export function App() {
   const titleBar = useTitleBar();
   // The history the arrows walk, which the dropdown also jumps into.
   const [place, setPlace] = useState(0);
+
+  // Whose job the menu is. On macOS the platform's own bar is at the top of
+  // the screen and a hidden title bar does not touch it, so there is nothing
+  // to draw. Everywhere else the menu hangs off the window frame that
+  // `titleBarStyle: "hidden"` just removed, so it is installed, its
+  // accelerators work, and it is invisible until this draws it.
+  const drawsMenu = titleBar.custom && DRAWS_OWN_MENU;
+  // In the title bar, the way Explorer and VS Code do it, or on a row of its
+  // own underneath, the way everything did before that.
+  const [menuBelow, setMenuBelow] = useState(false);
+  // Rebuilt whenever the state it shows changes, so a menu opened after a
+  // toggle opens with the tick where the application left it.
+  const menuItems = appMenu({ wrap });
 
   async function refreshWindows() {
     setWindows(await listWindows());
@@ -319,10 +345,14 @@ export function App() {
           title={info?.name ?? "Vantail"}
           places={PLACES}
           current={place}
+          menu={drawsMenu && !menuBelow ? menuItems : undefined}
           onGo={setPlace}
           onProfile={() => setNote("profile: whatever your app puts here")}
           onSettings={() => void openSettings()}
         />
+      )}
+      {drawsMenu && menuBelow && (
+        <MenuBar items={menuItems} className="menubar-row" />
       )}
       <main>
       <header>
@@ -358,6 +388,11 @@ export function App() {
               }
             >
               {titleBar.ownButtons ? "System buttons" : "Own buttons"}
+            </button>
+          )}
+          {drawsMenu && (
+            <button onClick={() => setMenuBelow(!menuBelow)}>
+              {menuBelow ? "Menu in bar" : "Menu below"}
             </button>
           )}
           <button onClick={() => void appWindow.minimize()}>Minimise</button>

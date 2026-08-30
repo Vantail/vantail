@@ -1,5 +1,8 @@
 import { defineConfig } from "@vantail/cli";
 
+import { appMenu } from "./src/menu.js";
+import { MIN_HEIGHT, MIN_WIDTH } from "./src/window.js";
+
 export default defineConfig({
   app: {
     name: "Vantail Example",
@@ -13,8 +16,8 @@ export default defineConfig({
     title: "Vantail Example",
     width: 980,
     height: 700,
-    minWidth: 560,
-    minHeight: 420,
+    minWidth: MIN_WIDTH,
+    minHeight: MIN_HEIGHT,
     // This example draws its own title bar - see `src/TitleBar.tsx`. The
     // height is its own, and `titleBarHeight` tells the runtime so the
     // platform's window buttons are centred in it rather than left up at the
@@ -30,46 +33,13 @@ export default defineConfig({
   // On macOS this is what makes Cmd-C, Cmd-V and Cmd-Z work at all - without
   // the predefined items present, the shortcuts do nothing anywhere in the
   // app. Worth setting even if you never show a custom menu.
-  menu: [
-    {
-      type: "submenu",
-      label: "Vantail Example",
-      items: [
-        { type: "predefined", item: "about" },
-        { type: "separator" },
-        { id: "settings", label: "Settings...", accelerator: "CmdOrCtrl+," },
-        { type: "separator" },
-        { type: "predefined", item: "hide" },
-        { type: "predefined", item: "quit" },
-      ],
-    },
-    {
-      type: "submenu",
-      label: "File",
-      items: [
-        { id: "open", label: "Open...", accelerator: "CmdOrCtrl+O" },
-        {
-          type: "checkbox",
-          id: "wrap",
-          label: "Wrap long lines",
-          checked: true,
-        },
-      ],
-    },
-    {
-      type: "submenu",
-      label: "Edit",
-      items: [
-        { type: "predefined", item: "undo" },
-        { type: "predefined", item: "redo" },
-        { type: "separator" },
-        { type: "predefined", item: "cut" },
-        { type: "predefined", item: "copy" },
-        { type: "predefined", item: "paste" },
-        { type: "predefined", item: "selectAll" },
-      ],
-    },
-  ],
+  //
+  // The items live in `src/menu.ts` because the interface needs them too:
+  // this installs the platform's menu, and on the platforms where a hidden
+  // title bar leaves that menu nowhere to appear, `MenuBar.tsx` draws the
+  // same array. The config is loaded through esbuild, so a relative import
+  // here is bundled rather than resolved at runtime.
+  menu: appMenu(),
 
   permissions: {
     dialog: true,

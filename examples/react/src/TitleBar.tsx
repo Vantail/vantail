@@ -12,10 +12,16 @@ import {
 import {
   appWindow,
   titleBarMetrics,
+  type MenuItem,
+  type Platform,
   type TitleBarButtons,
   type TitleBarMetrics,
   type TitleBarStyle,
 } from "@vantail/api";
+
+import { MenuBar } from "./MenuBar.js";
+import { PLATFORM } from "./platform.js";
+import { MIN_HEIGHT, MIN_WIDTH } from "./window.js";
 
 /**
  * This window's title bar, as state.
@@ -101,6 +107,7 @@ export function TitleBar({
   title,
   places,
   current,
+  menu,
   onGo,
   onProfile,
   onSettings,
@@ -109,6 +116,8 @@ export function TitleBar({
   title: string;
   places: Place[];
   current: number;
+  /** The application menu, when this bar is the one drawing it. */
+  menu?: MenuItem[];
   onGo: (index: number) => void;
   onProfile: () => void;
   onSettings: () => void;
@@ -152,24 +161,152 @@ export function TitleBar({
   const [focused, setFocused] = useState(true);
   useEffect(() => appWindow.onFocusChanged((state) => setFocused(state.focused)), []);
 
+  // Windows and GNOME swap the maximise button for a restore one, so the bar
+  // has to know which the window currently is. Asked again on every resize
+  // because this button is not the only thing that maximises a window: a
+  // double-click on the bar does, so does a snap to the edge of the screen,
+  // and a button still offering to maximise a maximised window is the tell of
+  // a bar that is only a picture of one.
+  const [maximized, setMaximized] = useState(false);
+  useEffect(() => {
+    const sync = () => void appWindow.isMaximized().then(setMaximized);
+    sync();
+    return appWindow.onResized(sync);
+  }, []);
+
+  const controls = ownControls ? (
+    <WindowControls platform={PLATFORM} maximized={maximized} />
+  ) : null;
+
+  const bar = useRef<HTMLDivElement>(null);
+
+  // Keep the window wider than its own title bar.
+  //
+  // A bar that has run out of room is a bar with the close button off the end
+  // of it, and no amount of CSS stops a window being dragged narrower. So the
+  // bar measures what it needs and makes that the window's minimum - which
+  // also means nobody has to keep a hardcoded number in step with what the
+  // bar happens to contain this month.
+  useEffect(() => {
+    const element = bar.current;
+    if (!element) return;
+
+    let applied = 0;
+
+    const measure = (): void => {
+      const style = getComputedStyle(element);
+      const gap = parseFloat(style.columnGap) || 0;
+      const search = element.querySelector<HTMLElement>(".titlebar-search");
+      const searchStyle = search && getComputedStyle(search);
+      // What the field is meant to keep, which is not a `min-width` on the
+      // field itself - see `style.css` for why that would be worse than
+      // useless.
+      const floor = parseFloat(style.getPropertyValue("--tb-search-min")) || 0;
+
+      // Everything except the field, which is the one thing here that gives
+      // way. Split at the field, because where it sits decides which of the
+      // two sums below is the one that matters.
+      let leading = 0;
+      let trailing = 0;
+      let past = false;
+      for (const child of Array.from(element.children) as HTMLElement[]) {
+        if (child === search) {
+          past = true;
+          continue;
+        }
+        if (past) trailing += child.offsetWidth + gap;
+        else leading += child.offsetWidth + gap;
+      }
+
+      // Centred on the window, the field clears both ends only when the wider
+      // end fits in half of what is left over - so the narrow end buys
+      // nothing and the wide one is counted twice. In the flow it simply
+      // needs whatever is left after everything else.
+      const centred = searchStyle?.position === "absolute";
+      const needed = Math.ceil(
+        parseFloat(style.paddingLeft) +
+          parseFloat(style.paddingRight) +
+          floor +
+          (centred ? 2 * Math.max(leading, trailing) : leading + trailing),
+      );
+
+      if (needed === applied) return;
+      applied = needed;
+
+      const width = Math.max(MIN_WIDTH, needed);
+      void appWindow.setMinSize(width, MIN_HEIGHT);
+      // A limit is a limit on the next resize, not on the size the window is
+      // already at, so a window that is too narrow now stays too narrow until
+      // somebody drags it. Maximised, it is wider than this by definition and
+      // this does not fire.
+      if (window.innerWidth < width) {
+        void appWindow.setSize(width, window.innerHeight);
+      }
+    };
+
+    measure();
+    // The contents change size for reasons that are not a window resize - a
+    // menu appearing, a taller bar, a longer label - and each of them moves
+    // the floor.
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    for (const child of Array.from(element.children)) observer.observe(child);
+    return () => observer.disconnect();
+  }, [menu, barHeight, ownControls]);
+
   return (
     <div
+      ref={bar}
       className={focused ? "titlebar" : "titlebar unfocused"}
+      data-platform={PLATFORM}
+      // Says a menu is in front of the search, which changes how the search
+      // is centred - see `style.css`.
+      data-menu={menu ? "" : undefined}
       onPointerDown={drag}
       onDoubleClick={maximise}
       style={
         {
           height: barHeight,
-          paddingLeft: metrics.insetLeft,
-          paddingRight: metrics.insetRight,
-          // Everything inside is sized off this, so a taller bar scales the
-          // controls with it instead of leaving them adrift in the middle of
-          // too much space.
+          // The room the system reserved for its own buttons. Left out
+          // entirely when it reserved none, so the stylesheet's per-platform
+          // padding gets a say - an inline zero would beat it.
+          paddingLeft: metrics.insetLeft || undefined,
+          paddingRight: metrics.insetRight || undefined,
+          // The bar's own furniture is sized off this, so a taller bar scales
+          // it with them instead of leaving it adrift in the middle of too
+          // much space. The window controls are the exception - see the
+          // per-platform blocks in `style.css` for why they hold their size.
           "--tb-height": `${barHeight}px`,
         } as React.CSSProperties
       }
     >
-      {ownControls && <WindowDots />}
+      {/* macOS keeps its buttons on the leading edge; Windows and GNOME put
+          theirs on the trailing one, after whatever the application has up
+          there. A change of DOM order rather than a CSS `order`, so tabbing
+          through the bar follows what it looks like. */}
+      {PLATFORM === "macos" && controls}
+
+      {/* Where macOS puts its buttons, Windows puts the app icon. Windows
+          only: GTK dropped the icon from its header bars, so an Adwaita
+          application with one in the corner looks as out of place as traffic
+          lights would.
+
+          It lives in `public/` rather than being imported, because importing
+          `icon.png` would ship a 1024px source into the bundle to draw 16
+          points of it. Decorative: the window already says whose it is, and
+          a screen reader announcing "Vantail Example" twice helps nobody. */}
+      {PLATFORM === "windows" && (
+        <img
+          className="titlebar-icon"
+          src="/app-icon.png"
+          alt=""
+          // An image drags itself by default, and a drag that starts an image
+          // drag is a drag that does not move the window.
+          draggable={false}
+        />
+      )}
+
+      {menu && <MenuBar items={menu} />}
 
       <nav className="titlebar-history" aria-label="History">
         <button
@@ -217,6 +354,8 @@ export function TitleBar({
           <FontAwesomeIcon icon={faGear} />
         </button>
       </span>
+
+      {PLATFORM !== "macos" && controls}
     </div>
   );
 }
@@ -327,38 +466,115 @@ function SearchBar({
 }
 
 /**
- * Close, minimise and zoom, for the platforms that took theirs away with the
- * title bar.
+ * Close, minimise and maximise, in the shape the platform draws them.
  *
- * Round and on the left, to match the ones macOS keeps - this is one
- * application looking the same on three platforms rather than three
- * conventions in one codebase. They centre themselves in whatever height the
- * bar is, the same as the real ones do.
+ * Three platforms, three conventions, and they do not travel. Traffic lights
+ * on Windows read as a web page wearing a window, and Windows' square caption
+ * buttons on macOS read the same way - a custom title bar is only convincing
+ * for as long as its controls are the ones the user already knows, so this
+ * branches on the platform rather than picking one look and calling it
+ * consistency.
+ *
+ * What differs is more than the drawing: macOS puts them on the leading edge
+ * in close-minimise-zoom order, Windows and GNOME on the trailing edge in
+ * minimise-maximise-close. The order lives here; the geometry is in
+ * `style.css`, keyed off `data-platform` on the bar.
  */
-function WindowDots() {
+function WindowControls({
+  platform,
+  maximized,
+}: {
+  platform: Platform;
+  maximized: boolean;
+}) {
+  const restore = maximized ? "Restore" : "Maximise";
+
+  if (platform === "macos") {
+    return (
+      <span className="titlebar-controls mac">
+        <button
+          type="button"
+          className="dot close"
+          title="Close"
+          aria-label="Close"
+          onClick={() => void appWindow.close()}
+        />
+        <button
+          type="button"
+          className="dot minimise"
+          title="Minimise"
+          aria-label="Minimise"
+          onClick={() => void appWindow.minimize()}
+        />
+        <button
+          type="button"
+          className="dot zoom"
+          title={restore}
+          aria-label={restore}
+          onClick={() => void appWindow.toggleMaximize()}
+        />
+      </span>
+    );
+  }
+
   return (
-    <span className="titlebar-dots">
+    <span
+      className={`titlebar-controls ${platform === "windows" ? "win" : "adw"}`}
+    >
       <button
         type="button"
-        className="dot close"
-        title="Close"
-        aria-label="Close"
-        onClick={() => void appWindow.close()}
-      />
-      <button
-        type="button"
-        className="dot minimise"
+        className="cap minimise"
         title="Minimise"
         aria-label="Minimise"
         onClick={() => void appWindow.minimize()}
-      />
+      >
+        <Glyph d="M0 5 H10" />
+      </button>
       <button
         type="button"
-        className="dot zoom"
-        title="Maximise"
-        aria-label="Maximise"
+        className="cap zoom"
+        title={restore}
+        aria-label={restore}
         onClick={() => void appWindow.toggleMaximize()}
-      />
+      >
+        {maximized ? (
+          // The window in front and the one behind it, which is what both
+          // platforms draw once there is something to restore to.
+          <Glyph d="M0.5 2.5 h7 v7 h-7 z M2.5 2.5 v-2 h7 v7 h-2" />
+        ) : (
+          <Glyph d="M0.5 0.5 h9 v9 h-9 z" />
+        )}
+      </button>
+      <button
+        type="button"
+        className="cap close"
+        title="Close"
+        aria-label="Close"
+        onClick={() => void appWindow.close()}
+      >
+        <Glyph d="M0.5 0.5 L9.5 9.5 M9.5 0.5 L0.5 9.5" />
+      </button>
     </span>
+  );
+}
+
+/**
+ * One caption glyph.
+ *
+ * Drawn rather than set in Segoe Fluent Icons. That font is the real source
+ * of these shapes, but it only exists on Windows 11 - Windows 10 has the same
+ * glyphs under a different name, and Linux has neither - and a missing icon
+ * font shows as three empty boxes in the corner of every window. A path is
+ * the same picture with nothing to install and nothing to fall back to.
+ *
+ * The box is ten units and the glyph is drawn at ten pixels, so a unit is a
+ * pixel and a stroke of 1 is the hairline the system draws - which is what
+ * keeps these from looking soft next to a real Windows caption.
+ */
+function Glyph({ d }: { d: string }) {
+  return (
+    <svg viewBox="0 0 10 10" aria-hidden="true" focusable="false">
+      <path d={d} />
+    </svg>
   );
 }

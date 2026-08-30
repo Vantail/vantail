@@ -246,21 +246,16 @@ await appWindow.setTitleBarButtons("system");  // the platform's back
 ```
 
 With them hidden, `insetLeft` is `0` - the same signal Windows and Linux
-already give - so code that draws its own controls when nothing is reserved
-needs no new branch, and one stylesheet covers all three platforms. You then
-own the size, the colour and the hover behaviour, and you own getting them
-right.
+already give - so the code that decides *whether* to draw its own controls
+needs no new branch. What they look like does: see **Drawing your own** below.
+You then own the size, the colour and the hover behaviour, and you own getting
+them right.
 
 Their **colour** is not yours to set. macOS draws them red, amber and green
 when the window is in front and grey when it is not - and grey in front too if
 the user has picked Graphite under Appearance, which is a common reason for
 "my traffic lights are the wrong colour". There is no API for it because it is
 the user's choice, not the application's.
-
-Your own controls, on the platforms that have none, are ordinary elements and
-ordinary CSS. Worth copying the one behaviour that reads as native: colour
-them while the window is focused and grey them when it is not, which
-`appWindow.onFocusChanged` tells you.
 
 `trafficLightPosition` moves them somewhere other than where the platform
 puts them, and `appWindow.centerTrafficLights()` puts them back:
@@ -302,6 +297,51 @@ lands them in the same place as running it once.
 Both `titleBarHeight` and `trafficLightPosition` survive a live resize, because
 the correction happens during the draw rather than after it - see above.
 
+### Drawing your own
+
+Your own controls, on the platforms that have none, are ordinary elements and
+ordinary CSS. What they must not be is one look on three platforms. Each
+system draws its window buttons differently enough that borrowing another's
+is the tell of a web page in a frame:
+
+| | macOS | Windows | GNOME |
+| --- | --- | --- | --- |
+| Edge | Leading | Trailing | Trailing |
+| Order | Close, minimise, zoom | Minimise, maximise, close | Minimise, maximise, close |
+| Shape | 12pt coloured circles | 46pt square, full bar height | 24pt circles on a grey fill |
+| Hover | Glyph appears in the dot | Grey, and red on close | The circle darkens |
+| Maximised | Unchanged | Restore glyph | Restore glyph |
+
+None of those sizes scale with the title bar - each system keeps them where
+they are however tall the bar is - so a control sized as a fraction of the bar
+is wrong on a bar of any other height.
+
+The **app icon** is the same kind of question and has a shorter answer:
+Windows only. It goes at the head of the caption at 16pt, which is where
+every Explorer window has one. macOS gives that corner to the traffic lights,
+and GTK took the icon out of its header bars, so drawing one on either is the
+same mistake in the other direction.
+
+`os.infoSync()` answers with the platform synchronously, off the same injected
+bridge as `titleBarMetrics()`, so the right controls are in the first frame
+the window paints. `os.platform()` resolves a tick later, which is long enough
+to see the wrong ones swap for the right ones.
+
+```ts
+const platform = os.infoSync()?.platform;   // "macos" | "windows" | "linux"
+```
+
+Two behaviours are worth copying whichever platform you are on. Colour the
+controls while the window is focused and grey them when it is not, which
+`appWindow.onFocusChanged` tells you. And swap the maximise control for a
+restore one while the window is maximised - `appWindow.isMaximized()`, asked
+again on `onResized`, because a snap or a double-click on the bar maximises a
+window without going through your button.
+
+[`examples/react`](../examples/react/src/TitleBar.tsx) draws all three, and
+its stylesheet keys off a `data-platform` attribute rather than repeating the
+branch in the markup.
+
 ### Switching at runtime
 
 ```ts
@@ -335,7 +375,9 @@ top is the app's own, sized entirely from the variables.
 On **Windows and Linux** there is no way to keep the buttons without the bar,
 so `hidden` is an undecorated window and your toolbar has to include close,
 minimise and maximise itself. Both insets are `0` there, which is the signal
-to draw them - branch on that rather than on the platform name.
+to draw them - branch on that rather than on the platform name. What to draw
+is the other question, and that one is the platform's: see
+[Drawing your own](#drawing-your-own).
 
 `decorations: false` is a different thing and still there: it removes the
 frame entirely, traffic lights included.
@@ -695,6 +737,40 @@ of how badly it used to land:
    Cmd-C, Cmd-V, Cmd-Q and Cmd-W with it, since those shortcuts exist only as
    menu items. One mistyped accelerator must not cost an application its
    ability to quit.
+
+### A hidden title bar takes the menu with it
+
+macOS keeps its menu bar at the top of the screen, where `titleBarStyle:
+"hidden"` cannot reach it. Windows and Linux hang the menu off the window
+frame, and `hidden` is an undecorated window - so the menu is installed, its
+accelerators still fire, and there is nowhere left for it to appear. Nothing
+reports an error, because nothing failed.
+
+An application that hides its title bar on those platforms has to draw the
+menu itself. Draw only the titles, and open the platform's own menu under
+whichever was clicked:
+
+```ts
+const box = event.currentTarget.getBoundingClientRect();
+await menu.popup(submenu.items, { x: box.left, y: box.bottom });
+```
+
+`popup` is what keeps that honest. The items in it are the platform's, so the
+predefined ones behave; it is a real window rather than a div clipped by this
+one; and its clicks arrive through the same `onClick` as the installed menu's,
+so nothing downstream has to know which menu was used. It is modal, so the
+promise resolves when the menu closes - enough to keep a title highlighted for
+exactly as long as its menu is up.
+
+Two things to know before copying it. `popup` builds a **fresh** menu every
+time, so anything stateful - a `checkbox`, an `enabled` - has to be built from
+your own state rather than written as a literal, or it resets every time the
+menu opens. And the array you pop up wants to be the array the config
+installed, from one place: two copies is how the menu people click and the
+accelerators they press drift apart.
+
+[`examples/react`](../examples/react/src/MenuBar.tsx) does both, and puts the
+bar either in the title bar or on a row of its own underneath.
 
 ## tray
 
