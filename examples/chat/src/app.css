@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+/*
+ * The runtime sets these on the document before the first paint, so they are
+ * available to plain CSS with no JavaScript involved at all - which is the
+ * whole reason a server-rendered page can have a native-feeling title bar.
+ *
+ *   --vantail-titlebar-height        how tall the platform's bar would be
+ *   --vantail-titlebar-inset-left    room the window buttons need
+ *   --vantail-titlebar-inset-right   the same on the other side
+ *   --vantail-titlebar-button-top    where those buttons sit down the bar
+ *   --vantail-titlebar-button-height how tall they are
+ *
+ * Fallbacks are for `bun run dev` opened in an ordinary browser, where none of
+ * them exist and the page should still lay out.
+ */
+@theme {
+  --color-ink: #e7e9ee;
+  --color-dim: #9aa1ad;
+  --color-canvas: #0b0d12;
+  --color-raised: #161a22;
+  --color-line: #232936;
+  --color-accent: #6c8cff;
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    overflow: hidden;
+  }
+}
+
+@utility titlebar-inset {
+  padding-left: calc(var(--vantail-titlebar-inset-left, 0px) + 0.75rem);
+  padding-right: calc(var(--vantail-titlebar-inset-right, 0px) + 0.75rem);
+}

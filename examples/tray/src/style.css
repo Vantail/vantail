@@ -1,0 +1,205 @@
+/*
+ * A popover, not a page.
+ *
+ * The window is transparent and undecorated, so this stylesheet draws the
+ * whole thing: the rounded card, its border and its shadow are all here. The
+ * body has to stay transparent or the corners come back square.
+ */
+
+:root {
+  --bg: #16181d;
+  --line: #262a33;
+  --text: #e7e9ee;
+  --dim: #8b93a3;
+  --accent: #6f7cff;
+  --break: #35c48b;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+}
+
+body {
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  color: var(--text);
+  /* Nothing here is text a user would want to select, and a popover that
+     highlights when you drag across it feels like a web page. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#app {
+  height: 100%;
+}
+
+.app {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  /* The window has no shadow of its own once it has no decorations. */
+  box-shadow: 0 12px 32px rgb(0 0 0 / 45%);
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.phase {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+button {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #1e222a;
+  color: var(--text);
+  font: inherit;
+  padding: 6px 10px;
+  cursor: default;
+}
+
+button:hover:not(:disabled) {
+  background: #262b35;
+}
+
+button:disabled {
+  opacity: 0.4;
+}
+
+button.icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dim);
+}
+
+button.icon:hover {
+  color: var(--text);
+  background: #262b35;
+}
+
+button.icon svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  fill: none;
+}
+
+.dial {
+  position: relative;
+  display: grid;
+  flex: 1;
+  place-items: center;
+}
+
+.dial svg {
+  width: 132px;
+  height: 132px;
+  /* Twelve o'clock rather than three, which is where a circle starts. */
+  transform: rotate(-90deg);
+}
+
+.track,
+.run {
+  fill: none;
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+
+.track {
+  stroke: #23272f;
+}
+
+.run {
+  stroke: var(--accent);
+  transition: stroke-dashoffset 0.25s linear;
+}
+
+.break .run {
+  stroke: var(--break);
+}
+
+.time {
+  position: absolute;
+  font-size: 27px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.controls {
+  display: flex;
+  gap: 8px;
+}
+
+.controls button {
+  flex: 1;
+}
+
+.primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: #fff;
+}
+
+.break .primary {
+  background: var(--break);
+  color: #06281c;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+
+.break button.primary:hover:not(:disabled) {
+  background: var(--break);
+}
+
+footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  color: var(--dim);
+}
+
+footer button {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+footer button.on {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.break footer button.on {
+  border-color: var(--break);
+}
+
+.count {
+  margin-left: auto;
+  font-size: 12px;
+}

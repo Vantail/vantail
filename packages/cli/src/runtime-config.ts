@@ -31,8 +31,10 @@ export function buildRuntimeConfig(input: RuntimeConfigInput): Record<string, un
 
   const distDir =
     input.distDir ??
-    // Nothing is built in dev, but `os.resourceDir()` should still point
-    // somewhere sensible - so use the absolute path a build would write to.
+    // The fallback for a caller that named no directory. `vantail dev` names
+    // Vite's `publicDir`, because that is where the static files actually are
+    // before there is a build; this is where they will be once there is one,
+    // so `os.resourceDir()` still points somewhere sensible either way.
     absolute(root, config.distDir ?? "dist");
 
   return {
@@ -56,6 +58,7 @@ export function buildRuntimeConfig(input: RuntimeConfigInput): Record<string, un
     ...(config.quitOnLastWindowClosed === undefined
       ? {}
       : { quitOnLastWindowClosed: config.quitOnLastWindowClosed }),
+    ...(config.showInDock === undefined ? {} : { showInDock: config.showInDock }),
     distDir,
     devtools: config.devtools ?? devUrl !== undefined,
     ...(devUrl ? { dev: { url: devUrl } } : {}),

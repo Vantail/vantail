@@ -221,3 +221,35 @@ test("a database can ask for the encrypted runtime", () => {
     false,
   );
 });
+
+test("every option the config interface documents is one the schema accepts", async () => {
+  // `config.ts` is documentation and `schema.ts` is the validator, and only
+  // the second one is enforced. Adding an option to the first and forgetting
+  // the second does not silently ignore it - the schema is `.strict()`, so it
+  // is rejected as an unknown key, and the option a user just read about in
+  // the types fails their build.
+  const { readFile } = await import("node:fs/promises");
+  const { dirname, join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+
+  const src = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "config.ts");
+  const text = await readFile(src, "utf8");
+
+  const body = text.slice(text.indexOf("export interface VantailConfig {"));
+  const documented = [...body.slice(0, body.indexOf("\n}")).matchAll(/^  ([a-zA-Z]+)\??:/gm)]
+    .map(([, name]) => name);
+
+  assert.ok(documented.length > 5, "could not read the interface's keys");
+
+  for (const key of documented) {
+    // A deliberately wrong value: a key the schema knows fails on its type, a
+    // key it does not know fails as unrecognised. Only the second is a bug.
+    const result = parseConfig({ ...valid, [key]: Symbol.for("wrong") });
+    const problems = result.ok ? "" : result.problems.join("\n");
+    assert.doesNotMatch(
+      problems,
+      /unrecognized|unknown key/i,
+      `\`${key}\` is documented in config.ts but missing from schema.ts`,
+    );
+  }
+});

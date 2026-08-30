@@ -434,6 +434,16 @@ export interface VantailConfig {
    * an application that lives in the tray and has no window most of the time.
    */
   quitOnLastWindowClosed?: boolean;
+  /**
+   * Show in the Dock and the Cmd-Tab switcher. Default `true`. macOS only,
+   * and ignored elsewhere.
+   *
+   * `false` is the accessory activation policy, which is what a menu bar
+   * application wants: it lives in the tray, and a Dock icon would be a
+   * second way in that leads nowhere. Usually set alongside
+   * `quitOnLastWindowClosed: false`.
+   */
+  showInDock?: boolean;
   /** Directory of built web assets, relative to the config file. Default `dist`. */
   distDir?: string;
   /** Force the webview inspector on or off. Defaults to on in `vantail dev`. */

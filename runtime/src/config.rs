@@ -52,6 +52,13 @@ pub struct Config {
     /// the tray and have no window most of the time.
     #[serde(default = "yes")]
     pub quit_on_last_window_closed: bool,
+    /// Show in the Dock and the Cmd-Tab switcher. macOS only.
+    ///
+    /// Off is the accessory activation policy, which is what a menu bar
+    /// application wants: it lives in the tray, and a Dock icon would be a
+    /// second way in that leads nowhere.
+    #[serde(default = "yes")]
+    pub show_in_dock: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -333,6 +340,32 @@ impl LoadedConfig {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn an_app_is_in_the_dock_unless_it_says_otherwise() {
+        // The CLI leaves `showInDock` out entirely when nobody set it, so the
+        // default has to live here rather than there.
+        let config: Config = serde_json::from_value(serde_json::json!({
+            "app": { "name": "A", "identifier": "dev.test.a" },
+            "window": {},
+        }))
+        .expect("a minimal config should load");
+        assert!(config.show_in_dock);
+        assert!(config.quit_on_last_window_closed);
+    }
+
+    #[test]
+    fn a_menu_bar_app_can_turn_the_dock_icon_off() {
+        let config: Config = serde_json::from_value(serde_json::json!({
+            "app": { "name": "A", "identifier": "dev.test.a" },
+            "window": {},
+            "showInDock": false,
+            "quitOnLastWindowClosed": false,
+        }))
+        .expect("config with showInDock should load");
+        assert!(!config.show_in_dock);
+        assert!(!config.quit_on_last_window_closed);
+    }
+
     use super::*;
 
     #[test]

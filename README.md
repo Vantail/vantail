@@ -291,7 +291,10 @@ a tray icon is usually for. A right click always opens the menu. Set
 yourself.
 
 An app that lives in the tray with no window open also wants
-`quitOnLastWindowClosed: false` in its config.
+`quitOnLastWindowClosed: false` in its config, and on macOS `showInDock: false`
+so it has no Dock icon either. `onClick` reports the icon's position in
+*physical* pixels, while `setPosition` takes logical ones - see
+[examples/tray](examples/tray).
 
 ## Talking to hardware
 
@@ -323,6 +326,7 @@ devices and cloud endpoints, `crypto.subtle` covers OAuth PKCE, and
 // vantail.config.ts
 window: { closeBehavior: "hide" },
 quitOnLastWindowClosed: false,
+showInDock: false, // macOS: no Dock icon, no Cmd-Tab entry
 ```
 
 The close button hides the window; the webview keeps running, so timers keep
@@ -494,7 +498,18 @@ package` refuses one unless you pass `--allow-debug-runtime`.
 - [examples/react](examples/react) - a smaller, more realistic application.
 - [examples/vanilla](examples/vanilla) - the same idea without a framework.
 
-Run one against a local build with `vantail dev`.
+And five built around a particular shape of window:
+
+| Example                                | Stack           | What it is for                                                     |
+| -------------------------------------- | --------------- | ------------------------------------------------------------------ |
+| [tray](examples/tray)                   | Vue 3           | A menu bar application: no Dock icon, no window at rest, a popover placed under the icon |
+| [sidebar](examples/sidebar)             | React           | The Mail and Xcode layout - a sidebar-split title bar, where the window buttons' inset moves between columns |
+| [tabs](examples/tabs)                   | React           | Tabs drawn in the title bar, Chrome-style                          |
+| [player](examples/player)               | React           | A tall media bar with transport controls                           |
+| [chat](examples/chat)                   | Bun, Hono, htmx | Server-rendered, with the server shipped as a compiled sidecar     |
+
+Run one against a local build with `vantail dev` - or `pnpm dev` in the
+example's own directory, which is the same thing.
 
 ## Further reading
 

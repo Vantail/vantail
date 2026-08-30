@@ -1,0 +1,424 @@
+/*
+ * All of the layout lives here, none of it in JavaScript.
+ *
+ * That matters more than it looks. A strip positioned from a `resize` handler
+ * trails the window frame while it is being dragged, because the window
+ * resizes first and React catches up afterwards. Flexbox is laid out by the
+ * same pass that resized the window, so it does not trail. For the same reason
+ * there are no transitions on width, height, top or left anywhere below.
+ */
+
+:root {
+  --strip: 44px;
+  --chrome: #1f2126;
+  --chrome-hover: #2b2e35;
+  --tab-active: #35383f;
+  --field: #202225;
+  --page: #ffffff;
+  --ink: #e6e8ec;
+  --dim: #a0a4ad;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--chrome);
+  color: var(--ink);
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+    sans-serif;
+  overflow: hidden;
+}
+
+.app {
+  display: grid;
+  grid-template-rows: var(--strip) 1fr;
+  height: 100vh;
+}
+
+.glyph {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+/* --- the tab strip, which is the title bar ------------------------------ */
+
+.strip {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  background: var(--chrome);
+  /* Nothing up here may be selected by a stray drag of the window. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  /* Takes the room the strip has left, and hands it out below. `min-width: 0`
+     is what lets it go narrower than its contents want - without it a flex
+     container refuses, and the tabs never get the chance to shrink. */
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Tabs share the strip equally, up to a tab's worth each and down to a floor.
+   Opening the tenth tab narrows the other nine in the same layout pass that
+   drew them: ten tabs in a narrow window is a layout question, not a
+   JavaScript one. */
+.tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 0;
+  max-width: 240px;
+  min-width: 56px;
+  height: 34px;
+  padding: 0 4px 0 10px;
+  border-radius: 8px 8px 0 0;
+  color: var(--dim);
+}
+
+.tab:hover {
+  background: var(--chrome-hover);
+  color: var(--ink);
+}
+
+.tab.active {
+  background: var(--tab-active);
+  color: var(--ink);
+}
+
+.tab-face {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+  padding: 0;
+}
+
+.favicon {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.tab-close,
+.new-tab {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: default;
+  padding: 0;
+}
+
+.tab-close:hover,
+.new-tab:hover {
+  background: rgb(255 255 255 / 0.14);
+}
+
+.tab-close .glyph {
+  width: 12px;
+  height: 12px;
+}
+
+/* The close button disappears on a tab too narrow to hold it. A container
+   query, so it follows the tab's own width rather than the window's - which
+   is the difference between "this tab is small" and "this window is small". */
+.tab {
+  container-type: inline-size;
+}
+
+@container (max-width: 110px) {
+  .tab-close {
+    display: none;
+  }
+}
+
+.new-tab {
+  margin-bottom: 6px;
+  color: var(--dim);
+}
+
+/* --- page --------------------------------------------------------------- */
+
+.page {
+  background: var(--page);
+  min-height: 0;
+  padding: 8px;
+}
+
+/* One control, filling the space, so resizing the window is a layout
+   question rather than something here having to measure it. */
+.editor {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #202124;
+  font: 14px/1.7 ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  padding: 24px 28px;
+  resize: none;
+  outline: none;
+}
+
+
+/* --- window controls and menu bar --------------------------------------- */
+/*
+ * Ported from `examples/react`, which is where these shapes are explained at
+ * length. The short of it: `titleBarStyle: "hidden"` is an undecorated window
+ * on Windows and Linux, so the buttons and the menu that hung off the frame
+ * have to be drawn - and drawn in the shape of the platform, because a title
+ * bar is only convincing while its controls are the ones the user knows.
+ */
+.strip {
+  --fg: var(--ink);
+  --muted: var(--dim);
+  --tb-height: 44px;
+  --tb-dot: 12px;
+  --raise: rgb(255 255 255 / 0.1);
+}
+
+.menubar {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 2px;
+}
+
+.menubar-item {
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.menubar-item:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+/* While its menu is up. The platform's popup is modal, so this is on for
+   exactly as long as the menu is open and goes off when it closes, without
+   anything here having to watch for the dismissal. */
+.menubar-item.open {
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+/* The other placement: a row of its own under the title bar, which is where
+   a menu bar was before anyone put one in the caption. */
+.menubar-row {
+  height: 30px;
+  padding: 0 6px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The app icon, in the corner Windows would have put one in: 16pt at the
+   head of the caption, which is where it is in every File Explorer window.
+   Only Windows draws one - macOS gives that corner to the traffic lights,
+   and GTK took the icon out of its header bars. */
+.titlebar-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+/*
+ * The window controls, where the platform drew none of its own.
+ *
+ * One block per platform, because the three are not variations on a theme:
+ * they differ in shape, in size, in which edge they sit on and in what
+ * hovering one does. `data-platform` on the bar picks the block, and it comes
+ * from `os.infoSync()` - see `TitleBar.tsx`.
+ *
+ * The sizes below are mostly fixed rather than fractions of `--tb-height`,
+ * which is the opposite of everything else in this bar. That is deliberate:
+ * each system draws its window buttons at one size whatever the title bar is,
+ * so scaling them with the bar is precisely what would look hand-drawn.
+ */
+.titlebar-controls {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+/* --- macOS: round, coloured, leading edge, close-minimise-zoom ----------- */
+
+.titlebar-controls.mac {
+  gap: calc(var(--tb-height) * 0.25);
+  /* The bar's own leading padding is `insetLeft`, which is zero once nothing
+     is reserved - so these have to bring their own. */
+  padding-left: calc(var(--tb-height) * 0.28);
+  padding-right: calc(var(--tb-height) * 0.44);
+}
+
+.titlebar-controls.mac .dot {
+  width: var(--tb-dot);
+  height: var(--tb-dot);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: default;
+}
+
+/* Coloured while the window is in front, which is what macOS does and what
+   people read as "these are the window buttons". */
+.strip .dot.close {
+  background: #ff5f57;
+}
+.strip .dot.minimise {
+  background: #febc2e;
+}
+.strip .dot.zoom {
+  background: #28c840;
+}
+
+/* And grey behind, the same as the system's. Coloured dots on a background
+   window are the tell of a title bar that is only a picture of one. */
+.strip.unfocused .dot {
+  background: var(--line);
+}
+
+/* --- Windows: square, full height, trailing edge, minimise-maximise-close - */
+
+.titlebar-controls.win {
+  /* Full height, and hard into the corner. Windows leaves no margin around
+     these: the close button's hit area runs to the last pixel of the window
+     so that throwing the pointer at the corner closes it, and a button with
+     a gap around it misses that by a few pixels every time. */
+  align-self: stretch;
+}
+
+.titlebar-controls.win .cap {
+  /* 46 points wide at every title bar height, which is what Windows itself
+     does - only the height follows the bar. */
+  width: 46px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  cursor: default;
+}
+
+.titlebar-controls.win .cap svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+
+.titlebar-controls.win .cap:hover {
+  background: color-mix(in srgb, currentColor 9%, transparent);
+}
+
+.titlebar-controls.win .cap:active {
+  background: color-mix(in srgb, currentColor 5%, transparent);
+}
+
+/* The one coloured button Windows has, and the one people aim for without
+   looking. Its own red rather than the app's accent: this is the system's
+   affordance, not the application's. */
+.titlebar-controls.win .cap.close:hover {
+  background: #c42b1c;
+  color: #ffffff;
+}
+
+.titlebar-controls.win .cap.close:active {
+  background: #c84031;
+  color: #ffffff;
+}
+
+/* Windows dims the glyphs on a background window and leaves the buttons
+   where they are - the same idea as greying the traffic lights. */
+.strip.unfocused .titlebar-controls.win .cap {
+  color: var(--muted);
+}
+
+/* --- GNOME: round grey buttons, trailing edge, the same order as Windows -- */
+
+.titlebar-controls.adw {
+  gap: 8px;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.titlebar-controls.adw .cap {
+  /* Adwaita's are 24 points across whatever the header bar is, and they sit
+     on a filled circle rather than on the bar itself. */
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  color: var(--fg);
+  cursor: default;
+}
+
+.titlebar-controls.adw .cap svg {
+  width: 9px;
+  height: 9px;
+  fill: none;
+  stroke: currentColor;
+  /* Heavier and rounded: GNOME's symbolic icons are drawn that way, and a
+     hairline Windows glyph inside an Adwaita circle looks like neither. */
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.titlebar-controls.adw .cap:hover {
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.titlebar-controls.adw .cap:active {
+  background: color-mix(in srgb, currentColor 24%, transparent);
+}
+
+.strip.unfocused .titlebar-controls.adw .cap {
+  color: var(--muted);
+}

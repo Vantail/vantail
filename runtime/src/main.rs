@@ -104,7 +104,18 @@ fn run() -> Result<(), String> {
     // once nothing is running out of it - which is now.
     updater::clean_previous();
 
-    let event_loop: EventLoop<UserEvent> = EventLoopBuilder::with_user_event().build();
+    // `mut` only so the Dock can be turned off below; nothing else touches it.
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
+    let mut event_loop: EventLoop<UserEvent> = EventLoopBuilder::with_user_event().build();
+
+    // A menu bar application wants no Dock icon, and this is the only moment
+    // it can be said: AppKit reads the activation policy when the event loop
+    // starts running and ignores it afterwards.
+    #[cfg(target_os = "macos")]
+    if !loaded.config.show_in_dock {
+        use tao::platform::macos::EventLoopExtMacOS;
+        event_loop.set_dock_visibility(false);
+    }
 
     // Before anything is opened: a second launch should hand over what it was
     // asked to do and get out of the way, not build a whole second window
@@ -495,33 +506,9 @@ fn install_chrome_handlers(event_loop: &EventLoop<UserEvent>) {
 
     let proxy = event_loop.create_proxy();
     tray_icon::TrayIconEvent::set_event_handler(Some(move |event: tray_icon::TrayIconEvent| {
-        // Enter, Move and Leave fire constantly and nobody has asked for
-        // them; only the deliberate gestures are forwarded.
-        let message = match event {
-            tray_icon::TrayIconEvent::Click {
-                position, button, ..
-            } => Some((
-                "tray.click",
-                json!({
-                    "button": format!("{button:?}").to_lowercase(),
-                    "x": position.x,
-                    "y": position.y,
-                }),
-            )),
-            tray_icon::TrayIconEvent::DoubleClick {
-                position, button, ..
-            } => Some((
-                "tray.doubleClick",
-                json!({
-                    "button": format!("{button:?}").to_lowercase(),
-                    "x": position.x,
-                    "y": position.y,
-                }),
-            )),
-            _ => None,
-        };
-
-        if let Some((event, payload)) = message {
+        // Which events are worth forwarding, and which of the pair a single
+        // click produces, is decided in `chrome::tray_message`.
+        if let Some((event, payload)) = crate::chrome::tray_message(&event) {
             let _ = proxy.send_event(UserEvent::Tray { event, payload });
         }
     }));

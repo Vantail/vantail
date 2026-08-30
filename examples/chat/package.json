@@ -1,0 +1,25 @@
+{
+  "name": "@vantail/example-chat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run dev.ts",
+    "build": "bun run build.ts",
+    "package": "bun run build.ts && vantail package --no-build",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@vantail/api": "workspace:^",
+    "hono": "^4.6.0",
+    "htmx.org": "^2.0.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.0",
+    "@types/bun": "^1.1.0",
+    "@vantail/cli": "workspace:^",
+    "@vantail/runtime": "workspace:^",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^7.0.0"
+  }
+}

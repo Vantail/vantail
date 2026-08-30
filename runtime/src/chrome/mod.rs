@@ -85,6 +85,50 @@ pub struct WindowState {
 /// A pure function, because this is the interesting part and the alternative
 /// is testing it by asking someone to click a menu bar - synthetic events do
 /// not reach an `NSStatusItem`.
+/// The IPC event a `tray_icon` event should become, if any.
+///
+/// One physical click arrives **twice**: `tray_icon` emits `Click` from both
+/// `mouseDown` and `mouseUp`, identical but for `button_state`. Forwarding
+/// both gave every listener two `tray.click` events per click - invisible to a
+/// handler that shows a window, and fatal to one that toggles, which opened
+/// the window on the press and shut it again on the release.
+///
+/// The release is the click. Enter, Move and Leave fire constantly and nobody
+/// has asked for them.
+pub fn tray_message(event: &tray_icon::TrayIconEvent) -> Option<(&'static str, serde_json::Value)> {
+    match event {
+        tray_icon::TrayIconEvent::Click {
+            position,
+            button,
+            button_state,
+            ..
+        } => {
+            if *button_state != tray_icon::MouseButtonState::Up {
+                return None;
+            }
+            Some((
+                "tray.click",
+                serde_json::json!({
+                    "button": format!("{button:?}").to_lowercase(),
+                    "x": position.x,
+                    "y": position.y,
+                }),
+            ))
+        }
+        tray_icon::TrayIconEvent::DoubleClick {
+            position, button, ..
+        } => Some((
+            "tray.doubleClick",
+            serde_json::json!({
+                "button": format!("{button:?}").to_lowercase(),
+                "x": position.x,
+                "y": position.y,
+            }),
+        )),
+        _ => None,
+    }
+}
+
 pub fn tray_activation(mode: TrayLeftClick, window: Option<WindowState>) -> TrayActivation {
     match mode {
         // The library opens the menu itself; there is no event to act on.
@@ -442,6 +486,42 @@ pub fn load_icon(rt: &Runtime, path: &str) -> Result<tray_icon::Icon, ApiError> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn click(state: tray_icon::MouseButtonState) -> tray_icon::TrayIconEvent {
+        tray_icon::TrayIconEvent::Click {
+            id: tray_icon::TrayIconId::new("t"),
+            position: tao::dpi::PhysicalPosition::new(12.0, 34.0),
+            rect: tray_icon::Rect::default(),
+            button: tray_icon::MouseButton::Left,
+            button_state: state,
+        }
+    }
+
+    #[test]
+    fn one_click_is_one_event() {
+        // `tray_icon` reports a press and a release as two `Click`s. Passing
+        // both on gave listeners two `tray.click`s per click, which turned a
+        // handler that toggles a window into one that opened and shut it.
+        assert!(tray_message(&click(tray_icon::MouseButtonState::Down)).is_none());
+
+        let (name, payload) = tray_message(&click(tray_icon::MouseButtonState::Up))
+            .expect("the release is the click");
+        assert_eq!(name, "tray.click");
+        assert_eq!(payload["button"], "left");
+        assert_eq!(payload["x"], 12.0);
+        assert_eq!(payload["y"], 34.0);
+    }
+
+    #[test]
+    fn hovering_is_not_forwarded() {
+        // Enter, Move and Leave fire constantly and nobody has asked for them.
+        let moved = tray_icon::TrayIconEvent::Move {
+            id: tray_icon::TrayIconId::new("t"),
+            position: tao::dpi::PhysicalPosition::new(1.0, 2.0),
+            rect: tray_icon::Rect::default(),
+        };
+        assert!(tray_message(&moved).is_none());
+    }
 
     const HIDDEN: WindowState = WindowState {
         visible: false,

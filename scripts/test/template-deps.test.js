@@ -36,7 +36,18 @@ const viteRange = (json) =>
   json.devDependencies?.vite ?? json.dependencies?.vite;
 
 test("every template pins the same Vite range the examples build against", async () => {
-  const examples = await manifests(examplesRoot);
+  // Only the examples that actually use Vite. Not every one does - a
+  // server-rendered example has a real HTTP server where the others have a
+  // bundler - and an example with no opinion about Vite should not be read as
+  // disagreeing with the ones that have.
+  const examples = (await manifests(examplesRoot)).filter(({ json }) =>
+    viteRange(json),
+  );
+  assert.ok(
+    examples.length > 0,
+    "no example builds against Vite, so there is nothing to hold the templates to",
+  );
+
   const ranges = new Set(examples.map(({ json }) => viteRange(json)));
   assert.equal(
     ranges.size,

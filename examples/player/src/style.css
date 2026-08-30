@@ -1,0 +1,655 @@
+/*
+ * All of the layout is here rather than in the components.
+ *
+ * That is not tidiness for its own sake: a bar positioned from JavaScript
+ * trails the window frame during a live resize, because the browser resizes
+ * first and React catches up afterwards. Flexbox and grid are laid out by the
+ * same pass that resizes the window, so they do not trail.
+ *
+ * There are no transitions on width, height, top or left for the same reason -
+ * a transition on a layout property is the usual cause of a control appearing
+ * to swim after the edge of the window.
+ */
+
+:root {
+  --bar: 64px;
+  --gap: 8px;
+
+  --black: #000;
+  --raised: #1f1f1f;
+  --raised-hover: #2a2a2a;
+  --panel: #121212;
+  --text: #fff;
+  --dim: #b3b3b3;
+  --line: #2a2a2a;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--black);
+  color: var(--text);
+  font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+    sans-serif;
+  overflow: hidden;
+}
+
+/* The window: bar, body, player. Only the middle row scrolls. */
+.app {
+  display: grid;
+  grid-template-rows: var(--bar) 1fr auto;
+  height: 100vh;
+}
+
+/* --- the title bar ------------------------------------------------------ */
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  background: var(--black);
+  /* The page runs to the top edge of the window, so this strip is what the
+     window buttons sit in. Nothing here may be selected by a stray drag. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.titlebar button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  padding: 0;
+}
+
+.titlebar button:hover {
+  color: var(--text);
+}
+
+.glyph {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.history {
+  display: flex;
+  gap: 4px;
+}
+
+.history button {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+}
+
+/* The middle is centred on the *window*, not on the space left over - which
+   is why it is a flex child that grows, with the group centred inside it. */
+.middle {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--gap);
+  min-width: 0;
+}
+
+.home {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--raised) !important;
+  color: var(--text) !important;
+  flex: none;
+}
+
+.home:hover {
+  background: var(--raised-hover) !important;
+}
+
+.home .glyph {
+  width: 24px;
+  height: 24px;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: clamp(220px, 42vw, 474px);
+  height: 48px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 500px;
+  background: var(--raised);
+}
+
+.search:hover {
+  background: var(--raised-hover);
+}
+
+.search:focus-within {
+  border-color: var(--text);
+}
+
+.search-glyph {
+  width: 20px;
+  height: 20px;
+  color: var(--dim);
+  flex: none;
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.search input::placeholder {
+  color: var(--dim);
+}
+
+.search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.search-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--line);
+  flex: none;
+}
+
+.browse {
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
+
+/* --- the account cluster ------------------------------------------------ */
+
+.account {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+}
+
+.account .icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #535353 !important;
+  color: var(--text) !important;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.avatar:hover {
+  background: #6a6a6a !important;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 320px;
+  padding: 4px;
+  border-radius: 8px;
+  background: #282828;
+  box-shadow: 0 16px 32px rgb(0 0 0 / 0.4);
+  z-index: 10;
+}
+
+.menu > button {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 4px;
+  color: var(--text) !important;
+  font: inherit;
+  text-align: left;
+}
+
+.menu > button:hover {
+  background: #3e3e3e;
+}
+
+.external {
+  width: 16px;
+  height: 16px;
+  color: var(--dim);
+}
+
+.menu-updates {
+  margin-top: 4px;
+  padding: 16px 12px 20px;
+  border-top: 1px solid #3e3e3e;
+  text-align: center;
+}
+
+.menu-updates h2 {
+  margin: 0 0 20px;
+  font-size: 16px;
+  text-align: left;
+}
+
+.tick {
+  width: 32px;
+  height: 32px;
+  margin: 0 auto 8px;
+  color: var(--text);
+}
+
+.caught-up {
+  margin: 0 0 6px;
+  font-weight: 700;
+}
+
+.quiet {
+  margin: 0;
+  color: var(--dim);
+  font-size: 13px;
+}
+
+/* --- the rest of the window --------------------------------------------- */
+
+.body {
+  display: grid;
+  grid-template-columns: minmax(200px, 18vw) 1fr;
+  gap: var(--gap);
+  padding: 0 var(--gap) var(--gap);
+  min-height: 0;
+}
+
+.library,
+main {
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 16px;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.library h2 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  color: var(--dim);
+}
+
+.library ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.library li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  border-radius: 6px;
+  color: var(--dim);
+}
+
+.library li:hover {
+  background: var(--raised);
+  color: var(--text);
+}
+
+main h1 {
+  margin: 8px 0 20px;
+  font-size: 26px;
+}
+
+/* The shelf reflows on its own; nothing counts columns in JavaScript. */
+.shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--raised);
+}
+
+.card:hover {
+  background: var(--raised-hover);
+}
+
+.card h3 {
+  margin: 10px 0 4px;
+  font-size: 15px;
+}
+
+.card p {
+  margin: 0;
+  color: var(--dim);
+  font-size: 13px;
+}
+
+.art {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #3d2f5c, #1d4b52);
+}
+
+.library .art,
+.now-playing .art {
+  width: 40px;
+  height: 40px;
+  flex: none;
+}
+
+.now-playing {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--gap);
+  height: 72px;
+  padding: 0 16px;
+  background: var(--black);
+}
+
+.track {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.track .title {
+  margin: 0;
+}
+
+.transport {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: clamp(240px, 40vw, 520px);
+}
+
+.transport button {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--black);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.scrubber {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.scrubber span {
+  display: block;
+  width: 32%;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--dim);
+}
+
+
+/* --- window controls and menu bar --------------------------------------- */
+/*
+ * Ported from `examples/react`, which is where these shapes are explained at
+ * length. The short of it: `titleBarStyle: "hidden"` is an undecorated window
+ * on Windows and Linux, so the buttons and the menu that hung off the frame
+ * have to be drawn - and drawn in the shape of the platform, because a title
+ * bar is only convincing while its controls are the ones the user knows.
+ */
+.titlebar {
+  --fg: var(--text);
+  --muted: var(--dim);
+  --tb-height: 64px;
+  --tb-dot: 12px;
+  --raise: rgb(255 255 255 / 0.1);
+}
+
+.menubar {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 2px;
+}
+
+.menubar-item {
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.menubar-item:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+/* While its menu is up. The platform's popup is modal, so this is on for
+   exactly as long as the menu is open and goes off when it closes, without
+   anything here having to watch for the dismissal. */
+.menubar-item.open {
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+/* The other placement: a row of its own under the title bar, which is where
+   a menu bar was before anyone put one in the caption. */
+.menubar-row {
+  height: 30px;
+  padding: 0 6px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The app icon, in the corner Windows would have put one in: 16pt at the
+   head of the caption, which is where it is in every File Explorer window.
+   Only Windows draws one - macOS gives that corner to the traffic lights,
+   and GTK took the icon out of its header bars. */
+.titlebar-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+/*
+ * The window controls, where the platform drew none of its own.
+ *
+ * One block per platform, because the three are not variations on a theme:
+ * they differ in shape, in size, in which edge they sit on and in what
+ * hovering one does. `data-platform` on the bar picks the block, and it comes
+ * from `os.infoSync()` - see `TitleBar.tsx`.
+ *
+ * The sizes below are mostly fixed rather than fractions of `--tb-height`,
+ * which is the opposite of everything else in this bar. That is deliberate:
+ * each system draws its window buttons at one size whatever the title bar is,
+ * so scaling them with the bar is precisely what would look hand-drawn.
+ */
+.titlebar-controls {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+/* --- macOS: round, coloured, leading edge, close-minimise-zoom ----------- */
+
+.titlebar-controls.mac {
+  gap: calc(var(--tb-height) * 0.25);
+  /* The bar's own leading padding is `insetLeft`, which is zero once nothing
+     is reserved - so these have to bring their own. */
+  padding-left: calc(var(--tb-height) * 0.28);
+  padding-right: calc(var(--tb-height) * 0.44);
+}
+
+.titlebar-controls.mac .dot {
+  width: var(--tb-dot);
+  height: var(--tb-dot);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: default;
+}
+
+/* Coloured while the window is in front, which is what macOS does and what
+   people read as "these are the window buttons". */
+.titlebar .dot.close {
+  background: #ff5f57;
+}
+.titlebar .dot.minimise {
+  background: #febc2e;
+}
+.titlebar .dot.zoom {
+  background: #28c840;
+}
+
+/* And grey behind, the same as the system's. Coloured dots on a background
+   window are the tell of a title bar that is only a picture of one. */
+.titlebar.unfocused .dot {
+  background: var(--line);
+}
+
+/* --- Windows: square, full height, trailing edge, minimise-maximise-close - */
+
+.titlebar-controls.win {
+  /* Full height, and hard into the corner. Windows leaves no margin around
+     these: the close button's hit area runs to the last pixel of the window
+     so that throwing the pointer at the corner closes it, and a button with
+     a gap around it misses that by a few pixels every time. */
+  align-self: stretch;
+}
+
+.titlebar-controls.win .cap {
+  /* 46 points wide at every title bar height, which is what Windows itself
+     does - only the height follows the bar. */
+  width: 46px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  cursor: default;
+}
+
+.titlebar-controls.win .cap svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+
+.titlebar-controls.win .cap:hover {
+  background: color-mix(in srgb, currentColor 9%, transparent);
+}
+
+.titlebar-controls.win .cap:active {
+  background: color-mix(in srgb, currentColor 5%, transparent);
+}
+
+/* The one coloured button Windows has, and the one people aim for without
+   looking. Its own red rather than the app's accent: this is the system's
+   affordance, not the application's. */
+.titlebar-controls.win .cap.close:hover {
+  background: #c42b1c;
+  color: #ffffff;
+}
+
+.titlebar-controls.win .cap.close:active {
+  background: #c84031;
+  color: #ffffff;
+}
+
+/* Windows dims the glyphs on a background window and leaves the buttons
+   where they are - the same idea as greying the traffic lights. */
+.titlebar.unfocused .titlebar-controls.win .cap {
+  color: var(--muted);
+}
+
+/* --- GNOME: round grey buttons, trailing edge, the same order as Windows -- */
+
+.titlebar-controls.adw {
+  gap: 8px;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.titlebar-controls.adw .cap {
+  /* Adwaita's are 24 points across whatever the header bar is, and they sit
+     on a filled circle rather than on the bar itself. */
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  color: var(--fg);
+  cursor: default;
+}
+
+.titlebar-controls.adw .cap svg {
+  width: 9px;
+  height: 9px;
+  fill: none;
+  stroke: currentColor;
+  /* Heavier and rounded: GNOME's symbolic icons are drawn that way, and a
+     hairline Windows glyph inside an Adwaita circle looks like neither. */
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.titlebar-controls.adw .cap:hover {
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.titlebar-controls.adw .cap:active {
+  background: color-mix(in srgb, currentColor 24%, transparent);
+}
+
+.titlebar.unfocused .titlebar-controls.adw .cap {
+  color: var(--muted);
+}

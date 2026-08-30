@@ -60,6 +60,25 @@ await app.setProgress({ state: "none" }); // finished
 `setBadge` shows text on macOS and a number on Linux, so a label that is not a
 number is refused there. Windows has no text badge and answers `UNSUPPORTED`.
 
+### No dock icon at all
+
+```ts
+// vantail.config.ts
+showInDock: false,
+```
+
+macOS only. This is the accessory activation policy: no Dock icon, and no
+Cmd-Tab entry. What a menu bar application wants, where a Dock icon would be a
+second way in that leads nowhere.
+
+It is config rather than a method because AppKit reads the policy once, when
+the event loop starts running, and ignores it afterwards. `vantail package`
+also writes `LSUIElement` into the bundle, so a packaged build behaves this way
+before its first line of JavaScript runs.
+
+Usually set with `quitOnLastWindowClosed: false`, and on Windows and Linux with
+`appWindow.setSkipTaskbar(true)`, which is the nearest equivalent.
+
 ## Windows
 
 Every window has a **label**. `main` is the one the config opens.
@@ -634,6 +653,11 @@ write.
 `platform()` returns `"macos" | "windows" | "linux"`. The app directories are
 named after `app.identifier`.
 
+`resourceDir()` is where the built assets are: the bundle's resource directory
+once packaged, and Vite's `publicDir` under `vantail dev`, so a file named the
+same way is found in both. It is also what a relative tray icon path and
+`$RESOURCE/...` in `permissions.shell` resolve against.
+
 ## path
 
 ```ts
@@ -791,6 +815,11 @@ await tray.set({
 - and an absolute one has to be inside the filesystem read scope, so this is
   not a way to read a file the app is otherwise not allowed to touch.
 
+Put it in `public/`, which is where a bundler copies static files from and
+where `vantail dev` resolves resource-relative paths. So `icon: "tray.png"`
+means `public/tray.png` while developing and the copy inside the bundle once
+packaged, and there is nothing to change between them.
+
 `iconAsTemplate` renders it monochrome so macOS can invert it against a dark
 menu bar. Usually what you want.
 
@@ -808,8 +837,26 @@ menu bar. Usually what you want.
 A right click always opens the menu. `window` names which window
 `showWindow` targets; `main` by default.
 
+`onClick` fires once per click, on the release, and reports where the icon is:
+
+```ts
+tray.onClick(({ x, y }) => { /* x and y are PHYSICAL pixels */ });
+```
+
+Those coordinates are in **physical** pixels, while `appWindow.setPosition`
+takes **logical** ones. On a Retina display that is a factor of two, so
+passing one straight to the other puts the window off the bottom-right of the
+screen - and looks perfectly correct on any machine that is not Retina.
+`screen.list()` reports each display's logical geometry next to its
+`scaleFactor`, which is what converts between them. See
+[examples/tray](../examples/tray) for the whole dance.
+
+Read the position from every click rather than remembering it: the icon moves
+as other applications add and remove their own.
+
 An app that keeps running with no window open also wants
-`quitOnLastWindowClosed: false` in its config.
+`quitOnLastWindowClosed: false` in its config, and on macOS
+`showInDock: false`.
 
 ## process
 
@@ -1321,6 +1368,10 @@ screen left of the primary one has a negative `x`. `scaleFactor` is 2 on a
 Retina display, and a display in a scaled mode reports the size the user sees
 rather than the panel's - a 3456x2234 panel set to look like 2056x1329 reports
 2056x1329. Covered by `permissions.window`, which is on by default.
+
+`tray.onClick` is the exception in this API: it reports **physical** pixels,
+because that is what the platform hands over. Divide by the `scaleFactor` of
+the display the point falls on before passing it to `setPosition`.
 
 ## shortcut
 

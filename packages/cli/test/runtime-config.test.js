@@ -55,3 +55,14 @@ test("bundle names survive spaces and punctuation", () => {
   assert.equal(safeName("...."), "....");
   assert.equal(safeName("日本語"), "app");
 });
+
+test("showInDock only appears in the runtime config when it is set", () => {
+  // The runtime defaults it to true, so passing it through unset would be a
+  // second place for the default to live and disagree from.
+  assert.equal("showInDock" in buildRuntimeConfig({ config, root: "/app" }), false);
+
+  assert.equal(
+    buildRuntimeConfig({ config: { ...config, showInDock: false }, root: "/app" }).showInDock,
+    false,
+  );
+});

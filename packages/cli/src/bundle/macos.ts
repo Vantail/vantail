@@ -91,7 +91,13 @@ function infoPlist(input: BundleInput, executableName: string): string {
   <key>LSMinimumSystemVersion</key>
   <string>10.15</string>
   <key>NSHighResolutionCapable</key>
-  <true/>${urlTypes(input)}
+  <true/>${
+    input.config.showInDock === false
+      ? `
+  <key>LSUIElement</key>
+  <true/>`
+      : ""
+  }${urlTypes(input)}
 </dict>
 </plist>
 `;

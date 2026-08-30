@@ -74,6 +74,10 @@ export async function dev(options: DevOptions): Promise<number> {
 
   const configPath = devConfigPath(project.root);
 
+  // Absolute once Vite has resolved it, and `""` when the project turned the
+  // public directory off - in which case there is nothing to point at.
+  const publicDir = server.config.publicDir;
+
   let child: ChildProcess | undefined;
   let watcher: FSWatcher | undefined;
   let restarting = false;
@@ -119,6 +123,12 @@ export async function dev(options: DevOptions): Promise<number> {
       config: project.config,
       root: project.root,
       devUrl: url,
+      // Resource-relative paths - a tray icon, anything read through
+      // `$RESOURCE` - resolve against the resource directory, and in dev
+      // there is no build for that to be. Vite's `publicDir` is where those
+      // files actually are until there is, so a tray icon named the way it
+      // will be named in the bundle works here too.
+      ...(publicDir ? { distDir: publicDir } : {}),
     });
 
     const started = spawn(runtime.path, ["--config", configPath], {

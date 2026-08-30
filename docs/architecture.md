@@ -121,6 +121,13 @@ through the window system, so the runtime installs handlers that push them
 into the event loop as user events. From there a menu click is an event like
 any other, broadcast to every window as `menu.click`.
 
+Not every library event is worth forwarding, and one of them arrives twice:
+`tray-icon` reports a press and a release as two `Click`s differing only by
+`button_state`. `chrome::tray_message` decides what becomes an IPC event, and
+takes the release as the click - forwarding both gave listeners two
+`tray.click`s per click, which a handler that shows a window cannot tell apart
+and a handler that toggles one gets exactly backwards.
+
 ## Processes
 
 Starting a child is quick and happens on the event loop. Waiting for one is
@@ -184,7 +191,7 @@ vantail.config.ts --(@vantail/shared/load)--> validated config
                           +-------------------------+--------------+
                           v                                        v
               .vantail/dev/vantail.json                  Resources/vantail.json
-              { dev: { url: ... } }                      { distDir: "dist" }
+              { dev: { url }, distDir: public/ }          { distDir: "dist" }
 ```
 
 The runtime finds its config next to the executable, in `resources/`, or at

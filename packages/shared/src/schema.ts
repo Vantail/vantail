@@ -398,6 +398,7 @@ export const configSchema = z
       .optional(),
     singleInstance: z.boolean().optional(),
     quitOnLastWindowClosed: z.boolean().optional(),
+    showInDock: z.boolean().optional(),
     distDir: z.string().optional(),
     devtools: z.boolean().optional(),
     outDir: z.string().optional(),
