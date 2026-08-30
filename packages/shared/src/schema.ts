@@ -56,6 +56,13 @@ export const windowSchema = z
     maximized: z.boolean().optional(),
     fullscreen: z.boolean().optional(),
     decorations: z.boolean().optional(),
+    backgroundColor: z
+      .string()
+      .regex(
+        /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/,
+        "backgroundColor must be #rgb or #rrggbb",
+      )
+      .optional(),
     titleBarStyle: z.enum(["default", "hidden"]).optional(),
     titleBarHeight: z.number().positive().optional(),
     titleBarButtons: z.enum(["system", "hidden"]).optional(),

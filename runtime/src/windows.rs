@@ -66,6 +66,13 @@ pub struct WindowEntry {
     /// off a window that has already been changed, which is how "put them
     /// back" quietly stopped putting them back.
     pub platform_bar: titlebar::Native,
+    /// The shape the title bar should keep, read by the watcher below whenever
+    /// AppKit lays the window out again.
+    pub title_bar_shape: titlebar::Keeper,
+    /// Puts the bar's height back from inside AppKit's own layout, which is
+    /// the only place it is not already too late. Dropped with the window.
+    #[allow(dead_code)]
+    pub title_bar_watch: titlebar::Watch,
     // Only the platforms that toggle the frame need this; macOS switches the
     // title bar without touching the decorations at all.
     #[cfg_attr(target_os = "macos", allow(dead_code))]
@@ -192,7 +199,13 @@ impl WindowEntry {
         } else {
             None
         };
-        let height = titlebar::fit(&self.window, wanted, self.platform_bar, self.traffic_lights);
+        let height = titlebar::fit(
+            &self.window,
+            wanted,
+            self.platform_bar,
+            self.traffic_lights,
+            &self.title_bar_shape,
+        );
         self.native_title_bar = titlebar::native(&self.window);
         height
     }
@@ -335,6 +348,10 @@ impl WindowManager {
         // Taken before anything grows the bar: it cannot be measured back off
         // a window whose title bar has already been made taller.
         let platform_bar = titlebar::native(&window);
+        // Registered before the first shaping, so nothing AppKit does to the
+        // bar between now and the window closing goes uncorrected.
+        let title_bar_shape = titlebar::Keeper::default();
+        let title_bar_watch = titlebar::keep(&window, &title_bar_shape);
         let height = titlebar::fit(
             &window,
             if config.title_bar_style == TitleBarStyle::Hidden && !buttons_hidden {
@@ -344,13 +361,40 @@ impl WindowManager {
             },
             platform_bar,
             config.traffic_light_position.map(|i| (i.x, i.y)),
+            &title_bar_shape,
         );
         let native = titlebar::native(&window);
         let title_bar = match config.title_bar_style {
             TitleBarStyle::Hidden => titlebar::metrics_for(native, height, !buttons_hidden),
             TitleBarStyle::Default => titlebar::Metrics::none(),
         };
-        let webview = build_webview(rt, &window, proxy, label, url, title_bar)?;
+        let webview = build_webview(
+            rt,
+            &window,
+            proxy,
+            label,
+            url,
+            title_bar,
+            config
+                .background_color
+                .as_deref()
+                .and_then(crate::config::parse_color),
+        )?;
+        // Again, now the webview is attached. Putting the content view in
+        // makes AppKit lay the title bar out, which undoes the placement above
+        // - and nothing after that undoes it again, so this is the one that
+        // holds. Electron builds its buttons proxy at the same point.
+        titlebar::fit(
+            &window,
+            if config.title_bar_style == TitleBarStyle::Hidden && !buttons_hidden {
+                config.title_bar_height
+            } else {
+                None
+            },
+            platform_bar,
+            config.traffic_light_position.map(|i| (i.x, i.y)),
+            &title_bar_shape,
+        );
         let size = window.inner_size().to_logical::<f64>(window.scale_factor());
 
         self.entries.push(WindowEntry {
@@ -364,6 +408,8 @@ impl WindowManager {
             buttons_hidden: config.title_bar_buttons == TitleBarButtons::Hidden,
             native_title_bar: native,
             platform_bar,
+            title_bar_shape,
+            title_bar_watch,
             decorations: config.decorations,
             focused: false,
             size,
@@ -464,6 +510,20 @@ fn build_window(
         builder = builder.with_window_icon(Some(icon));
     }
 
+    // The window's own background, which is what shows while the web view is
+    // still catching up with a resize - the page has not painted that strip
+    // yet, so the colour under it is the one on screen. wry paints the *view*;
+    // this is the window beneath it, and both want the same colour.
+    let builder = match config
+        .background_color
+        .as_deref()
+        .and_then(crate::config::parse_color)
+        .filter(|_| !config.transparent)
+    {
+        Some(colour) => builder.with_background_color(colour),
+        None => builder,
+    };
+
     let window = builder
         .build(target)
         .map_err(|e| format!("Could not open a window: {e}"))?;
@@ -523,6 +583,7 @@ fn build_webview(
     label: &str,
     url: &str,
     title_bar: crate::chrome::titlebar::Metrics,
+    background: Option<(u8, u8, u8, u8)>,
 ) -> Result<WebView, String> {
     let resources = webview::Resources::new(&rt.resource_dir);
     let devtools = rt.config.devtools.unwrap_or_else(|| rt.is_dev());
@@ -582,6 +643,14 @@ fn build_webview(
             }
         })
         .with_url(url);
+
+    // Only where the window is not transparent: a colour behind a window meant
+    // to show what is behind it is not a background, it is the end of the
+    // effect.
+    let builder = match background.filter(|_| !rt.config.window.transparent) {
+        Some(colour) => builder.with_background_color(colour),
+        None => builder,
+    };
 
     attach(builder, window)
 }

@@ -1,6 +1,6 @@
 {
   "name": "@vantail/create",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "Scaffold a Vantail application.",
   "license": "MIT",
   "repository": {

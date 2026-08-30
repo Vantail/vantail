@@ -55,39 +55,70 @@ impl Metrics {
     }
 }
 
-/// Where the window buttons should be: the answer to "where do they go",
-/// separate from the AppKit calls that put them there.
-/// Make the title bar `height` tall, and put the window buttons in it.
-///
-/// The trick is which view to resize. The buttons live in an `NSTitlebarView`
-/// inside an `NSTitlebarContainerView`, and it is the *container* whose frame
-/// is in the window's coordinates - so it is the one that can be grown and
-/// re-pinned to the top edge. Growing the inner view instead sets an origin
-/// against a parent barely thirty points tall, which puts it hundreds of
-/// points above the window and takes the buttons out of sight with it. That is
-/// what "resizing the container makes the lights vanish" turned out to be:
-/// they did not vanish, they left.
-///
-/// With the container the right size, the buttons go a margin up from its
-/// bottom edge, which is the same margin down from its top - so they land
-/// centred in whatever height was asked for, by arithmetic rather than by
-/// asking macOS to centre them.
-///
-/// AppKit undoes all of this on every relayout, so it has to be applied again
-/// after every resize - which is what `reapply_title_bar` is for. That is the
-/// same shape Electron's `WindowButtonsProxy` has, and the reason this is
-/// possible at all: the technique came from reading it.
+/// What the title bar should look like.
 #[cfg(target_os = "macos")]
-fn grow(
-    window: &tao::window::Window,
+#[derive(Debug, Clone, Copy)]
+struct Shape {
     height: f64,
+    /// An explicit `trafficLightPosition`, or `None` to centre them.
     lights: Option<(f64, f64)>,
+    /// Where the platform put the first button, which is what "no explicit
+    /// position" resolves to.
     home_x: f64,
-) -> Option<f64> {
-    use objc2_app_kit::NSWindowButton;
-    use objc2_foundation::NSPoint;
+}
 
-    let ns = unsafe { ns_of(window) }?;
+/// The shape to restore, shared with the observer that restores it.
+///
+/// Held rather than captured, so a change of height reaches the observer with
+/// nothing re-registered.
+#[cfg(target_os = "macos")]
+#[derive(Clone, Default)]
+pub struct Keeper(std::sync::Arc<std::sync::Mutex<Option<Shape>>>);
+
+/// Nothing to keep: no other platform has window buttons left to move.
+///
+/// Carries a unit rather than being one, so the call that builds it reads the
+/// same on every platform.
+#[cfg(not(target_os = "macos"))]
+#[derive(Clone, Default)]
+pub struct Keeper(());
+
+#[cfg(target_os = "macos")]
+impl Keeper {
+    fn get(&self) -> Option<Shape> {
+        *self.0.lock().expect("the title bar shape lock")
+    }
+
+    fn set(&self, shape: Option<Shape>) {
+        *self.0.lock().expect("the title bar shape lock") = shape;
+    }
+}
+
+/// Holds the view that keeps the bar in shape, for as long as the window does.
+#[cfg(target_os = "macos")]
+pub struct Watch(#[allow(dead_code)] Option<objc2::rc::Retained<hook::Hook>>);
+
+#[cfg(not(target_os = "macos"))]
+pub struct Watch;
+
+/// The window buttons, and the container whose height decides the bar.
+///
+/// The container is the buttons' *grand*parent. `NSTitlebarContainerView` is
+/// the one whose frame is in the window's coordinates, so it is the one that
+/// can be grown and re-pinned to the top edge. Growing the `NSTitlebarView`
+/// inside it instead sets an origin against a parent barely thirty points
+/// tall, which puts it hundreds of points above the window and takes the
+/// buttons with it - which is what "resizing the container makes the lights
+/// vanish" turned out to be. They did not vanish; they left.
+#[cfg(target_os = "macos")]
+#[allow(clippy::type_complexity)]
+fn parts(
+    ns: &objc2_app_kit::NSWindow,
+) -> Option<(
+    objc2::rc::Retained<objc2_app_kit::NSView>,
+    Vec<objc2::rc::Retained<objc2_app_kit::NSButton>>,
+)> {
+    use objc2_app_kit::NSWindowButton;
 
     let buttons: Vec<_> = [
         NSWindowButton::CloseButton,
@@ -97,13 +128,27 @@ fn grow(
     .into_iter()
     .filter_map(|kind| ns.standardWindowButton(kind))
     .collect();
-    let first = buttons.first()?;
-    let inner = unsafe { first.superview() }?;
-    let container = unsafe { inner.superview() }?;
+    let inner = unsafe { buttons.first()?.superview() }?;
+    Some((unsafe { inner.superview() }?, buttons))
+}
 
+/// Give the container its height, and put the buttons where they belong in it.
+#[cfg(target_os = "macos")]
+fn apply(
+    ns: &objc2_app_kit::NSWindow,
+    container: &objc2_app_kit::NSView,
+    buttons: &[objc2::rc::Retained<objc2_app_kit::NSButton>],
+    shape: Shape,
+) -> f64 {
+    use objc2_foundation::NSPoint;
+
+    let Some(first) = buttons.first() else {
+        return shape.height;
+    };
     let button_height = first.frame().size.height;
+
     let mut frame = container.frame();
-    frame.size.height = height.max(button_height);
+    frame.size.height = shape.height.max(button_height);
     // Without this the container grows off the top of the window: its frame is
     // in coordinates that count up from the bottom.
     frame.origin.y = ns.frame().size.height - frame.size.height;
@@ -111,25 +156,146 @@ fn grow(
 
     // `top` is a gap measured down from the top of the bar, which is how an
     // application thinks about it; the frames count up from the bottom.
-    let top = match lights {
+    let top = match shape.lights {
         Some((_, top)) => top,
         None => ((frame.size.height - button_height) / 2.0).max(0.0),
     };
     let y = (frame.size.height - top - button_height).max(0.0);
 
-    // Keep the spacing the system chose between the three: only the group
-    // moves, and the gaps are the platform's. The offsets are taken from where
-    // the buttons are now, which is fine because only the group's leading edge
-    // is being decided here - and that comes from `home_x`, the position the
-    // platform gave them, not from wherever they were last put.
+    // Only the group moves; the gaps between the three stay the platform's.
     let start = first.frame().origin.x;
     let offsets: Vec<f64> = buttons.iter().map(|b| b.frame().origin.x - start).collect();
-    let leading = lights.map(|(x, _)| x).unwrap_or(home_x);
+    let leading = shape.lights.map(|(x, _)| x).unwrap_or(shape.home_x);
     for (button, offset) in buttons.iter().zip(offsets) {
         button.setFrameOrigin(NSPoint::new(leading + offset, y));
     }
 
-    Some(frame.size.height)
+    frame.size.height
+}
+
+/// A view of our own in the title bar, whose only job is to be drawn.
+///
+/// AppKit puts the window buttons back where it wants them on every relayout,
+/// and it does that before the resize reaches the event loop - so correcting
+/// from the `Resized` handler is always a frame late, and a frame late is a
+/// frame in which the buttons are visibly somewhere else.
+///
+/// The fix is to correct while the title bar is being *drawn*, which is after
+/// AppKit has finished laying out and before anything reaches the screen. tao
+/// does exactly this for its own traffic light inset, from the `drawRect:` of
+/// the window's content view - but that view is a `WKWebView` here, so the
+/// hook never runs. This is the same hook, on a view that does get drawn:
+/// a subview of the title bar container, sized to it and painting nothing.
+///
+/// It never takes a click - `hitTest:` answers null - so the buttons
+/// underneath keep theirs.
+#[cfg(target_os = "macos")]
+mod hook {
+    use objc2::rc::Retained;
+    use objc2::runtime::NSObjectProtocol;
+    use objc2::{define_class, DefinedClass, MainThreadMarker, MainThreadOnly};
+    use objc2_app_kit::{NSButton, NSView, NSWindow};
+    use objc2_foundation::{NSPoint, NSRect};
+
+    pub struct Ivars {
+        pub keeper: super::Keeper,
+        pub container: Retained<NSView>,
+        pub buttons: Vec<Retained<NSButton>>,
+        /// The window, as an address. Held this way because the window owns
+        /// the entry that owns this view, so a strong reference here would be
+        /// a cycle - and it outlives every call the view can make.
+        pub window: usize,
+    }
+
+    define_class!(
+        #[unsafe(super(NSView))]
+        #[thread_kind = MainThreadOnly]
+        #[name = "VantailTitleBarHook"]
+        #[ivars = Ivars]
+        pub struct Hook;
+
+        unsafe impl NSObjectProtocol for Hook {}
+
+        impl Hook {
+            #[unsafe(method(drawRect:))]
+            fn draw_rect(&self, _dirty: NSRect) {
+                let ivars = self.ivars();
+                let Some(shape) = ivars.keeper.get() else {
+                    return;
+                };
+                // Safety: see `Ivars::window`.
+                let window = unsafe { &*(ivars.window as *const NSWindow) };
+                super::apply(window, &ivars.container, &ivars.buttons, shape);
+            }
+
+            /// Never take a click. The window buttons are underneath.
+            #[unsafe(method(hitTest:))]
+            fn hit_test(&self, _point: NSPoint) -> *mut NSView {
+                std::ptr::null_mut()
+            }
+
+            #[unsafe(method(isOpaque))]
+            fn is_opaque(&self) -> bool {
+                false
+            }
+        }
+    );
+
+    impl Hook {
+        pub fn new(mtm: MainThreadMarker, ivars: Ivars, frame: NSRect) -> Retained<Self> {
+            let this = Self::alloc(mtm).set_ivars(ivars);
+            unsafe { objc2::msg_send![super(this), initWithFrame: frame] }
+        }
+    }
+}
+
+/// Put the bar's height back the moment AppKit takes it away.
+///
+/// AppKit resets the container on every relayout, and does it *before* the
+/// resize reaches the event loop - so correcting from the `Resized` handler is
+/// always a frame late, and a frame late is a frame in which the buttons are
+/// somewhere else. Correcting from inside the layout is not late.
+///
+/// That this works at all is worth writing down, because the same trick fails
+/// on the buttons: a frame set on one of *those* while AppKit is laying out is
+/// discarded, as reading it straight back shows. The container keeps what it
+/// is given, so the height is restored here and the buttons follow from it.
+#[cfg(target_os = "macos")]
+pub fn keep(window: &tao::window::Window, keeper: &Keeper) -> Watch {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::NSAutoresizingMaskOptions;
+
+    let Some(ns) = (unsafe { ns_of(window) }) else {
+        return Watch(None);
+    };
+    let Some((container, buttons)) = parts(ns) else {
+        return Watch(None);
+    };
+
+    // Safety: windows are only built on the event loop's thread, the main one.
+    let mtm = unsafe { MainThreadMarker::new_unchecked() };
+    let view = hook::Hook::new(
+        mtm,
+        hook::Ivars {
+            keeper: keeper.clone(),
+            container: container.clone(),
+            buttons,
+            window: ns as *const objc2_app_kit::NSWindow as usize,
+        },
+        container.bounds(),
+    );
+    // Follow the container, so it is asked to draw whenever the title bar is -
+    // which is every frame of a resize.
+    view.setAutoresizingMask(
+        NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
+    );
+    container.addSubview(&view);
+    Watch(Some(view))
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn keep(_window: &tao::window::Window, _keeper: &Keeper) -> Watch {
+    Watch
 }
 
 #[cfg(target_os = "macos")]
@@ -239,9 +405,25 @@ pub fn fit(
     requested: Option<f64>,
     platform: Native,
     lights: Option<(f64, f64)>,
+    keeper: &Keeper,
 ) -> f64 {
-    let height = requested.filter(|h| *h > 0.0).unwrap_or(platform.height);
-    grow(window, height, lights, platform.button_x).unwrap_or(platform.height)
+    let shape = Shape {
+        height: requested.filter(|h| *h > 0.0).unwrap_or(platform.height),
+        lights,
+        home_x: platform.button_x,
+    };
+    // Set before anything moves, and not held while it does: moving a view
+    // posts the notification the keeper listens on, and the keeper takes this
+    // same lock.
+    keeper.set(Some(shape));
+
+    let Some(ns) = (unsafe { ns_of(window) }) else {
+        return shape.height;
+    };
+    let Some((container, buttons)) = parts(ns) else {
+        return shape.height;
+    };
+    apply(ns, &container, &buttons, shape)
 }
 
 /// No system buttons to move and no container to grow: the application draws
@@ -252,6 +434,7 @@ pub fn fit(
     requested: Option<f64>,
     platform: Native,
     _lights: Option<(f64, f64)>,
+    _keeper: &Keeper,
 ) -> f64 {
     requested.filter(|h| *h > 0.0).unwrap_or(platform.height)
 }

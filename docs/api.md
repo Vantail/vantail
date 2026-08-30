@@ -93,6 +93,28 @@ the application such as `settings.html` or `/#/settings`.
 Two windows are two webviews with nothing shared between them. `app.emit` and
 `app.listen` are how they talk.
 
+### What shows before the page has painted
+
+```ts
+window: { backgroundColor: "#14121a" }
+```
+
+A web view paints on its own schedule, and during a live resize it runs a frame
+or two behind the window. Drag a corner outwards quickly and there is a strip
+down the right the page has not reached yet - measured here at up to 64px on a
+fast drag - showing whatever is underneath. By default that is a neutral grey,
+which reads as a hole torn in the window. Set to the application's own
+background it is invisible: the bar simply has not caught up yet, which is much
+easier to look at.
+
+It sets the colour on both the window and the web view, because during that gap
+it is the window underneath that is on screen - setting only the web view's
+changes nothing, which is worth knowing if you go looking.
+
+This does not make the page paint any sooner. Nothing available here does: the
+web view's frame follows the window immediately, and what lags is WebKit's own
+painting. Growing is where it shows; shrinking tracks within a few pixels.
+
 ### Drawing your own title bar
 
 ```ts
@@ -169,10 +191,20 @@ thirty points tall - which puts it hundreds of points above the window and
 takes the buttons with it. "Resizing the container makes the lights vanish" is
 what that looks like from outside.
 
-AppKit undoes it on every relayout, so the runtime reapplies it on every
-resize. That is one frame behind AppKit's own layout, which is a property of
-the approach rather than of this implementation - Electron reapplies in the
-same place.
+AppKit undoes it on every relayout, so it has to be put back - and *where* it
+is put back decides whether you see it happen. Doing it from the resize event
+is a frame late, because AppKit has laid out and drawn by the time the event
+arrives, so the buttons visibly jump for the whole of a corner drag.
+
+So the runtime does it while the title bar is being drawn instead. It adds a
+view of its own to the title bar container, paints nothing, and corrects the
+geometry from that view's `drawRect:` - after AppKit has finished laying out
+and before anything reaches the screen. The view never takes a click
+(`hitTest:` answers null), so the buttons underneath keep theirs.
+
+tao does the same thing for its own traffic light inset, from the `drawRect:`
+of the window's content view. That hook is no use here because the content
+view is a `WKWebView`, which is why this has a view of its own.
 
 You do not need `titleBarHeight` to have a tall toolbar. With
 `titleBarStyle: "hidden"` the page already runs to the top edge, so a bar is
@@ -256,17 +288,8 @@ placement is worked out from where the platform originally put each button
 rather than from where it sits now, so running it on every frame of a drag
 lands them in the same place as running it once.
 
-Both `titleBarHeight` and `trafficLightPosition` are reapplied on every resize,
-because AppKit puts the buttons back where it wants them on every relayout and
-does so before the event loop hears about it. So the correction is a frame
-behind, and whether that shows during a fast drag is something to look at on
-your own machine - it is the same arrangement Electron ships, not something
-particular to this runtime.
-
-The one thing immune to it is drawing the controls yourself with
-`titleBarButtons: "hidden"`: nothing system-drawn is involved, so there is
-nothing to correct. The cost is the green button, which is more than a shape -
-see below.
+Both `titleBarHeight` and `trafficLightPosition` survive a live resize, because
+the correction happens during the draw rather than after it - see above.
 
 ### Switching at runtime
 

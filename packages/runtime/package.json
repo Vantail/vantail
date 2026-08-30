@@ -1,6 +1,6 @@
 {
   "name": "@vantail/runtime",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "Locates the precompiled Vantail native runtime for the current platform.",
   "license": "MIT",
   "repository": {

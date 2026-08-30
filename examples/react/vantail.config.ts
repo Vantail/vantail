@@ -19,6 +19,9 @@ export default defineConfig({
     // height is its own, and `titleBarHeight` tells the runtime so the
     // platform's window buttons are centred in it rather than left up at the
     // top where a 28pt bar would have put them.
+    // What shows before the page has painted - matched to the app's own
+    // background so a live resize does not leave a pale gap down the side.
+    backgroundColor: "#14121a",
     titleBarStyle: "hidden",
     titleBarHeight: 44,
   },

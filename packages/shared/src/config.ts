@@ -48,6 +48,19 @@ export interface WindowConfig {
    * A window with no title bar has nothing to drag it by. Give your toolbar
    * `appWindow.startDragging()` on `pointerdown`.
    */
+  /**
+   * What shows through before the page has painted, as `#rgb` or `#rrggbb`.
+   *
+   * Worth setting. A web view paints on its own schedule and is a frame or two
+   * behind the window during a live resize, so growing a window quickly leaves
+   * a strip down the right the page has not reached yet. Whatever is under it
+   * shows, and by default that is a neutral grey that reads as a hole. Matched
+   * to your own background it is invisible instead.
+   *
+   * It does not make the page paint any sooner - nothing can. It stops the gap
+   * being conspicuous while it lasts.
+   */
+  backgroundColor?: string;
   titleBarStyle?: TitleBarStyle;
   /**
    * Nudge the traffic lights, for a toolbar taller than the bar it replaced.

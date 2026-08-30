@@ -69,6 +69,33 @@ pub struct AppConfig {
     pub icon: Option<String>,
 }
 
+/// `#rgb` or `#rrggbb` as the channels wry wants, opaque.
+///
+/// Anything else is `None`, and the platform's own background stays - a bad
+/// colour string should not be the reason a window fails to open.
+pub fn parse_color(value: &str) -> Option<(u8, u8, u8, u8)> {
+    let hex = value.trim().strip_prefix('#')?;
+    let channel = |s: &str| u8::from_str_radix(s, 16).ok();
+
+    match hex.len() {
+        3 => {
+            let mut it = hex.chars().map(|c| {
+                let d = c.to_digit(16)? as u8;
+                // `#abc` means `#aabbcc`, so each digit is doubled.
+                Some(d * 17)
+            });
+            Some((it.next()??, it.next()??, it.next()??, 255))
+        }
+        6 => Some((
+            channel(&hex[0..2])?,
+            channel(&hex[2..4])?,
+            channel(&hex[4..6])?,
+            255,
+        )),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WindowConfig {
@@ -91,6 +118,18 @@ pub struct WindowConfig {
     pub fullscreen: bool,
     #[serde(default = "yes")]
     pub decorations: bool,
+    /// What shows through before the page has painted, as `#rgb` or `#rrggbb`.
+    ///
+    /// Worth setting. A web view paints on its own schedule, and during a live
+    /// resize it is a frame or two behind the window - so growing a window
+    /// quickly leaves a strip down the right that the page has not reached
+    /// yet. Whatever is under it shows, and by default that is a neutral grey
+    /// that looks like a hole. Matched to the application's own background it
+    /// is invisible instead.
+    ///
+    /// It does not make the page paint any sooner; nothing here can. It stops
+    /// the gap being conspicuous while it lasts.
+    pub background_color: Option<String>,
     /// Whether the title bar is a bar, or space the application draws in.
     #[serde(default)]
     pub title_bar_style: TitleBarStyle,
@@ -284,5 +323,27 @@ impl LoadedConfig {
         }
 
         candidates.into_iter().find(|p| p.is_file())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_colour_is_read_in_either_length() {
+        assert_eq!(parse_color("#1b1e25"), Some((0x1b, 0x1e, 0x25, 255)));
+        // `#abc` is `#aabbcc`, which is the shorthand CSS has taught everyone.
+        assert_eq!(parse_color("#abc"), Some((0xaa, 0xbb, 0xcc, 255)));
+        assert_eq!(parse_color("  #FFF  "), Some((255, 255, 255, 255)));
+    }
+
+    #[test]
+    fn nonsense_leaves_the_platform_s_own_background() {
+        // A window that would not open because of a typo in a colour is a
+        // worse outcome than a window that opens the ordinary colour.
+        for bad in ["", "#", "1b1e25", "#12", "#12345", "#gggggg", "red"] {
+            assert_eq!(parse_color(bad), None, "{bad:?} should not parse");
+        }
     }
 }
