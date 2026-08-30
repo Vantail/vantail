@@ -67,7 +67,7 @@ export const windowSchema = z
     titleBarHeight: z.number().positive().optional(),
     titleBarButtons: z.enum(["system", "hidden"]).optional(),
     trafficLightPosition: z
-      .object({ x: z.number(), y: z.number() })
+      .object({ x: z.number(), y: z.number().optional() })
       .strict()
       .optional(),
     transparent: z.boolean().optional(),

@@ -52,7 +52,7 @@ pub struct WindowEntry {
     /// A height the application asked for, rather than the platform's.
     pub title_bar_height: Option<f64>,
     /// An explicit traffic light position, if the application set one.
-    pub traffic_lights: Option<(f64, f64)>,
+    pub traffic_lights: Option<(f64, Option<f64>)>,
     /// Whether the platform's own window buttons are hidden, so the
     /// application can draw its own.
     pub buttons_hidden: bool,
@@ -161,7 +161,10 @@ impl WindowEntry {
     }
 
     /// Place the traffic lights by hand, instead of centring them.
-    pub fn set_traffic_lights(&mut self, position: Option<(f64, f64)>) -> titlebar::Metrics {
+    pub fn set_traffic_lights(
+        &mut self,
+        position: Option<(f64, Option<f64>)>,
+    ) -> titlebar::Metrics {
         self.traffic_lights = position;
         self.remeasure()
     }
@@ -499,11 +502,11 @@ fn build_window(
             .with_titlebar_transparent(true)
             .with_title_hidden(true);
 
-        // A toolbar taller than the bar it replaced usually wants the lights
-        // moved down to sit in the middle of it.
-        if let Some(inset) = config.traffic_light_position {
-            builder = builder.with_traffic_light_inset(LogicalPosition::new(inset.x, inset.y));
-        }
+        // Deliberately not `with_traffic_light_inset`. tao has its own version
+        // of this and re-applies it from the content view's `drawRect:` - a
+        // hook that never fires here, because the content view is the web
+        // view. Leaving it set would put a second actor on the same three
+        // buttons for no benefit; `chrome::titlebar` owns them.
     }
 
     if let Some(icon) = window_icon(rt) {

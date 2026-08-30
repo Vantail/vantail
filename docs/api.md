@@ -262,9 +262,20 @@ ordinary CSS. Worth copying the one behaviour that reads as native: colour
 them while the window is focused and grey them when it is not, which
 `appWindow.onFocusChanged` tells you.
 
-`trafficLightPosition` is still there for placing them somewhere other than
-the middle, and `appWindow.centerTrafficLights()` puts them back - but with
-`titleBarHeight` you rarely want either.
+`trafficLightPosition` moves them somewhere other than where the platform
+puts them, and `appWindow.centerTrafficLights()` puts them back:
+
+```ts
+window: { trafficLightPosition: { x: 13 } }   // the usual 9, nudged 4 across
+```
+
+`y` is optional, and usually best left out: without it they stay centred in
+whatever height the bar is, so the nudge still holds after a change of
+`titleBarHeight` instead of needing to be worked out again. Give both to place
+them outright - `y` is the gap above them, measured from the top of the bar.
+
+Either way the group keeps the spacing macOS chose between the three; only
+where it starts is yours.
 
 An explicit position has a ceiling. The container AppKit keeps the buttons in
 is only as tall as the bar in force - 28pt ordinarily, 40pt with the taller one

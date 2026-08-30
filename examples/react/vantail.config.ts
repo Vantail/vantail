@@ -24,6 +24,7 @@ export default defineConfig({
     backgroundColor: "#14121a",
     titleBarStyle: "hidden",
     titleBarHeight: 44,
+    trafficLightPosition: { x: 14 },
   },
 
   // On macOS this is what makes Cmd-C, Cmd-V and Cmd-Z work at all - without

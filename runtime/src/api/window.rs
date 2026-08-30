@@ -39,6 +39,18 @@ struct Position {
     y: f64,
 }
 
+/// Where to put the window buttons: across always, down only if asked.
+///
+/// `y` is optional because moving the group sideways is the common wish, and
+/// having to restate the vertical centre to do it means restating it again
+/// whenever the bar's height changes.
+#[derive(Deserialize)]
+struct Nudge {
+    x: f64,
+    #[serde(default)]
+    y: Option<f64>,
+}
+
 #[derive(Deserialize)]
 struct Flag {
     value: bool,
@@ -345,7 +357,7 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
                     "Only macOS has traffic lights to position",
                 ));
             }
-            let Position { x, y } = Request::params(method, params)?;
+            let Nudge { x, y } = Request::params(method, params)?;
             let label = entry.label.clone();
             let entry = ctx.windows.require_mut(&label)?;
             Ok(json!(entry.set_traffic_lights(Some((x, y)))))

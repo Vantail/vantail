@@ -61,7 +61,7 @@ impl Metrics {
 struct Shape {
     height: f64,
     /// An explicit `trafficLightPosition`, or `None` to centre them.
-    lights: Option<(f64, f64)>,
+    lights: Option<(f64, Option<f64>)>,
     /// Where the platform put the first button, which is what "no explicit
     /// position" resolves to.
     home_x: f64,
@@ -156,9 +156,11 @@ fn apply(
 
     // `top` is a gap measured down from the top of the bar, which is how an
     // application thinks about it; the frames count up from the bottom.
+    let centred = ((frame.size.height - button_height) / 2.0).max(0.0);
     let top = match shape.lights {
-        Some((_, top)) => top,
-        None => ((frame.size.height - button_height) / 2.0).max(0.0),
+        Some((_, Some(top))) => top,
+        // A position with no `y`: moved across, left where it was vertically.
+        Some((_, None)) | None => centred,
     };
     let y = (frame.size.height - top - button_height).max(0.0);
 
@@ -404,7 +406,7 @@ pub fn fit(
     window: &tao::window::Window,
     requested: Option<f64>,
     platform: Native,
-    lights: Option<(f64, f64)>,
+    lights: Option<(f64, Option<f64>)>,
     keeper: &Keeper,
 ) -> f64 {
     let shape = Shape {
@@ -433,7 +435,7 @@ pub fn fit(
     _window: &tao::window::Window,
     requested: Option<f64>,
     platform: Native,
-    _lights: Option<(f64, f64)>,
+    _lights: Option<(f64, Option<f64>)>,
     _keeper: &Keeper,
 ) -> f64 {
     requested.filter(|h| *h > 0.0).unwrap_or(platform.height)

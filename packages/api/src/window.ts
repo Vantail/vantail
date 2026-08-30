@@ -262,7 +262,7 @@ export interface WindowHandle {
    *
    * macOS only; `UNSUPPORTED` everywhere else, since nowhere else has them.
    */
-  setTrafficLightPosition(x: number, y: number): Promise<TitleBarMetrics>;
+  setTrafficLightPosition(x: number, y?: number): Promise<TitleBarMetrics>;
 
   /**
    * Put them back in the middle of the bar, which is where they sit unless

@@ -204,7 +204,12 @@ pub enum TitleBarButtons {
 #[serde(rename_all = "camelCase")]
 pub struct Inset {
     pub x: f64,
-    pub y: f64,
+    /// How far down, or `None` to leave them centred in the bar.
+    ///
+    /// Optional because nudging the group sideways is the common wish, and
+    /// having to restate the vertical centre to do it means restating it again
+    /// every time the bar's height changes.
+    pub y: Option<f64>,
 }
 
 /// An application that lives in the tray has to survive its window closing.

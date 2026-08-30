@@ -66,7 +66,14 @@ export interface WindowConfig {
    * Nudge the traffic lights, for a toolbar taller than the bar it replaced.
    * Logical pixels from the top left. macOS only.
    */
-  trafficLightPosition?: { x: number; y: number };
+  /**
+   * Where to put the window buttons, macOS only.
+   *
+   * `y` is optional: leave it out to nudge the group sideways and let them
+   * stay centred in whatever height the bar is - which also means the nudge
+   * survives a change of `titleBarHeight` instead of needing to be redone.
+   */
+  trafficLightPosition?: { x: number; y?: number };
   /**
    * How tall the bar your application draws should be.
    *
