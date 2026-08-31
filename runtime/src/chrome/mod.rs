@@ -326,17 +326,76 @@ impl Chrome {
 
     /// Windows hangs the menu off each window rather than the application, so
     /// a window created after the menu was set has to be told about it.
+    ///
+    /// Except a window with no frame, which is where Windows draws a menu bar:
+    /// there is nowhere for it to go, and it does not appear. Attaching it
+    /// anyway is not merely invisible, it breaks resizing. `AdjustWindowRectEx`
+    /// asks `GetMenu`, and reserves a menu row in the frame for a window that
+    /// has one - but a frameless window answers `WM_NCCALCSIZE` itself and
+    /// never takes that row back out of the client area. Every call that
+    /// round-trips the size through it - a size limit changing, a maximise, a
+    /// restore - then hands back a client area one menu bar taller than it
+    /// was, and the window grows by 20px a time.
+    ///
+    /// Which makes this the call for either direction: a window that has lost
+    /// its frame since - a title bar being hidden - loses the menu with it.
     #[allow(unused_variables)]
     pub fn attach(&self, window: &tao::window::Window) {
         #[cfg(target_os = "windows")]
         {
             use tao::platform::windows::WindowExtWindows;
+            if !window.is_decorated() {
+                self.detach(window);
+                return;
+            }
             if let Some(menu) = &self.app_menu {
+                let before = window.inner_size();
                 // Safety: the handle comes from the window we were handed,
                 // and is valid for as long as this call.
                 unsafe {
-                    let _ = menu.init_for_hwnd(window.hwnd() as isize);
+                    let _ = menu.init_for_hwnd(window.hwnd());
                 }
+                // The menu bar takes its row out of the client area, so the
+                // window the application asked for is now a menu bar shorter
+                // than it asked for. Ask for it back. Not while maximised:
+                // the size then belongs to the window system, and setting one
+                // would drop the window out of it.
+                if !window.is_maximized() {
+                    window.set_inner_size(before);
+                }
+            }
+        }
+    }
+
+    /// Take the menu bar off a window, keeping the window the size it is.
+    ///
+    /// The other half of `attach`: a window whose frame comes and goes - a
+    /// title bar being hidden and shown again - has to lose the menu with the
+    /// frame, or it keeps a menu bar it cannot draw and grows by its height on
+    /// every resize afterwards.
+    #[allow(unused_variables)]
+    fn detach(&self, window: &tao::window::Window) {
+        #[cfg(target_os = "windows")]
+        {
+            use tao::platform::windows::WindowExtWindows;
+            use windows::Win32::Foundation::HWND;
+            use windows::Win32::UI::WindowsAndMessaging::{DrawMenuBar, GetMenu, SetMenu};
+
+            let hwnd = HWND(window.hwnd() as *mut std::ffi::c_void);
+            let before = window.inner_size();
+            // Safety: the handle belongs to the window we were handed, and
+            // this runs on the thread that owns it.
+            unsafe {
+                if GetMenu(hwnd).is_invalid() {
+                    return;
+                }
+                let _ = SetMenu(hwnd, None);
+                let _ = DrawMenuBar(hwnd);
+            }
+            // The row the menu bar had goes back to the page otherwise, which
+            // would make the window a menu bar taller than it was.
+            if !window.is_maximized() {
+                window.set_inner_size(before);
             }
         }
     }

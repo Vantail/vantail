@@ -346,7 +346,7 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
 
         "window.setFullscreen" => {
             let Flag { value } = Request::params(method, params)?;
-            window.set_fullscreen(value.then(|| Fullscreen::Borderless(None)));
+            window.set_fullscreen(value.then_some(Fullscreen::Borderless(None)));
             Ok(Value::Null)
         }
         "window.isFullscreen" => Ok(json!(window.fullscreen().is_some())),
@@ -406,7 +406,28 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
             let Style { style } = Request::params(method, params)?;
             let label = entry.label.clone();
             let entry = ctx.windows.require_mut(&label)?;
-            Ok(json!(entry.set_title_bar_style(style)))
+            // What the page has now. On Windows this call adds or removes the
+            // window's frame, and the frame - with the menu bar in it - comes
+            // out of the window rather than out of the page: without this the
+            // page would gain a title bar's worth of room for hiding one, and
+            // a different amount back for showing it again.
+            #[cfg(target_os = "windows")]
+            let before = (!entry.window.is_maximized()).then(|| entry.window.inner_size());
+
+            let metrics = entry.set_title_bar_style(style);
+
+            // The menu bar lives in the frame, so a window that has just lost
+            // one has to lose the menu with it, and one that has just got it
+            // back wants the menu back too.
+            let entry = ctx.windows.require_mut(&label)?;
+            ctx.chrome.attach(&entry.window);
+
+            #[cfg(target_os = "windows")]
+            if let Some(size) = before {
+                entry.window.set_inner_size(size);
+            }
+
+            Ok(json!(metrics))
         }
         // A taller bar than the platform's, with the lights re-centred in it.
         // `null` puts it back to whatever the platform uses.

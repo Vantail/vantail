@@ -454,18 +454,29 @@ The runtime clips the page to the shape, so content cannot spill past a corner
 and no CSS is needed to match. A radius larger than half the shorter side is
 capped to it, which turns into an arch rather than a broken outline.
 
-One radius on all four corners is a `cornerRadius` on the layer, which the
-platform draws and keeps right through a resize on its own. Four different
-radii is not something a layer can express, so that case is drawn with a shape
-mask - a path the runtime rebuilds whenever the window changes size. Worth
-knowing only because it is the more expensive of the two: prefer a single
-number when a single number will do.
+On macOS, one radius on all four corners is a `cornerRadius` on the layer,
+which the platform draws and keeps right through a resize on its own. Four
+different radii is not something a layer can express, so that case is drawn
+with a shape mask - a path the runtime rebuilds whenever the window changes
+size. Worth knowing only because it is the more expensive of the two: prefer a
+single number when a single number will do.
 
-`backgroundColor` moves with the shape. A window given one is opaque and
-paints that colour across its whole square frame, which would fill the corners
-back in - so for a rounded window the colour is set on the clipped layer
-instead. It still shows before the page has painted, and it is now the right
-shape while it does.
+Windows has no layer to give a radius to, so the shape is a window region -
+which the runtime rebuilds on every resize whatever the radii are, and which
+has hard edges rather than the anti-aliased ones macOS draws. Two things follow
+from a shaped window there. It gives up the shadow Windows draws behind a
+frameless window, because that shadow is an invisible margin around the window
+that the shape would have to include, and anything inside the shape is painted:
+keeping it would trade a rounded corner for a grey band down every side. And a
+maximised window has square corners, as every other window on the platform
+does - the shape comes back when it is restored.
+
+`backgroundColor` moves with the shape. On macOS a window given one is opaque
+and paints that colour across its whole square frame, which would fill the
+corners back in - so for a rounded window the colour is set on the clipped
+layer instead. It still shows before the page has painted, and it is now the
+right shape while it does. On Windows the colour is the web view's own and the
+region clips it along with everything else, so there is nothing to move.
 
 Only for a window with no frame of its own. A decorated window already has the
 platform's corners, and rounding the content inside them leaves a notch where
@@ -473,7 +484,7 @@ the two shapes disagree, so the setting is ignored there. On macOS a hidden
 title bar is still a framed window - that is what keeps the traffic lights -
 so this applies to `decorations: false` only.
 
-macOS for now; ignored on Windows and Linux.
+macOS and Windows; ignored on Linux for now.
 
 ### Maximising
 

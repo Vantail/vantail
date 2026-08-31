@@ -129,7 +129,12 @@ export interface WindowConfig {
    * setting is ignored there.
    *
    * The runtime clips the page to the shape, so content cannot spill past a
-   * corner and no CSS is needed. macOS only for now; ignored elsewhere.
+   * corner and no CSS is needed.
+   *
+   * macOS and Windows; ignored on Linux for now. A shaped window on Windows
+   * is drawn as a window region, which has hard edges rather than the
+   * anti-aliased ones macOS draws, gives up the shadow Windows puts behind a
+   * frameless window, and squares its corners while maximised.
    */
   borderRadius?: number | WindowCorners;
   /**

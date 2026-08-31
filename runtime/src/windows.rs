@@ -191,16 +191,17 @@ impl WindowEntry {
     /// alone.
     /// Rebuild the corner shape for the window's new size.
     ///
-    /// Only needed for four different radii: one radius is a `cornerRadius`,
-    /// which follows the layer on its own.
+    /// On macOS only four different radii need it: one radius is a
+    /// `cornerRadius`, which follows the layer on its own. A Windows region is
+    /// fixed geometry whatever the radii are, so there it is every time.
     pub fn reshape_corners(&self) {
         let Some(radii) = self.corner_radii else {
             return;
         };
-        if radii.uniform().is_some() {
+        if cfg!(target_os = "macos") && radii.uniform().is_some() {
             return;
         }
-        round_corners(&self.webview, Some(radii), None);
+        round_corners(&self.window, &self.webview, Some(radii), None);
     }
 
     pub fn reapply_title_bar(&mut self) {
@@ -369,6 +370,32 @@ impl WindowManager {
         }
 
         let window = build_window(rt, target, config)?;
+
+        #[cfg(target_os = "windows")]
+        {
+            // A frameless window opens a title bar shorter than it asked for.
+            // Windows works the client area out for the first time while the
+            // window is being created, before the window procedure that says
+            // this window has no frame is reachable - so it takes a caption
+            // out of the client area, and nothing puts it back. Asking for the
+            // frame to be recalculated now that the procedure is in place is
+            // what makes the window the size the application asked for.
+            recalculate_frame(&window);
+
+            // The builder's size limits are only a clamp on the size the
+            // window opens at here: tao never installs them as limits, so
+            // nothing stops the window being dragged smaller than its
+            // `minWidth` afterwards. Setting them again on the window that now
+            // exists is what puts them in force. The other platforms already
+            // have them.
+            if let Some(size) = limit(config.min_width, config.min_height) {
+                window.set_min_inner_size(Some(size));
+            }
+            if let Some(size) = limit(config.max_width, config.max_height) {
+                window.set_max_inner_size(Some(size));
+            }
+        }
+
         // Measured from the window that exists, not guessed from a constant -
         // and only when the application is the one drawing up there.
         // Measured before anything is moved, and kept: the numbers come off
@@ -410,13 +437,7 @@ impl WindowManager {
                     .as_deref()
                     .and_then(crate::config::parse_color),
                 scroll: config.scroll,
-                // A framed window already has the platform's corners; rounding
-                // the content inside them leaves a notch where the two shapes
-                // disagree, so the setting only applies without a frame.
-                corners: config
-                    .border_radius
-                    .filter(|_| !has_decorations(config))
-                    .and_then(crate::config::BorderRadius::radii),
+                corners: corner_radii(config),
             },
         )?;
         // Again, now the webview is attached. Putting the content view in
@@ -438,8 +459,11 @@ impl WindowManager {
 
         self.entries.push(WindowEntry {
             label: label.to_string(),
-            min_size: None,
-            max_size: None,
+            // Taken from the config, because these are what a restore puts
+            // back: an entry that starts out remembering no limits forgets the
+            // configured ones the first time the window is maximised.
+            min_size: limit(config.min_width, config.min_height),
+            max_size: limit(config.max_width, config.max_height),
             close_behavior: config.close_behavior,
             title_bar_style: config.title_bar_style,
             title_bar_height: config.title_bar_height,
@@ -451,10 +475,7 @@ impl WindowManager {
             title_bar_watch,
             decorations: config.decorations,
             animate_zoom: config.animate_zoom,
-            corner_radii: config
-                .border_radius
-                .filter(|_| !has_decorations(config))
-                .and_then(crate::config::BorderRadius::radii),
+            corner_radii: corner_radii(config),
             restore_frame: None,
             focused: false,
             size,
@@ -485,6 +506,15 @@ fn ensure_trailing_slash(url: &str) -> String {
     }
 }
 
+/// A size limit is only a limit if both dimensions are given: tao takes one
+/// size, not a width and a height that can be constrained separately.
+fn limit(width: Option<f64>, height: Option<f64>) -> Option<LogicalSize<f64>> {
+    match (width, height) {
+        (Some(width), Some(height)) => Some(LogicalSize::new(width, height)),
+        _ => None,
+    }
+}
+
 fn build_window(
     rt: &Runtime,
     target: &EventLoopWindowTarget<UserEvent>,
@@ -509,17 +539,30 @@ fn build_window(
         // application rather than a white rectangle.
         .with_visible(false);
 
-    if let (Some(width), Some(height)) = (config.min_width, config.min_height) {
-        builder = builder.with_min_inner_size(LogicalSize::new(width, height));
+    if let Some(size) = limit(config.min_width, config.min_height) {
+        builder = builder.with_min_inner_size(size);
     }
-    if let (Some(width), Some(height)) = (config.max_width, config.max_height) {
-        builder = builder.with_max_inner_size(LogicalSize::new(width, height));
+    if let Some(size) = limit(config.max_width, config.max_height) {
+        builder = builder.with_max_inner_size(size);
     }
     if let (Some(x), Some(y)) = (config.x, config.y) {
         builder = builder.with_position(LogicalPosition::new(x, y));
     }
     if config.fullscreen {
         builder = builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
+    }
+
+    // A window that names its own corners gives up the shadow Windows draws
+    // behind a frameless one. That shadow is not painted, it is a margin: an
+    // invisible border around the window that the shape would have to include
+    // to keep the window resizable by its edges, and anything inside the shape
+    // is painted - so keeping it would trade a rounded corner for a grey band
+    // down every side. Without it the window ends where it appears to end, and
+    // tao hit-tests the resize border inside it instead.
+    #[cfg(target_os = "windows")]
+    if corner_radii(config).is_some() {
+        use tao::platform::windows::WindowBuilderExtWindows;
+        builder = builder.with_undecorated_shadow(false);
     }
 
     #[cfg(target_os = "macos")]
@@ -701,22 +744,30 @@ fn build_webview(
     };
 
     let webview = attach(builder, window)?;
-    round_corners(&webview, look.corners, look.background);
+    round_corners(window, &webview, look.corners, look.background);
     Ok(webview)
 }
 
 /// Clip the window to its corner radii.
 ///
-/// One radius on all four corners is a `cornerRadius` on the layer, which the
-/// platform draws itself and keeps right through a resize for free. Four
-/// different radii is not something a layer can express, so that case gets a
-/// shape mask - a path the runtime builds and has to rebuild whenever the
-/// window changes size, which is why `reshape_corners` exists.
+/// macOS clips a layer. One radius on all four corners is a `cornerRadius`,
+/// which the platform draws itself and keeps right through a resize for free.
+/// Four different radii is not something a layer can express, so that case
+/// gets a shape mask - a path the runtime builds and has to rebuild whenever
+/// the window changes size, which is why `reshape_corners` exists.
+///
+/// Windows has no layer to ask. What it has is a window region: a shape the
+/// window is clipped to, which is fixed geometry and so has to be rebuilt on
+/// every resize whatever the radii are. It is also the only way to draw a
+/// corner the platform does not already draw - `DWMWA_WINDOW_CORNER_PREFERENCE`
+/// offers Windows' own radius or none, not a radius of your choosing, and
+/// nothing at all per corner.
 ///
 /// The page is clipped either way, so content cannot spill past a corner.
-/// macOS for now; the radii are read on every platform so they are not dead
-/// code where nothing acts on them.
+/// Linux is still to come; the radii are read on every platform so they are
+/// not dead code where nothing acts on them.
 fn round_corners(
+    window: &Window,
     webview: &WebView,
     radii: Option<crate::config::Radii>,
     background: Option<(u8, u8, u8, u8)>,
@@ -728,6 +779,11 @@ fn round_corners(
     #[cfg(target_os = "macos")]
     {
         use wry::WebViewExtMacOS;
+
+        // The shape goes on the layer here, and the layer is reached through
+        // the web view rather than the window.
+        let _ = window;
+
         unsafe {
             let ns_window = webview.ns_window();
             let Some(content) = ns_window.contentView() else {
@@ -776,8 +832,148 @@ fn round_corners(
         }
     }
 
-    #[cfg(not(target_os = "macos"))]
-    let _ = (webview, radii, background);
+    #[cfg(target_os = "windows")]
+    {
+        // Nothing to do with the background colour here: on Windows it is the
+        // webview's own, painted inside the client area, and the region clips
+        // that along with everything else.
+        let _ = (webview, background);
+        apply_region(window, radii);
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let _ = (window, webview, radii, background);
+}
+
+/// Clip a window to a rounded rectangle of four independent radii.
+///
+/// Two things have to be true at once. The corners have to be cut out of the
+/// *visible* window, which is not the window rect: a frameless window keeps an
+/// invisible resize border around itself, and rounding the window rect would
+/// put the curve out in that margin where nothing is drawn. And the border
+/// itself has to stay inside the region, because a region is not only a shape,
+/// it is where the window hears the mouse - clip the margin away and the
+/// window can no longer be resized by dragging its edges.
+///
+/// So the region is the whole window rect with four notches taken out of it,
+/// each one placed at a corner of the visible rectangle.
+#[cfg(target_os = "windows")]
+fn apply_region(window: &Window, radii: crate::config::Radii) {
+    use tao::platform::windows::WindowExtWindows;
+    use windows::Win32::Foundation::{HWND, POINT, RECT};
+    use windows::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
+    };
+    use windows::Win32::Graphics::Gdi::{
+        ClientToScreen, CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, SetWindowRgn,
+        RGN_AND, RGN_DIFF, RGN_OR,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, GetWindowRect};
+
+    let hwnd = HWND(window.hwnd() as *mut std::ffi::c_void);
+
+    unsafe {
+        // Windows 11 rounds a window's corners itself, and would round the
+        // ones this leaves square. Asking for none of that is what makes the
+        // region the whole of the shape. Older Windows does not know the
+        // attribute and says so, which is not a failure worth reporting.
+        let preference = DWMWCP_DONOTROUND;
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            std::ptr::addr_of!(preference).cast(),
+            std::mem::size_of_val(&preference) as u32,
+        );
+
+        let mut outer = RECT::default();
+        if GetWindowRect(hwnd, &mut outer).is_err() {
+            return;
+        }
+        let (width, height) = (outer.right - outer.left, outer.bottom - outer.top);
+        if width <= 0 || height <= 0 {
+            return;
+        }
+
+        // A maximised window has no corners to round - the platform squares
+        // its own off, and a curve there would show the desktop through the
+        // corner of a window that is meant to be filling the screen.
+        if window.is_maximized() {
+            let _ = SetWindowRgn(hwnd, None, true);
+            return;
+        }
+
+        // Where the window is actually drawn, inside the window rect. The
+        // margin around it is the invisible resize border a frameless window
+        // keeps, whatever this window's `WM_NCCALCSIZE` left of it, so it is
+        // measured rather than worked out from the styles. The client rect is
+        // what answers: DWM's own frame bounds are only right once the window
+        // is composited, and stop being right the moment a region is set.
+        let mut client = RECT::default();
+        let mut origin = POINT::default();
+        if GetClientRect(hwnd, &mut client).is_err() || !ClientToScreen(hwnd, &mut origin).as_bool()
+        {
+            return;
+        }
+        let left = origin.x - outer.left;
+        let top = origin.y - outer.top;
+        let right = left + (client.right - client.left);
+        let bottom = top + (client.bottom - client.top);
+
+        // The radii are logical pixels, as everything in the config is, and a
+        // region is physical ones.
+        let scale = window.scale_factor();
+        let cap = f64::from((right - left).min(bottom - top)) / 2.0;
+        let radius = |r: f64| (r * scale).min(cap).round() as i32;
+
+        // The whole window, resize margin included, then a bite out of each
+        // corner of the visible rectangle.
+        let region = CreateRectRgn(0, 0, width + 1, height + 1);
+        let corners = [
+            (radius(radii.top_left), left, top, 1, 1),
+            (radius(radii.top_right), right, top, -1, 1),
+            (radius(radii.bottom_left), left, bottom, 1, -1),
+            (radius(radii.bottom_right), right, bottom, -1, -1),
+        ];
+
+        for (r, x, y, dx, dy) in corners {
+            if r <= 0 {
+                continue;
+            }
+            // The corner's own square, and the disc that fills the part of it
+            // the window keeps. Both are described from the corner outwards,
+            // so the same arithmetic does all four.
+            let square = rect_rgn(x, y, x + dx * r, y + dy * r);
+            let disc = CreateRoundRectRgn(
+                (x).min(x + dx * 2 * r),
+                (y).min(y + dy * 2 * r),
+                (x).max(x + dx * 2 * r) + 1,
+                (y).max(y + dy * 2 * r) + 1,
+                2 * r,
+                2 * r,
+            );
+            let keep = CreateRectRgn(0, 0, 0, 0);
+            let _ = CombineRgn(Some(keep), Some(square), Some(disc), RGN_AND);
+            let _ = CombineRgn(Some(region), Some(region), Some(square), RGN_DIFF);
+            let _ = CombineRgn(Some(region), Some(region), Some(keep), RGN_OR);
+            let _ = DeleteObject(square.into());
+            let _ = DeleteObject(disc.into());
+            let _ = DeleteObject(keep.into());
+        }
+
+        // The window owns the region from here: it must not be deleted, and
+        // the next call replaces it.
+        if SetWindowRgn(hwnd, Some(region), true) == 0 {
+            let _ = DeleteObject(region.into());
+        }
+    }
+}
+
+/// A rectangle region from two corners in any order, which is how the corner
+/// arithmetic above hands them over.
+#[cfg(target_os = "windows")]
+fn rect_rgn(x1: i32, y1: i32, x2: i32, y2: i32) -> windows::Win32::Graphics::Gdi::HRGN {
+    use windows::Win32::Graphics::Gdi::CreateRectRgn;
+    unsafe { CreateRectRgn(x1.min(x2), y1.min(y2), x1.max(x2) + 1, y1.max(y2) + 1) }
 }
 
 /// Mask a layer with a rounded-rectangle path of four independent radii.
@@ -855,6 +1051,48 @@ unsafe extern "C" {
     fn CGPathRelease(path: *mut std::ffi::c_void);
     fn CGColorCreateGenericRGB(r: f64, g: f64, b: f64, a: f64) -> *mut std::ffi::c_void;
     fn CGColorRelease(colour: *mut std::ffi::c_void);
+}
+
+/// Ask Windows to work out the non-client area again, keeping the window
+/// where and what size it is.
+///
+/// The outer rectangle is right from the moment the window is created; what is
+/// wrong is how much of it Windows believes is frame. This is the only way to
+/// make it ask again.
+#[cfg(target_os = "windows")]
+fn recalculate_frame(window: &Window) {
+    use tao::platform::windows::WindowExtWindows;
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+    };
+
+    let hwnd = HWND(window.hwnd() as *mut std::ffi::c_void);
+    // Safety: the handle belongs to the window we were handed, and this runs
+    // on the thread that owns it.
+    unsafe {
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+        );
+    }
+}
+
+/// The corners this window asks the runtime to draw, if any.
+///
+/// A framed window already has the platform's corners; rounding the content
+/// inside them leaves a notch where the two shapes disagree, so the setting
+/// only applies without a frame.
+fn corner_radii(config: &crate::config::WindowConfig) -> Option<crate::config::Radii> {
+    config
+        .border_radius
+        .filter(|_| !has_decorations(config))
+        .and_then(crate::config::BorderRadius::radii)
 }
 
 /// Whether the window keeps a frame of its own.
@@ -947,4 +1185,61 @@ fn drag_drop(rt: &Arc<Runtime>, label: &str, event: wry::DragDropEvent) -> bool 
         Outgoing::Event(crate::ipc::Event::new(name, payload)),
     );
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn window(value: serde_json::Value) -> WindowConfig {
+        serde_json::from_value(value).expect("a window config should load")
+    }
+
+    #[test]
+    fn a_framed_window_keeps_the_platforms_own_corners() {
+        assert!(
+            corner_radii(&window(serde_json::json!({ "borderRadius": 12 }))).is_none(),
+            "a window with a frame has corners already; rounding inside them notches"
+        );
+    }
+
+    #[test]
+    fn a_frameless_window_gets_the_corners_it_names() {
+        let radii = corner_radii(&window(serde_json::json!({
+            "decorations": false,
+            "borderRadius": { "topLeft": 20, "bottomRight": 4 },
+        })))
+        .expect("a frameless window rounds");
+
+        assert_eq!(radii.top_left, 20.0);
+        assert_eq!(radii.bottom_right, 4.0);
+        assert_eq!(radii.top_right, 0.0, "anything left out is square");
+    }
+
+    #[test]
+    fn a_hidden_title_bar_is_frameless_everywhere_but_macos() {
+        let config = window(serde_json::json!({
+            "titleBarStyle": "hidden",
+            "borderRadius": 12,
+        }));
+
+        // macOS hides the bar and keeps the frame - that is what keeps the
+        // traffic lights - so there the platform's corners are still in force.
+        assert_eq!(
+            corner_radii(&config).is_some(),
+            !cfg!(target_os = "macos"),
+            "a hidden title bar is a frame on macOS and no frame anywhere else"
+        );
+    }
+
+    #[test]
+    fn a_size_limit_needs_both_dimensions() {
+        assert!(limit(Some(400.0), Some(300.0)).is_some());
+        assert!(
+            limit(Some(400.0), None).is_none(),
+            "tao takes a size, not a width that can be constrained on its own"
+        );
+        assert!(limit(None, Some(300.0)).is_none());
+        assert!(limit(None, None).is_none());
+    }
 }

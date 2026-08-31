@@ -54,5 +54,7 @@ the application window is framed like any other.
 - The progress is driven from a wall-clock deadline rather than by adding a
   slice per frame. A bar that counts frames finishes late on a busy machine,
   and a splash is on screen precisely because the machine is busy.
-- `borderRadius` is macOS only for now, and applies to a window with no frame.
-  Elsewhere the window is square and everything else here still works.
+- `borderRadius` applies to a window with no frame, on macOS and Windows.
+  Windows draws the shape as a region, so its edges are hard where macOS
+  anti-aliases them, and the window has no drop shadow. On Linux the window is
+  square for now and everything else here still works.

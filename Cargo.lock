@@ -3977,6 +3977,7 @@ dependencies = [
  "tray-icon",
  "tungstenite",
  "ureq",
+ "windows 0.62.2",
  "wry",
 ]
 

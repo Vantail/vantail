@@ -122,3 +122,15 @@ objc2-app-kit = { version = "0.3", features = [
   "NSToolbarItem",
 ] }
 objc2-foundation = { version = "0.3", features = ["NSNotification", "NSString", "NSThread"] }
+
+# Rounding a window's corners: Windows has no layer to give a radius to, so
+# the shape is a region and the platform's own rounding has to be turned off.
+# The version and features tao already resolves to, so this adds nothing to
+# the tree.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Dwm",
+  "Win32_Graphics_Gdi",
+  "Win32_UI_WindowsAndMessaging",
+] }
