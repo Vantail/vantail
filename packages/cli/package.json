@@ -1,6 +1,6 @@
 {
   "name": "@vantail/cli",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "The Vantail command line: dev, build, package.",
   "license": "MIT",
   "repository": {

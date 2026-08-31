@@ -6,17 +6,23 @@ Notable changes per release.
 
 Everything since v0.1.17.
 
+Two defaults changed. An application upgrading gets both without doing
+anything, so read these first:
+
+- **A window no longer scrolls as a document.** It does not move on the wheel,
+  does not rubber-band, and has no scrollbars. Panes inside it still scroll on
+  their own `overflow`. A window that really is a page sets
+  `window.scroll: true`.
+- **A hidden title bar now drags the window on its own.** The band that bar
+  left behind moves the window and a double click there maximises it, so an
+  application that already wired `startDragging` on `pointerdown` should drop
+  its handler or call `preventDefault()`.
+
 ### Added
 
-- The runtime drags the window by itself. A window whose title bar is hidden
-  is moved by the band that bar left behind, and a double click there
-  maximises it. Controls are skipped. No application code needed.
 - `data-vantail-drag` and `data-vantail-no-drag` opt a subtree in or out of
-  that, anywhere on the page.
-- A window is a fixed frame by default: the document does not scroll, does not
-  rubber-band, and has no scrollbars. Panes inside it still scroll.
-  `window.scroll: true` makes it behave as a page, and
-  `data-vantail-scrollbar` keeps one element's scrollbars.
+  dragging, anywhere on the page. `data-vantail-scrollbar` keeps one element's
+  scrollbars.
 - `showInDock` config option. `false` gives a macOS application no Dock icon
   and no Cmd-Tab entry, and writes `LSUIElement` into the packaged bundle.
 - Six examples built around a shape of window: `tray` (Vue, menu bar app),
