@@ -253,7 +253,8 @@ window: {
 }
 ```
 
-Both are macOS only. [docs/api.md](docs/api.md) has the rest.
+`animateZoom` is macOS only. `borderRadius` works on macOS and Windows, and is
+ignored on Linux for now. [docs/api.md](docs/api.md) has the rest.
 
 ## More than one window
 

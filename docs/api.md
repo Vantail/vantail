@@ -710,6 +710,8 @@ WebKit behaves exactly as it did.
 
 ## dialog
 
+Needs `permissions.dialog`.
+
 Every picker resolves to `null` when the user cancels. A path the user picks
 is granted to `filesystem` for the rest of the session.
 
@@ -740,6 +742,9 @@ const proceed = await dialog.confirm("Discard changes?", {
 ```
 
 ## clipboard
+
+Needs `permissions.clipboard`, which splits into `{ read, write }` when only
+one direction is wanted.
 
 ```ts
 await clipboard.writeText("hello");
@@ -819,6 +824,8 @@ picked in a dialog - which is also the only kind `filesystem` will accept.
 
 ## notification
 
+Needs `permissions.notification`.
+
 ```ts
 await notification.show("Export finished");
 await notification.show({ title: "Export", body: "Finished", icon: "..." });
@@ -828,6 +835,10 @@ On macOS notifications are delivered through the bundle identifier, so an
 unbundled `vantail dev` run reports `UNSUPPORTED`. Try `vantail package`.
 
 ## menu
+
+Needs `permissions.menu`. The menu the config installs at startup is the
+runtime's own doing and needs nothing; these calls are the API, and the API is
+gated.
 
 ```ts
 await menu.set([
@@ -923,6 +934,8 @@ accelerators they press drift apart.
 bar either in the title bar or on a row of its own underneath.
 
 ## tray
+
+Needs `permissions.tray`.
 
 ```ts
 await tray.set({
