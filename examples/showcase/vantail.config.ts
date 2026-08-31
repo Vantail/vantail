@@ -17,6 +17,10 @@ export default defineConfig({
   },
 
   window: {
+    // This one really is a page: a long column of panels, and the
+    // document is what scrolls through them.
+    scroll: true,
+
     title: "Vantail Showcase",
     width: 1100,
     height: 780,

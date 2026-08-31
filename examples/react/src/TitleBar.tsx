@@ -122,21 +122,6 @@ export function TitleBar({
   onProfile: () => void;
   onSettings: () => void;
 }) {
-  const interactive = (event: { target: EventTarget | null }) =>
-    (event.target as Element).closest("button, input, a, select, [role='menu']");
-
-  const drag = (event: React.PointerEvent) => {
-    // Buttons and inputs stay clickable; everything else drags the window,
-    // which is what the bar this replaced did.
-    if (interactive(event)) return;
-    if (event.buttons === 1) void appWindow.startDragging();
-  };
-
-  const maximise = (event: React.MouseEvent) => {
-    if (interactive(event)) return;
-    void appWindow.toggleMaximize();
-  };
-
   // Where the platform reserved no room on the leading edge it drew no
   // buttons either, so this application has to. Measuring is the test rather
   // than the platform's name: it stays right if a platform changes its mind.
@@ -262,8 +247,6 @@ export function TitleBar({
       // Says a menu is in front of the search, which changes how the search
       // is centred - see `style.css`.
       data-menu={menu ? "" : undefined}
-      onPointerDown={drag}
-      onDoubleClick={maximise}
       style={
         {
           height: barHeight,
@@ -446,7 +429,7 @@ function SearchBar({
       {open && (
         <div className="titlebar-menu" role="menu">
           {matches.length === 0 && (
-            <p className="titlebar-menu-empty">Nothing matches “{query}”.</p>
+            <p className="titlebar-menu-empty">Nothing matches "{query}".</p>
           )}
           {matches.map((place) => (
             <button

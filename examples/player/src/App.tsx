@@ -70,7 +70,9 @@ export function App() {
         </div>
         <div className="transport">
           <button type="button" aria-label="Play">
-            ▶
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M5 3.5l8 4.5-8 4.5z" fill="currentColor" />
+            </svg>
           </button>
           <div className="scrubber" aria-hidden>
             <span />

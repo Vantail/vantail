@@ -18,13 +18,13 @@ and the seam is exactly what this layout exists to avoid - it is what makes
 the sidebar read as one piece rather than a panel with a lid.
 
 ```
-┌──────────────┬────────────────────────────┐
-│ ● ● ●  Threads  +  │  ▣  Inbox / …      ⌸ │  ← both columns' top 52px
-├──────────────┼────────────────────────────┤
-│ INBOX        │                            │
-│  …           │  …                         │
-└──────────────┴────────────────────────────┘
-     sidebar-bg          content-bg
++----------------+------------------------------+
+| o o o  Threads |  Inbox / Design System       |  <- top 52px of both
++----------------+------------------------------+
+| INBOX          |                              |
+|   insetLeft?   |   Ines   09:02               |
++----------------+------------------------------+
+    sidebar-bg         content-bg
 ```
 
 ## Which column reserves the window buttons
@@ -56,15 +56,13 @@ the platform's name.
 
 ## Two drags in one strip
 
-Inside the title bar band, the divider and the window drag are both waiting
-for a pointer. The divider wins, and not by checking coordinates: it is a
-child of the root laid over the column boundary rather than a child of either
-column, so a pointer landing on it never reaches the headers that call
-`startDragging`.
+Inside the title bar band the divider and the window drag both want the
+pointer. The divider wins by structure rather than by a coordinate check: it
+is a child of the root laid over the column boundary rather than of either
+column, so a pointer landing on it never reaches the band.
 
-Verified by driving it: dragging the divider at title-bar height resized the
-sidebar and left the window at the same position, and dragging the header
-80px moved the window exactly 80px.
+Neither header wires up dragging. The runtime moves the window from the band a
+hidden bar left behind - both headers are inside it - and skips the controls.
 
 ## Notes
 

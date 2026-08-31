@@ -121,12 +121,9 @@ through the window system, so the runtime installs handlers that push them
 into the event loop as user events. From there a menu click is an event like
 any other, broadcast to every window as `menu.click`.
 
-Not every library event is worth forwarding, and one of them arrives twice:
+`chrome::tray_message` decides which library events become IPC events.
 `tray-icon` reports a press and a release as two `Click`s differing only by
-`button_state`. `chrome::tray_message` decides what becomes an IPC event, and
-takes the release as the click - forwarding both gave listeners two
-`tray.click`s per click, which a handler that shows a window cannot tell apart
-and a handler that toggles one gets exactly backwards.
+`button_state`; the release is the click, and hovering is dropped.
 
 ## Processes
 

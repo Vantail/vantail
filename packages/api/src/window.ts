@@ -51,8 +51,9 @@ export interface WindowOptions {
    * have no way to keep the buttons without the bar, so `hidden` there is an
    * undecorated window and your toolbar has to include close and minimise.
    *
-   * A window with no title bar has nothing to drag it by. Give your toolbar
-   * `appWindow.startDragging()` on `pointerdown`.
+   * A window with no title bar has nothing to drag it by, so the runtime
+   * drags it for you: the band the bar used to occupy moves the window, and
+   * controls in it are left alone. See {@link startDragging} for the rest.
    */
   titleBarStyle?: TitleBarStyle;
   /**
@@ -192,14 +193,19 @@ export interface WindowHandle {
   /**
    * Drag the window from wherever the pointer is.
    *
-   * What a title bar would have done for you. Call it on `pointerdown` in
-   * your own toolbar and the platform takes the drag from there:
+   * **You usually do not need this.** The runtime already drags the window
+   * from the band a hidden title bar left behind, and from anything inside
+   * `[data-vantail-drag]`, skipping controls - so a page that draws a bar, or
+   * no bar at all, is movable without a line of JavaScript.
+   *
+   * Reach for this when the region that should drag is not something an
+   * attribute can describe - a canvas, say, where it depends on what was hit:
    *
    * ```ts
-   * toolbar.addEventListener("pointerdown", (event) => {
-   *   // Let buttons and inputs be clicked rather than dragged.
-   *   if ((event.target as Element).closest("button, input, a")) return;
-   *   if (event.buttons === 1) void appWindow.startDragging();
+   * canvas.addEventListener("pointerdown", (event) => {
+   *   if (event.buttons !== 1 || hitSomething(event)) return;
+   *   event.preventDefault(); // keeps the runtime out of the way
+   *   void appWindow.startDragging();
    * });
    * ```
    *

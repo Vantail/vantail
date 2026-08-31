@@ -89,6 +89,9 @@ A tag publishes that version as `latest`. A push to `main` that changes
 something shippable publishes a prerelease under the `dev` tag, so `main` is
 installable without waiting for a release.
 
+Move the `Unreleased` entries in [CHANGELOG.md](CHANGELOG.md) under the new
+version number first.
+
 ```bash
 node scripts/version.mjs patch
 git commit -am "Release 0.1.17"

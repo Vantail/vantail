@@ -34,71 +34,48 @@ Windows and Linux, where there is no Dock to hide from.
 
 ## Placing the popover
 
-`src/popover.ts` is the only genuinely fiddly part, and the reason is a units
-mismatch worth knowing about:
+`src/popover.ts` handles a units mismatch:
 
-- `tray.onClick` reports where the icon is in **physical** pixels.
+- `tray.onClick` reports the icon's position in **physical** pixels.
 - `appWindow.setPosition` takes **logical** ones.
 
-On a Retina display that is a factor of two, so passing the click straight
-through puts the popover off the bottom-right of the screen - and it looks
-perfectly correct on any machine that is not Retina, which is the worst way
-for a bug to behave.
+On a Retina display that is a factor of two. `screen.list()` closes the gap -
+it reports each display's logical geometry next to its `scaleFactor` - and
+which display the point is on decides the scale, so each one is tried until
+the converted point lands inside its bounds.
 
-`screen.list()` closes the gap: it reports each display's logical geometry
-next to its `scaleFactor`. Which display the point is on is what decides the
-scale, and the only way to tell is to try each one and see whose bounds the
-converted point lands in.
-
-The icon's position has to be read from the click every time rather than
-remembered, because the icon moves as other applications add and remove their
-own.
+Read the icon's position from every click rather than remembering it: the icon
+moves as other applications add and remove their own.
 
 ## Clicking the icon
 
-Two things had to be right before a left click could open the popover and
-leave it open.
+Clicking the icon while the popover is open delivers two signals in an order
+nothing guarantees: the webview loses focus, and the click arrives. Left
+alone they fight - the blur hides the popover, and the click then opens it
+again.
 
-**One click is one event.** `tray_icon` reports a press and a release as two
-`Click` events differing only by `button_state`, and the runtime forwarded
-both - so every listener received two `tray.click`s per click. A handler that
-shows a window cannot tell; one that *toggles* opens on the press and shuts
-again on the release. Fixed in the runtime (`chrome::tray_message`): the
-release is the click.
-
-**Blur and click race.** Clicking the icon while the popover is open produces
-two signals in an order nothing guarantees: the webview loses focus, and the
-click is delivered. Handled naively they fight - the blur hides the popover
-and the click then opens it again, so the icon appears not to close it.
-
-`src/popover.ts` settles it with two guards, both about time rather than
-order. A blur within 250ms of opening is the tail of the click that opened it,
-so it is ignored. A click within 400ms of a blur-close is that same gesture -
-the blur lands on the press, the click on the release - so it closes rather
-than reopening. Visibility is tracked locally rather than read back with
-`isVisible()`, because that is a round trip and the answer can change while it
-is in flight.
+`src/popover.ts` settles it on timing rather than order. A blur within 250ms
+of opening belongs to the click that opened it and is ignored. A click within
+400ms of a blur-close is the same gesture and closes rather than reopens.
+Visibility is tracked locally rather than read back with `isVisible()`, which
+is a round trip whose answer can change in flight.
 
 ## The countdown keeps running with the window shut
 
 `tray.setTitle` puts text beside the icon. macOS is the only platform that
-shows it, so elsewhere the countdown goes in the tooltip instead.
+shows it, so elsewhere the countdown goes in the tooltip.
 
-The popover and the menu bar are painted from **one** tick. They used to have
-an interval each - 250ms for the dial, 1000ms for the title - which meant two
-readings of the same value taken up to a second apart, so the two disagreed
-about the time. A countdown that disagrees with itself is worse than none.
+The popover and the menu bar are painted from one tick, so they cannot
+disagree about the time.
 
 The remaining time is counted from a wall-clock deadline rather than by
-subtracting a second per tick, and that is not defensive coding - it is
-load-bearing. A hidden webview is throttled hard: measured here, a one-second
-interval fired at roughly 2, 4 and 3 second gaps while the popover was closed.
-Counting ticks would drift by however long the machine was busy or asleep.
-Counting down to a timestamp is right whenever it happens to run.
+subtracting a second per tick. A hidden webview is throttled hard - a
+one-second interval fires several seconds late - and counting ticks would
+drift by however long the machine was busy or asleep. Counting down to a
+timestamp is right whenever it happens to run.
 
-Nothing on the tray menu shows the clock. It used to read `Pause (24:57)`,
-which meant rebuilding the menu - and so mutating the status item - once a
-second, for a number already sitting beside the icon.
+Nothing on the tray menu shows the clock, so the menu is rebuilt only when
+what it says changes.
 
 ## Two ways in, one set of commands
 

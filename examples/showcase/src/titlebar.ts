@@ -17,15 +17,11 @@ export function mountTitleBar(): void {
     '<button type="button">&#8594;</button></span>' +
     '<span class="tb-search">Vantail Showcase</span>';
 
-  // What a title bar would have done. Buttons stay clickable.
-  bar.addEventListener("pointerdown", (event) => {
-    if ((event.target as Element).closest("button, input, a")) return;
-    if (event.buttons === 1) void appWindow.startDragging();
-  });
-  bar.addEventListener("dblclick", (event) => {
-    if ((event.target as Element).closest("button, input, a")) return;
-    void appWindow.toggleMaximize();
-  });
+  // Nothing wires up dragging. The runtime moves the window from the band a
+  // hidden title bar left behind and skips the controls in it, so this bar
+  // drags without a listener - and so does a page that draws no bar at all.
+  // `appWindow.startDragging()` is still there for a region of your own
+  // choosing; see the window panel.
 
   applyTitleBar();
 }

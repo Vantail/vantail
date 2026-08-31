@@ -1,26 +1,14 @@
 /**
- * The only JavaScript this application ships, and all of it is about the
- * window rather than the interface.
+ * Nothing.
  *
- * Dragging and double-click-to-zoom are what a title bar does, and neither is
- * something CSS can offer - `-webkit-app-region: drag` is a Chromium
- * extension that a `WKWebView` does not implement. Everything else on the
- * page, the insets included, is done without any of this.
+ * This file used to wire `pointerdown` to `appWindow.startDragging()` and
+ * `dblclick` to `toggleMaximize`, because a window with a hidden title bar has
+ * nothing left to drag it by and `-webkit-app-region: drag` is a Chromium
+ * extension that a `WKWebView` does not implement.
+ *
+ * The runtime does that itself now: the band a hidden bar left behind moves
+ * the window, and controls inside it are left alone. So this application ships
+ * no JavaScript at all - which is the point it was trying to make.
  */
 
-import { appWindow } from "@vantail/api";
-
-const isControl = (target: EventTarget | null) =>
-  (target as Element | null)?.closest("button, input, textarea, a, [role='menu']");
-
-document.addEventListener("pointerdown", (event) => {
-  const bar = (event.target as Element | null)?.closest("[data-drag]");
-  if (!bar || isControl(event.target) || event.buttons !== 1) return;
-  void appWindow.startDragging();
-});
-
-document.addEventListener("dblclick", (event) => {
-  const bar = (event.target as Element | null)?.closest("[data-drag]");
-  if (!bar || isControl(event.target)) return;
-  void appWindow.toggleMaximize();
-});
+export {};

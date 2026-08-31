@@ -126,28 +126,11 @@ export function TabStrip({
     return () => observer.disconnect();
   }, [menu, ownControls]);
 
-  const interactive = (event: { target: EventTarget | null }) =>
-    (event.target as Element).closest("button");
-
-  // Empty strip drags the window; a double-click on it zooms. Both are what
-  // the title bar this replaced did, and what people try without thinking.
-  const drag = (event: React.PointerEvent) => {
-    if (interactive(event) || event.buttons !== 1) return;
-    void appWindow.startDragging();
-  };
-
-  const zoom = (event: React.MouseEvent) => {
-    if (interactive(event)) return;
-    void appWindow.toggleMaximize();
-  };
-
   return (
     <div
       ref={strip}
       className="strip"
       data-platform={PLATFORM}
-      onPointerDown={drag}
-      onDoubleClick={zoom}
       style={{
         paddingLeft: `calc(${metrics.insetLeft}px + 8px)`,
         paddingRight: `calc(${metrics.insetRight}px + 8px)`,

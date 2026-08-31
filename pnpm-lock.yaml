@@ -254,6 +254,40 @@ importers:
         specifier: ^8.0.0
         version: 8.2.2(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)
 
+  examples/workspace:
+    dependencies:
+      '@vantail/api':
+        specifier: workspace:^
+        version: link:../../packages/api
+      react:
+        specifier: ^19.2.0
+        version: 19.2.8
+      react-dom:
+        specifier: ^19.2.0
+        version: 19.2.8(react@19.2.8)
+    devDependencies:
+      '@types/react':
+        specifier: ^19.2.0
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: ^19.2.0
+        version: 19.2.4(@types/react@19.2.18)
+      '@vantail/cli':
+        specifier: workspace:^
+        version: link:../../packages/cli
+      '@vantail/vite':
+        specifier: workspace:^
+        version: link:../../packages/vite
+      '@vitejs/plugin-react':
+        specifier: ^6.0.0
+        version: 6.1.0(vite@8.2.2(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
+      typescript:
+        specifier: ^7.0.0
+        version: 7.0.2
+      vite:
+        specifier: ^8.0.0
+        version: 8.2.2(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)
+
   packages/api: {}
 
   packages/cli:

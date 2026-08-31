@@ -16,10 +16,8 @@ siblings on the document before the first paint, so a server-rendered page
 can pad around the platform's window buttons in plain CSS. `src/app.css`
 turns that into a Tailwind utility and `src/views.ts` uses it.
 
-The one exception is `src/client.ts`, and all of it is about the window
-rather than the interface: dragging and double-click-to-zoom are not things
-CSS can offer, because `-webkit-app-region: drag` is a Chromium extension a
-`WKWebView` does not implement.
+**And no JavaScript at all.** The runtime drags the window from the band a
+hidden title bar left behind, so there is no client script to write.
 
 **`dev.ts` replaces `vantail dev`.** That command starts Vite, which is the
 right thing for a bundled front end and no use to a server-rendered one. So
@@ -66,9 +64,7 @@ in `src/static.ts`, because two different programs need it: the compiled
 server, and the dev server in `dev.ts`. Keeping the routes free of both means
 development and a packaged build cannot drift apart.
 
-Verified end to end: the packaged `.app` opens, starts
-`Assistant.app/Contents/Resources/dist/server`, and answers `POST /message`
-with both bubbles - with no Bun installed anywhere in the path.
+The packaged app needs no Bun installed: the binary carries its own.
 
 **Serve `/index.html`, not just `/`.** The runtime opens the dev URL with a
 page appended. A server answering only `/` shows a 404 in a window with no
@@ -76,29 +72,34 @@ address bar to explain it.
 
 ## What the sidecar costs
 
-Measured, so nobody has to guess:
-
 | | `.app` | `.dmg` |
 |---|---|---|
 | this example | 54 MB | 21.8 MB |
 
-The binary is 48.3 MB of which the application is about 27 KB. The rest is the
-Bun runtime, and none of it comes off - `strip` changes nothing because the
-binary is already stripped, and `--minify` saves 0.1 MB. Nothing you write
-makes an embedded runtime smaller. It does compress, which is why the `.dmg`
-is less than half the installed size.
+The binary is 48.3 MB, of which the application is about 27 KB. The rest is
+the Bun runtime, and no build flag removes it - `strip` and `--minify` change
+almost nothing. It compresses well, so the `.dmg` is less than half the
+installed size.
 
-That is the standing price of shipping a real server process, and this example
-pays it on purpose: a sidecar can reach the file system, hold a database open
-and keep a long-lived connection, and none of those survive being moved into a
-webview.
+That is the price of a real server process, and this example pays it on
+purpose: a sidecar can reach the file system, hold a database open and keep a
+long-lived connection, none of which survive being moved into a webview.
 
-If your routes happen to be pure functions of a `Request`, as these ones are,
-you can avoid the runtime entirely by bundling the Hono app into the page and
-standing in for `XMLHttpRequest` so htmx runs against it unmodified - about a
-hundred lines, and it brings the same application to 4.5 MB installed and
-2.8 MB downloaded. That is a different example than this one, which is here to
-show a server.
+Routes that are pure functions of a `Request`, as these are, can skip it
+entirely - bundle the Hono app into the page and stand in for
+`XMLHttpRequest`, and the same application is 4.5 MB installed. That is a
+different example from this one, which is here to show a server.
+
+## What a sidecar is trusted with
+
+Worth saying plainly, because this example teaches the pattern: the permission
+layer does not follow a process it started. This server reads its own assets
+and answers two routes, so there is nothing here to abuse - but in general a
+sidecar's network access, file access and its own child processes are bounded
+by nothing in `vantail.config.ts`. Once one takes instructions from the page
+over a socket, that socket is the trust boundary and needs rules of its own.
+
+See [A program you start is outside all of this](../../docs/permissions.md#a-program-you-start-is-outside-all-of-this).
 
 ## What is still missing
 

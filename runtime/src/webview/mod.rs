@@ -58,10 +58,32 @@ pub fn title_bar_script(metrics: crate::chrome::titlebar::Metrics) -> String {
 /// It deliberately knows nothing about methods or promises - it is a pipe.
 /// `@vantail/api` subscribes to it and builds the typed surface on top, so
 /// the protocol can grow without the runtime shipping a new bridge.
+/// Makes the window a fixed frame rather than a page.
+///
+/// Three things, and they are all furniture rather than behaviour: the
+/// document does not scroll, it does not rubber-band past its edges, and the
+/// scrollbars are gone. Panes inside still scroll, because their own
+/// `overflow` says so - only the document is pinned.
+///
+/// `scrollbar-width` is the standard property and `::-webkit-scrollbar` is
+/// what the platform webviews actually read, so both are set. `revert` puts
+/// the user agent's own back for a subtree that asked for it.
+///
+/// Appended to `<html>` at document-start, before the page's own stylesheets
+/// are parsed, so an application that disagrees simply wins.
+const FIXED_FRAME: &str = "\
+html, body { overflow: hidden; overscroll-behavior: none; }\n\
+* { scrollbar-width: none; }\n\
+::-webkit-scrollbar { width: 0; height: 0; }\n\
+[data-vantail-scrollbar], [data-vantail-scrollbar] * { scrollbar-width: auto; }\n\
+[data-vantail-scrollbar]::-webkit-scrollbar,\n\
+[data-vantail-scrollbar] *::-webkit-scrollbar { width: revert; height: revert; }\n";
+
 pub fn init_script(
     rt: &Runtime,
     label: &str,
     title_bar: crate::chrome::titlebar::Metrics,
+    scroll: bool,
 ) -> String {
     let app = json!({
         "name": rt.config.app.name,
@@ -80,6 +102,12 @@ pub fn init_script(
 
   var listeners = new Set();
   var backlog = [];
+  // Requests the bridge makes for itself. Their replies are not anybody's
+  // business, and without this they would pile up in `backlog` forever on a
+  // page that never loads the SDK - which is exactly the page that most needs
+  // the window to be draggable.
+  var ours = new Set();
+  var seq = 0;
 
   // The room a hidden title bar left behind, in the page before it lays out -
   // so a toolbar sized from it never has to flash at the wrong height, and
@@ -95,10 +123,28 @@ pub fn init_script(
     root.style.setProperty('--vantail-titlebar-button-height', metrics.buttonHeight + 'px');
     return true;
   }}
+  // A window is a fixed frame unless it asked to be a page: the document does
+  // not scroll, does not rubber-band, and has no scrollbars. Panes inside it
+  // still scroll on their own `overflow`.
+  var frameCss = {frame_css};
+  function applyFrame() {{
+    var root = document.documentElement;
+    if (!root) return false;
+    if (!frameCss) return true;
+    var style = document.createElement('style');
+    style.setAttribute('data-vantail', 'frame');
+    style.textContent = frameCss;
+    root.appendChild(style);
+    return true;
+  }}
+
   // At document-start `<html>` normally exists already; when it does not,
   // this runs as soon as the parser has made it.
-  if (!applyMetrics()) {{
-    document.addEventListener('DOMContentLoaded', applyMetrics, {{ once: true }});
+  if (!applyMetrics() || !applyFrame()) {{
+    document.addEventListener('DOMContentLoaded', function () {{
+      applyMetrics();
+      applyFrame();
+    }}, {{ once: true }});
   }}
 
   window.__VANTAIL__ = {{
@@ -136,6 +182,10 @@ pub fn init_script(
     }},
 
     _dispatch: function (message) {{
+      if (message && ours.has(message.id)) {{
+        ours.delete(message.id);
+        return;
+      }}
       if (listeners.size === 0) {{
         backlog.push(message);
         return;
@@ -149,10 +199,68 @@ pub fn init_script(
       }});
     }}
   }};
+
+  // Moving the window
+  //
+  // A window whose title bar is hidden has nothing left to drag it by, and
+  // `-webkit-app-region: drag` is a Chromium extension that does nothing in
+  // the platform webviews. Every application therefore ended up writing the
+  // same `pointerdown` handler, and an application that drew no bar at all -
+  // just the platform's window buttons over its own page - could not be moved
+  // at all until somebody noticed.
+  //
+  // So the bridge does it. Two things drag the window:
+  //
+  //   * the band the hidden bar left behind, which is `metrics.height` and is
+  //     zero when the platform is still drawing a real bar - there is nothing
+  //     to stand in for then;
+  //   * anything inside `[data-vantail-drag]`, for chrome that is taller than
+  //     that band or somewhere else entirely.
+  //
+  // Controls are excluded, because a pointer down that begins a window drag
+  // never becomes a click on the button underneath it. `[data-vantail-no-drag]`
+  // opts out anything else - put it on `<body>` to opt out of the lot - and so
+  // does calling `preventDefault()` on the event, which is how an application
+  // that would rather do this itself keeps the bridge out of the way.
+  function ask(method) {{
+    var id = 'vantail:' + (seq++);
+    ours.add(id);
+    window.ipc.postMessage(JSON.stringify({{ id: id, method: method, params: {{}} }}));
+  }}
+
+  var KEEPS_THE_POINTER =
+    'button,input,select,textarea,a[href],label,summary,video,audio,' +
+    '[contenteditable],[draggable=true],[role=button],[role=link],[role=menu],' +
+    '[role=menuitem],[role=tab],[role=slider],[role=textbox],[data-vantail-no-drag]';
+
+  function movesTheWindow(event) {{
+    if (event.button !== 0 || event.defaultPrevented) return false;
+
+    var target = event.target;
+    // Text nodes and anything outside an element tree have no `closest`.
+    if (!target || typeof target.closest !== 'function') return false;
+    if (target.closest(KEEPS_THE_POINTER)) return false;
+    if (target.closest('[data-vantail-drag]')) return true;
+
+    return metrics.height > 0 && event.clientY < metrics.height;
+  }}
+
+  // On the bubble rather than the capture phase, so an application's own
+  // handler runs first and can call `preventDefault()` to be left alone.
+  document.addEventListener('pointerdown', function (event) {{
+    if (movesTheWindow(event)) ask('window.startDragging');
+  }});
+
+  // What a real title bar does on a double click, and the platform will not do
+  // it for a bar that is not there.
+  document.addEventListener('dblclick', function (event) {{
+    if (movesTheWindow(event)) ask('window.toggleMaximize');
+  }});
 }})();"#,
         runtime_version = json!(env!("CARGO_PKG_VERSION")),
         app = app,
         label = json!(label),
+        frame_css = json!(if scroll { "" } else { FIXED_FRAME }),
     )
 }
 

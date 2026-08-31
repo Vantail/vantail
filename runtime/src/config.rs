@@ -146,6 +146,18 @@ pub struct WindowConfig {
     /// Rarely needed: `title_bar_height` already centres them.
     #[serde(default)]
     pub traffic_light_position: Option<Inset>,
+
+    /// Let the page scroll as a document. Off by default.
+    ///
+    /// An application window is a fixed frame: it does not move when the
+    /// wheel turns, it does not rubber-band at the edges, and it has no
+    /// scrollbars. What scrolls is the panes inside it, which say so
+    /// themselves with `overflow`.
+    ///
+    /// Turn this on for a window that really is a page - a long document, a
+    /// report - and it behaves as a browser would.
+    #[serde(default)]
+    pub scroll: bool,
     /// Whether the platform draws the window buttons, or the application does.
     ///
     /// macOS keeps its traffic lights when the title bar is hidden, and they
@@ -351,6 +363,23 @@ mod tests {
         .expect("a minimal config should load");
         assert!(config.show_in_dock);
         assert!(config.quit_on_last_window_closed);
+    }
+
+    #[test]
+    fn a_window_is_a_fixed_frame_unless_it_asks_to_scroll() {
+        let config: Config = serde_json::from_value(serde_json::json!({
+            "app": { "name": "A", "identifier": "dev.test.a" },
+            "window": {},
+        }))
+        .expect("a minimal config should load");
+        assert!(!config.window.scroll);
+
+        let config: Config = serde_json::from_value(serde_json::json!({
+            "app": { "name": "A", "identifier": "dev.test.a" },
+            "window": { "scroll": true },
+        }))
+        .expect("a window asking to scroll should load");
+        assert!(config.window.scroll);
     }
 
     #[test]

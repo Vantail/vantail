@@ -481,3 +481,34 @@ a compromise of the runtime binary is a compromise of the account.
 It also does not protect against an application that asks for
 `filesystem: { read: true, write: true }`. Scopes are only as good as the ones
 you write.
+
+### A program you start is outside all of this
+
+`shell.allow` gates *starting* a program. It does not follow it. Once a child
+process is running it is an ordinary process with the user's privileges: the
+files it reads, the hosts it connects to and the programs it starts in turn
+are mediated by nothing on this page.
+
+That matters most for a **sidecar** - a server shipped in the bundle and
+spawned at startup, which the interface then talks to over a local socket. It
+is a second principal with more authority than the application that started
+it, and the rules here are not in that path:
+
+- `permissions.network` bounds `fetch` **from the webview**. It says nothing
+  about where the sidecar connects.
+- `permissions.filesystem` bounds the filesystem API. The sidecar reads and
+  writes as the user.
+- `shell.allow` bounds what the *runtime* starts. It does not bound what the
+  sidecar starts.
+
+So the socket becomes the trust boundary, and it needs rules of its own.
+Whatever authenticates it - usually a token handed to the page - is the entire
+gate, and it is held by the least trustworthy part of the application: a
+webview rendering content from elsewhere. Give the sidecar its own allow-list
+for anything it will connect to or execute on the page's say-so, rather than
+assuming the caller is trustworthy because it knew a token.
+
+Note in particular that allowing one program can allow every program. A rule
+naming an interpreter, a package runner (`npx -y`, `uvx`, `pipx`) or anything
+else that fetches code and runs it means "may run arbitrary code" no matter
+how tightly the arguments are pinned. Prefer a binary you shipped.

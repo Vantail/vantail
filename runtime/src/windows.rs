@@ -377,11 +377,14 @@ impl WindowManager {
             proxy,
             label,
             url,
-            title_bar,
-            config
-                .background_color
-                .as_deref()
-                .and_then(crate::config::parse_color),
+            Presentation {
+                title_bar,
+                background: config
+                    .background_color
+                    .as_deref()
+                    .and_then(crate::config::parse_color),
+                scroll: config.scroll,
+            },
         )?;
         // Again, now the webview is attached. Putting the content view in
         // makes AppKit lay the title bar out, which undoes the placement above
@@ -579,14 +582,24 @@ pub fn center(window: &Window) {
     ));
 }
 
+/// What a webview is told about its own presentation.
+///
+/// Grouped because they travel together and are all decided by the window's
+/// config: the room the title bar left, what shows before the first paint,
+/// and whether the page scrolls as a document at all.
+struct Presentation {
+    title_bar: crate::chrome::titlebar::Metrics,
+    background: Option<(u8, u8, u8, u8)>,
+    scroll: bool,
+}
+
 fn build_webview(
     rt: &Arc<Runtime>,
     window: &Window,
     proxy: EventLoopProxy<UserEvent>,
     label: &str,
     url: &str,
-    title_bar: crate::chrome::titlebar::Metrics,
-    background: Option<(u8, u8, u8, u8)>,
+    look: Presentation,
 ) -> Result<WebView, String> {
     let resources = webview::Resources::new(&rt.resource_dir);
     let devtools = rt.config.devtools.unwrap_or_else(|| rt.is_dev());
@@ -595,7 +608,7 @@ fn build_webview(
     let load_proxy = proxy.clone();
 
     let builder = WebViewBuilder::new()
-        .with_initialization_script(webview::init_script(rt, label, title_bar))
+        .with_initialization_script(webview::init_script(rt, label, look.title_bar, look.scroll))
         .with_devtools(devtools)
         // A desktop app's background window is not a browser tab that nobody
         // is looking at: it may be doing work on purpose, and a window that
@@ -650,7 +663,7 @@ fn build_webview(
     // Only where the window is not transparent: a colour behind a window meant
     // to show what is behind it is not a background, it is the end of the
     // effect.
-    let builder = match background.filter(|_| !rt.config.window.transparent) {
+    let builder = match look.background.filter(|_| !rt.config.window.transparent) {
         Some(colour) => builder.with_background_color(colour),
         None => builder,
     };

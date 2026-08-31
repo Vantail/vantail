@@ -45,8 +45,9 @@ export interface WindowConfig {
    * have no way to keep the buttons without the bar, so `hidden` there is an
    * undecorated window and your toolbar has to include close and minimise.
    *
-   * A window with no title bar has nothing to drag it by. Give your toolbar
-   * `appWindow.startDragging()` on `pointerdown`.
+   * A window with no title bar has nothing to drag it by, so the runtime
+   * drags it: the band the bar used to occupy moves the window and controls
+   * in it are left alone. `data-vantail-drag` extends that to anywhere else.
    */
   /**
    * What shows through before the page has painted, as `#rgb` or `#rrggbb`.
@@ -74,6 +75,19 @@ export interface WindowConfig {
    * survives a change of `titleBarHeight` instead of needing to be redone.
    */
   trafficLightPosition?: { x: number; y?: number };
+
+  /**
+   * Let the page scroll as a document. Default `false`.
+   *
+   * An application window is a fixed frame: it does not move when the wheel
+   * turns, it does not rubber-band at the edges, and it has no scrollbars.
+   * The panes inside it still scroll - that is what `overflow` is for - and
+   * one can keep its scrollbars with `data-vantail-scrollbar`.
+   *
+   * `true` for a window that really is a page, and it behaves as a browser
+   * would.
+   */
+  scroll?: boolean;
   /**
    * How tall the bar your application draws should be.
    *

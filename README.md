@@ -498,13 +498,14 @@ package` refuses one unless you pass `--allow-debug-runtime`.
 - [examples/react](examples/react) - a smaller, more realistic application.
 - [examples/vanilla](examples/vanilla) - the same idea without a framework.
 
-And five built around a particular shape of window:
+And six built around a particular shape of window:
 
 | Example                                | Stack           | What it is for                                                     |
 | -------------------------------------- | --------------- | ------------------------------------------------------------------ |
 | [tray](examples/tray)                   | Vue 3           | A menu bar application: no Dock icon, no window at rest, a popover placed under the icon |
 | [sidebar](examples/sidebar)             | React           | The Mail and Xcode layout - a sidebar-split title bar, where the window buttons' inset moves between columns |
 | [tabs](examples/tabs)                   | React           | Tabs drawn in the title bar, Chrome-style                          |
+| [workspace](examples/workspace)         | React           | A two-row bar - a dark command bar with a tab strip under it, after the Windows shape |
 | [player](examples/player)               | React           | A tall media bar with transport controls                           |
 | [chat](examples/chat)                   | Bun, Hono, htmx | Server-rendered, with the server shipped as a compiled sidecar     |
 
@@ -520,6 +521,7 @@ example's own directory, which is the same thing.
 - [docs/packaging.md](docs/packaging.md) - bundles, installers and signing.
 - [docs/updater.md](docs/updater.md) - signing keys, manifests, and what
   `install` actually does.
+- [CHANGELOG.md](CHANGELOG.md) - what changed in each release.
 
 ## Contributing
 

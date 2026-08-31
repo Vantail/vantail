@@ -151,29 +151,11 @@ export function TitleBar({ menu }: { menu?: MenuItem[] }) {
     };
   }, [menuOpen]);
 
-  // Anything that is not a control drags the window, and a double-click zooms
-  // it - which is what the bar this replaced did, and what people expect of
-  // any strip along the top of a window.
-  const interactive = (event: { target: EventTarget | null }) =>
-    (event.target as Element).closest("button, input, a, [role='menu']");
-
-  const drag = (event: React.PointerEvent) => {
-    if (interactive(event) || event.buttons !== 1) return;
-    void appWindow.startDragging();
-  };
-
-  const zoom = (event: React.MouseEvent) => {
-    if (interactive(event)) return;
-    void appWindow.toggleMaximize();
-  };
-
   return (
     <header
       ref={bar}
       className="titlebar"
       data-platform={PLATFORM}
-      onPointerDown={drag}
-      onDoubleClick={zoom}
       style={{
         // The three numbers only the runtime knows. `insetLeft` is the room
         // the platform's window buttons take; it is 0 where the platform drew

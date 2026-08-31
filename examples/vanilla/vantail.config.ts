@@ -10,6 +10,10 @@ export default defineConfig({
   },
 
   window: {
+    // The simplest possible window, and its content is a document
+    // rather than a set of panes - so it scrolls like one.
+    scroll: true,
+
     title: "Vantail Vanilla",
     width: 900,
     height: 640,

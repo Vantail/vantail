@@ -70,6 +70,7 @@ export const windowSchema = z
       .object({ x: z.number(), y: z.number().optional() })
       .strict()
       .optional(),
+    scroll: z.boolean().optional(),
     transparent: z.boolean().optional(),
     alwaysOnTop: z.boolean().optional(),
     center: z.boolean().optional(),

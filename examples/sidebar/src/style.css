@@ -59,7 +59,7 @@ body.resizing {
   grid-template-columns: 0 1fr;
 }
 
-/* ── the bar across both columns ─────────────────────────────────────── */
+/* the bar across both columns */
 
 .bar {
   display: flex;
@@ -82,7 +82,7 @@ body.resizing {
   padding-left: calc(var(--inset-left) + 10px);
 }
 
-/* ── sidebar ─────────────────────────────────────────────────────────── */
+/* sidebar */
 
 .sidebar {
   display: flex;
@@ -186,7 +186,7 @@ body.resizing {
   background: rgb(255 255 255 / 26%);
 }
 
-/* ── the divider, which is also the resize handle ────────────────────── */
+/* the divider, which is also the resize handle */
 
 .divider {
   position: absolute;
@@ -216,7 +216,7 @@ body.resizing .divider::after {
   background: var(--accent);
 }
 
-/* ── content ─────────────────────────────────────────────────────────── */
+/* content */
 
 .content {
   display: flex;
@@ -297,7 +297,7 @@ body.resizing .divider::after {
   color: #cfd4de;
 }
 
-/* ── buttons ─────────────────────────────────────────────────────────── */
+/* buttons */
 
 button.icon {
   display: grid;
@@ -332,7 +332,7 @@ button.icon svg {
   stroke-width: 1.5;
 }
 
-/* ── window controls, where the platform drew none ───────────────────── */
+/* window controls, where the platform drew none */
 
 .window-controls {
   display: flex;

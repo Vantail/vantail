@@ -6,7 +6,6 @@
  */
 
 import { WindowControls } from "./WindowControls.js";
-import { drag, zoom } from "./Sidebar.js";
 import type { Thread } from "./threads.js";
 
 export function Content({
@@ -24,11 +23,7 @@ export function Content({
 }) {
   return (
     <main className="content">
-      <header
-        className={`bar toolbar${reservesInset ? " inset" : ""}`}
-        onPointerDown={drag}
-        onDoubleClick={zoom}
-      >
+      <header className={`bar toolbar${reservesInset ? " inset" : ""}`}>
         <button
           className="icon"
           title={collapsed ? "Show sidebar (Cmd-\\)" : "Hide sidebar (Cmd-\\)"}

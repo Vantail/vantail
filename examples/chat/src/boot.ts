@@ -42,7 +42,7 @@ async function start() {
   });
 
   const url = await done;
-  say("Starting…");
+  say("Starting...");
   location.replace(url);
 }
 

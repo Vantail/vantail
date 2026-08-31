@@ -401,25 +401,65 @@ is the other question, and that one is the platform's: see
 `decorations: false` is a different thing and still there: it removes the
 frame entirely, traffic lights included.
 
-### Dragging it
+### Scrolling
 
-A window with no title bar has nothing to drag it by, so your toolbar has to
-do it:
+A window is a fixed frame, not a page. By default the document does not
+scroll, does not rubber-band at its edges, and has no scrollbars. Panes inside
+it still scroll - that is what their own `overflow` is for.
 
 ```ts
-toolbar.addEventListener("pointerdown", (event) => {
-  // Let buttons and inputs be clicked rather than dragged.
-  if ((event.target as Element).closest("button, input, a, select")) return;
-  if (event.buttons === 1) void appWindow.startDragging();
-});
+// vantail.config.ts
+window: { scroll: true },   // this window really is a page
 ```
+
+Turn it on for a window that is a document: a long report, a reference, the
+kind of thing a browser would scroll. One element can keep its scrollbars
+without the rest of the window changing:
+
+```html
+<div data-vantail-scrollbar>...</div>
+```
+
+The stylesheet is appended to `<html>` before the page's own is parsed, so an
+application that disagrees just overrides it.
+
+### Dragging it
+
+A window with no title bar has nothing to drag it by, so **the runtime drags
+it for you**. There is nothing to write:
+
+- the band the hidden bar left behind - `titleBarHeight`, or the platform's
+  own height if you named none - moves the window;
+- a double click there maximises it, the way a real title bar does;
+- controls are skipped, so a pointer down on a button, input, link, or
+  anything with `role="button"`, `role="tab"`, `role="menuitem"` and their
+  neighbours still becomes a click;
+- nothing happens at all when the title bar is the platform's own, because
+  there is a real bar doing the job.
+
+Two attributes adjust it, and both work anywhere on the page:
+
+| Attribute               | Effect                                                        |
+| ----------------------- | ------------------------------------------------------------- |
+| `data-vantail-drag`     | This subtree moves the window, even outside the band           |
+| `data-vantail-no-drag`  | This subtree does not, even inside it                          |
+
+`data-vantail-drag` is what a two-row chrome needs: `titleBarHeight` covers
+the row the window buttons sit in, so a second row below it opts in.
+`data-vantail-no-drag` on `<body>` turns the whole thing off.
+
+A control you build out of a `<div>` is not a control as far as any of this is
+concerned - give it `role="button"` or `role="tab"`, which you wanted for
+screen readers anyway, or mark it `data-vantail-no-drag`. Otherwise the window
+moves instead of the thing being clicked.
+
+Calling `preventDefault()` on the `pointerdown` also keeps the runtime out of
+the way, which is how you take over a region yourself - see
+{@link appWindow.startDragging} for when that is worth doing.
 
 `-webkit-app-region: drag` is a Chromium extension. It does nothing in a
 WKWebView, so a CSS property would work on two platforms out of three, which
-is worse than not having it - hence a call.
-
-Double-click to maximise is not automatic either; `appWindow.toggleMaximize()`
-on `dblclick` is the whole of it.
+is worse than not having it - hence an attribute the runtime reads.
 
 ## appWindow and window handles
 
@@ -748,8 +788,7 @@ Accelerators are strings like `CmdOrCtrl+S`, `Alt+Shift+F4`,
 accepted as a name for `Enter`, because that is what an Apple keyboard has
 printed on it.
 
-An accelerator the platform cannot parse is checked in three places, because
-of how badly it used to land:
+An accelerator the platform cannot parse is checked in three places:
 
 1. **At config load.** `vantail dev`, `vantail build` and `vantail doctor` all
    validate the accelerators in `vantail.config.ts` against the same key names
@@ -844,12 +883,9 @@ tray.onClick(({ x, y }) => { /* x and y are PHYSICAL pixels */ });
 ```
 
 Those coordinates are in **physical** pixels, while `appWindow.setPosition`
-takes **logical** ones. On a Retina display that is a factor of two, so
-passing one straight to the other puts the window off the bottom-right of the
-screen - and looks perfectly correct on any machine that is not Retina.
-`screen.list()` reports each display's logical geometry next to its
-`scaleFactor`, which is what converts between them. See
-[examples/tray](../examples/tray) for the whole dance.
+takes **logical** ones - a factor of two on a Retina display. `screen.list()`
+reports each display's logical geometry next to its `scaleFactor`, which is
+what converts between them. See [examples/tray](../examples/tray).
 
 Read the position from every click rather than remembering it: the icon moves
 as other applications add and remove their own.

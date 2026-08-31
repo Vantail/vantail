@@ -1,27 +1,12 @@
 /**
  * The sidebar column, top to bottom.
  *
- * Its header is not a separate title bar - it is the top of this column, and
- * it carries the window's drag behaviour because that is what the strip it
- * replaced did.
+ * Its header is not a separate title bar - it is the top of this column. It
+ * wires up no dragging: the runtime moves the window from the band a hidden
+ * bar left behind, and leaves the controls in it alone.
  */
 
-import { appWindow } from "@vantail/api";
-
 import { SECTIONS, THREADS } from "./threads.js";
-
-const interactive = (event: { target: EventTarget | null }) =>
-  (event.target as Element | null)?.closest("button, input, a, [role='menu']");
-
-export function drag(event: React.PointerEvent) {
-  if (interactive(event) || event.buttons !== 1) return;
-  void appWindow.startDragging();
-}
-
-export function zoom(event: React.MouseEvent) {
-  if (interactive(event)) return;
-  void appWindow.toggleMaximize();
-}
 
 export function Sidebar({
   selected,
@@ -34,11 +19,7 @@ export function Sidebar({
 }) {
   return (
     <aside className="sidebar">
-      <header
-        className={`bar sidebar-head${reservesInset ? " inset" : ""}`}
-        onPointerDown={drag}
-        onDoubleClick={zoom}
-      >
+      <header className={`bar sidebar-head${reservesInset ? " inset" : ""}`}>
         <span className="account">Threads</span>
         <button className="icon" title="New thread" onClick={() => {}}>
           <svg viewBox="0 0 16 16" aria-hidden="true">
