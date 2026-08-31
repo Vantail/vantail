@@ -21,6 +21,10 @@ Notable changes per release.
 
 ### Changed
 
+- The `player` example draws one menu button on Windows and Linux, the way
+  Spotify does, instead of a row of titles. It also grants `permissions.menu`,
+  which `menu.popup` needs and it did not have.
+
 - Maximise and restore snap rather than animating, so the page is never left
   drawn at its old size while the window moves. `window.animateZoom: true`
   keeps the platform animation. macOS only.

@@ -6,7 +6,11 @@
  * problem rather than React's.
  */
 
-import { appMenu } from "./menu.js";
+import { useEffect, useState } from "react";
+
+import { menu } from "@vantail/api";
+
+import { appMenu, REPEAT, SHUFFLE } from "./menu.js";
 import { TitleBar } from "./TitleBar.js";
 
 const LIBRARY = [
@@ -29,9 +33,24 @@ const SHELF = [
 ];
 
 export function App() {
+  // The two menu items that show a state rather than doing something. They
+  // live here because the menu is rebuilt from them: a menu is a snapshot, so
+  // a tick that is not passed back in is a tick that resets itself.
+  const [shuffle, setShuffle] = useState(false);
+  const [repeat, setRepeat] = useState(false);
+
+  useEffect(
+    () =>
+      menu.onClick(({ id }) => {
+        if (id === SHUFFLE) setShuffle((on) => !on);
+        if (id === REPEAT) setRepeat((on) => !on);
+      }),
+    [],
+  );
+
   return (
     <div className="app">
-      <TitleBar menu={appMenu()} />
+      <TitleBar menu={appMenu({ shuffle, repeat })} />
 
       <div className="body">
         <aside className="library">

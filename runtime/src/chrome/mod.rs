@@ -373,7 +373,7 @@ impl Chrome {
     /// title bar being hidden and shown again - has to lose the menu with the
     /// frame, or it keeps a menu bar it cannot draw and grows by its height on
     /// every resize afterwards.
-    #[allow(unused_variables)]
+    #[cfg(target_os = "windows")]
     fn detach(&self, window: &tao::window::Window) {
         #[cfg(target_os = "windows")]
         {

@@ -37,5 +37,10 @@ export default defineConfig({
   // On macOS these are what make Cmd-C, Cmd-V and Cmd-Q work at all.
   menu: appMenu(),
 
-  permissions: {},
+  permissions: {
+    // `menu.popup` and `menu.onClick` are the API, and the API is gated. The
+    // menu installed above is the runtime's own doing and needs nothing; the
+    // button in the title bar that opens it does.
+    menu: true,
+  },
 });

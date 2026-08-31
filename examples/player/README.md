@@ -32,6 +32,23 @@ the page rather than being a platform menu, because it sits inside the bar and
 has to line up with it. It listens on the document and checks `contains`,
 which is the part that is easy to get wrong.
 
+**One menu button off-macOS.** Windows and Linux hang the application menu
+off the window frame, and a hidden title bar is an undecorated window - the
+menu is still installed and its accelerators still fire, but there is no frame
+left for it to appear in. `MenuBar.tsx` puts a single button in the bar and
+hands the whole menu to `menu.popup`, so File, Edit, View, Playback and Help
+arrive as a list with their items as submenus. That is Spotify's own layout,
+and it is one button of chrome rather than a row of titles.
+
+Only the button is HTML. Everything below it is the platform's menu, so the
+predefined items behave as they do everywhere else and the submenus open the
+way the platform opens them. `menu.popup` is the API, so the window needs
+`permissions.menu`.
+
+Shuffle and Repeat are checkboxes, and a menu is a snapshot of the moment it
+was built - so their values come from `App.tsx` and the menu is rebuilt when
+they change.
+
 **Own window controls off-macOS.** `insetLeft === 0` means the platform drew
 none, so `WindowControls.tsx` supplies them and `MenuBar.tsx` draws the
 application menu that a hidden title bar took away.

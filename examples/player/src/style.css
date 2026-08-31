@@ -443,31 +443,37 @@ main h1 {
   display: flex;
   align-items: center;
   flex: none;
-  gap: 2px;
 }
 
-.menubar-item {
-  height: 24px;
-  padding: 0 8px;
+/* One button, the way Spotify does it on Windows: the titles are a list
+   inside the platform's own menu rather than a row across the bar. */
+.menubar-button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: 0;
   border-radius: 4px;
   background: transparent;
   color: var(--fg);
-  font: inherit;
-  font-size: 13px;
-  line-height: 1;
-  white-space: nowrap;
   cursor: default;
+  place-items: center;
 }
 
-.menubar-item:hover {
+.menubar-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.5;
+}
+
+.menubar-button:hover {
   background: color-mix(in srgb, currentColor 10%, transparent);
 }
 
-/* While its menu is up. The platform's popup is modal, so this is on for
-   exactly as long as the menu is open and goes off when it closes, without
-   anything here having to watch for the dismissal. */
-.menubar-item.open {
+.menubar-button.open {
   background: color-mix(in srgb, currentColor 16%, transparent);
 }
 
