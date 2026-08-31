@@ -105,17 +105,8 @@ fn run() -> Result<(), String> {
     updater::clean_previous();
 
     // `mut` only so the Dock can be turned off below; nothing else touches it.
-    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
     let mut event_loop: EventLoop<UserEvent> = EventLoopBuilder::with_user_event().build();
-
-    // A menu bar application wants no Dock icon, and this is the only moment
-    // it can be said: AppKit reads the activation policy when the event loop
-    // starts running and ignores it afterwards.
-    #[cfg(target_os = "macos")]
-    if !loaded.config.show_in_dock {
-        use tao::platform::macos::EventLoopExtMacOS;
-        event_loop.set_dock_visibility(false);
-    }
+    apply_dock_visibility(&mut event_loop, loaded.config.show_in_dock);
 
     // Before anything is opened: a second launch should hand over what it was
     // asked to do and get out of the way, not build a whole second window
@@ -488,6 +479,26 @@ fn announce_close_request(windows: &WindowManager, label: &str, outcome: &str) {
 ///
 /// Both libraries deliver their events through global handlers rather than
 /// through the window system, so this is where they rejoin everything else.
+/// Whether the application appears in the Dock.
+///
+/// macOS reads the activation policy when the event loop starts running and
+/// ignores it afterwards, so this is the only moment it can be said. Nothing
+/// to do anywhere else - `showInDock` is documented as macOS only - but the
+/// setting is still read on every platform, because a field only ever read
+/// inside a `cfg` is dead code on the platforms that compile it out.
+fn apply_dock_visibility(event_loop: &mut EventLoop<UserEvent>, show_in_dock: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        use tao::platform::macos::EventLoopExtMacOS;
+        if !show_in_dock {
+            event_loop.set_dock_visibility(false);
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    let _ = (event_loop, show_in_dock);
+}
+
 fn install_chrome_handlers(event_loop: &EventLoop<UserEvent>) {
     let proxy = event_loop.create_proxy();
     muda::MenuEvent::set_event_handler(Some(move |event: muda::MenuEvent| {

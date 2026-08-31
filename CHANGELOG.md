@@ -2,7 +2,14 @@
 
 Notable changes per release.
 
-## Unreleased
+## 0.1.19
+
+### Fixed
+
+- `cargo clippy` failed on Linux and Windows, where `showInDock` was read only
+  on macOS. What the setting does is unchanged.
+
+## 0.1.18
 
 Everything since v0.1.17.
 
