@@ -70,6 +70,7 @@ Nothing native is available until the config asks for it. `$DOCUMENT`,
 
 ## Documentation
 
+- [Every option and API](https://github.com/Vantail/vantail/blob/main/docs/api.md)
 - [Configuration and permissions](https://github.com/Vantail/vantail/blob/main/docs/permissions.md)
 - [Bundles, installers and signing](https://github.com/Vantail/vantail/blob/main/docs/packaging.md)
 - [Shipping updates](https://github.com/Vantail/vantail/blob/main/docs/updater.md)

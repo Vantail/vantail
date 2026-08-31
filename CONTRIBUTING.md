@@ -94,8 +94,8 @@ version number first.
 
 ```bash
 node scripts/version.mjs patch
-git commit -am "Release 0.1.17"
-git tag -a v0.1.17 -m "Release 0.1.17"
+git commit -am "Release 0.1.20"
+git tag -a v0.1.20 -m "Release 0.1.20"
 git push --follow-tags
 ```
 

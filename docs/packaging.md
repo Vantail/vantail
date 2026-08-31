@@ -29,6 +29,20 @@ The runtime reports its version to the SDK as `runtimeVersion()`, and the
 the protocol, so the runtime packages are versioned in lockstep with the
 TypeScript packages: one version number across the whole repository.
 
+## Where things go
+
+```ts
+// vantail.config.ts
+distDir: "dist",    // the built web assets the bundle carries. Default `dist`
+outDir: "build",    // where bundles and installers are written. Default `build`
+```
+
+Both are relative to the config file. `distDir` is what your bundler writes and
+what ends up in the application's resources, so it is also what a relative tray
+icon path and `$RESOURCE` resolve against. `outDir` holds the finished bundles
+and is safe to delete; Vantail's own scratch - the generated dev config, the
+updater signing key - stays in `.vantail`.
+
 ## Installers
 
 ```bash

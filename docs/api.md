@@ -401,6 +401,20 @@ is the other question, and that one is the platform's: see
 `decorations: false` is a different thing and still there: it removes the
 frame entirely, traffic lights included.
 
+### See-through, and starting maximised
+
+```ts
+window: { transparent: true },  // the window has no background of its own
+window: { maximized: true },    // opens filling the screen
+```
+
+`transparent` leaves the window without a background, so whatever the page
+does not paint shows what is behind it. It is what a window has to be for a
+page to draw its own shape in CSS - though `borderRadius` clips the window
+itself and needs no transparency. A `backgroundColor` is ignored while a window
+is transparent: a colour behind a window meant to show through is not a
+background, it is the end of the effect.
+
 ### Scrolling
 
 A window is a fixed frame, not a page. By default the document does not
@@ -567,7 +581,9 @@ await appWindow.setMaxSize(null, null); // remove
 ```
 
 `setMinSize` and `setMaxSize` take logical pixels, and `null` for both
-dimensions removes the limit.
+dimensions removes the limit. The same limits can be set for the
+opening window in the config, as `minWidth`, `minHeight`, `maxWidth` and
+`maxHeight`.
 
 They constrain resizes that go through the window system - a user dragging an
 edge, or maximising. They do **not** clamp `setSize`, which asks the platform

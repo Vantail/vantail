@@ -239,7 +239,21 @@ Three attributes adjust both:
 | `data-vantail-no-drag`   | This subtree does not                            |
 | `data-vantail-scrollbar` | This subtree keeps its scrollbars                |
 
-[docs/api.md](docs/api.md) has the rest.
+**Maximise and restore snap** rather than animating, so the page is never left
+drawn at its old size while the window moves. `window.animateZoom: true` keeps
+the platform animation.
+
+**A frameless window can have its own corners.** `window.borderRadius` takes a
+number or one radius per corner, and the runtime clips the page to the shape.
+
+```ts
+window: {
+  decorations: false,
+  borderRadius: { topLeft: 15, topRight: 0, bottomRight: 15, bottomLeft: 30 },
+}
+```
+
+Both are macOS only. [docs/api.md](docs/api.md) has the rest.
 
 ## More than one window
 
