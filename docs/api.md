@@ -423,6 +423,28 @@ without the rest of the window changing:
 The stylesheet is appended to `<html>` before the page's own is parsed, so an
 application that disagrees just overrides it.
 
+### Maximising
+
+Maximise and restore snap rather than animating.
+
+```ts
+// vantail.config.ts
+window: { animateZoom: true },   // the platform animation, and its cost
+```
+
+macOS animates a zoom over about 200ms, and a web view lays out asynchronously
+in another process - so for that whole animation the page is still drawn at the
+size it was, and the window looks like it is dragging its contents behind it.
+Measured here: 14 frames of stale content animated, 2 snapped.
+
+Nothing else moves that number. The web view is already GPU-composited, its
+layer ignores `contentsGravity` because the content is composited from another
+process, and sizing the view before the animation does not make WebKit lay out
+any sooner. Removing the animation is the whole of it.
+
+The same lag applies to dragging a window's corner, where there is no
+animation to remove. `backgroundColor` is what makes that one bearable.
+
 ### Dragging it
 
 A window with no title bar has nothing to drag it by, so **the runtime drags

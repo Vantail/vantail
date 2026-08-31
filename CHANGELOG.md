@@ -2,6 +2,14 @@
 
 Notable changes per release.
 
+## Unreleased
+
+### Changed
+
+- Maximise and restore snap rather than animating, so the page is never left
+  drawn at its old size while the window moves. `window.animateZoom: true`
+  keeps the platform animation. macOS only.
+
 ## 0.1.19
 
 ### Fixed

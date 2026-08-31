@@ -88,6 +88,19 @@ export interface WindowConfig {
    * would.
    */
   scroll?: boolean;
+
+  /**
+   * Animate maximise and restore. Default `false`. macOS only.
+   *
+   * AppKit animates a zoom over about 200ms, and a web view lays out on its
+   * own schedule in another process - so for that whole animation the page is
+   * still drawn at the size it was, and the window looks like it is dragging
+   * its contents behind it. Off, the window snaps and the page is right
+   * immediately.
+   *
+   * Turn it on for the platform animation, and the lag with it.
+   */
+  animateZoom?: boolean;
   /**
    * How tall the bar your application draws should be.
    *

@@ -71,6 +71,7 @@ export const windowSchema = z
       .strict()
       .optional(),
     scroll: z.boolean().optional(),
+    animateZoom: z.boolean().optional(),
     transparent: z.boolean().optional(),
     alwaysOnTop: z.boolean().optional(),
     center: z.boolean().optional(),

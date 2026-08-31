@@ -158,6 +158,15 @@ pub struct WindowConfig {
     /// report - and it behaves as a browser would.
     #[serde(default)]
     pub scroll: bool,
+
+    /// Animate maximise and restore. macOS only.
+    ///
+    /// AppKit's zoom animation runs for about 200ms, and the web view lays
+    /// out asynchronously in another process - so the page stays drawn at its
+    /// old size for the length of it. Off, the window snaps to the new frame
+    /// and the page is right in the next frame.
+    #[serde(default)]
+    pub animate_zoom: bool,
     /// Whether the platform draws the window buttons, or the application does.
     ///
     /// macOS keeps its traffic lights when the title bar is hidden, and they
@@ -363,6 +372,23 @@ mod tests {
         .expect("a minimal config should load");
         assert!(config.show_in_dock);
         assert!(config.quit_on_last_window_closed);
+    }
+
+    #[test]
+    fn zooming_snaps_unless_a_window_asks_for_the_animation() {
+        let config: Config = serde_json::from_value(serde_json::json!({
+            "app": { "name": "A", "identifier": "dev.test.a" },
+            "window": {},
+        }))
+        .expect("a minimal config should load");
+        assert!(!config.window.animate_zoom);
+
+        let config: Config = serde_json::from_value(serde_json::json!({
+            "app": { "name": "A", "identifier": "dev.test.a" },
+            "window": { "animateZoom": true },
+        }))
+        .expect("a window asking for the animation should load");
+        assert!(config.window.animate_zoom);
     }
 
     #[test]

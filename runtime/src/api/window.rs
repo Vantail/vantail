@@ -123,17 +123,90 @@ fn size_limit(width: Option<f64>, height: Option<f64>) -> Option<LogicalSize<f64
 /// screen does not constrain maximising there anyway, so dropping the limits
 /// while maximised costs nothing and removes the way to be killed. They go
 /// back on when the window is restored.
+/// Maximise or restore without AppKit's zoom animation.
+///
+/// `zoom:` animates the frame over about 200ms, and a web view lays out
+/// asynchronously in another process - so for the whole animation the page is
+/// still drawn at the size it was, and the window appears to drag its contents
+/// behind it. Setting the frame in one step gives WebKit a single layout to do
+/// instead of a moving target.
+///
+/// `false` means this did not handle it and the caller should fall back: no
+/// screen to measure, or a restore with nothing remembered to restore to.
+fn zoom_in_one_step(entry: &mut crate::windows::WindowEntry, maximized: bool) -> bool {
+    // Asked for the platform animation, so there is nothing to avoid.
+    if entry.animate_zoom {
+        return false;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Only macOS animates a zoom. Both fields are still read here, because
+        // one that is only ever read inside a `cfg` is dead code everywhere
+        // that compiles the block out.
+        let _ = (maximized, entry.restore_frame);
+        false
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSWindow;
+        use objc2_foundation::{NSPoint, NSRect, NSSize};
+        use tao::platform::macos::WindowExtMacOS;
+
+        let ns_window = entry.window.ns_window() as *mut NSWindow;
+        if ns_window.is_null() {
+            return false;
+        }
+
+        unsafe {
+            let ns_window = &*ns_window;
+
+            let frame = if maximized {
+                let Some(screen) = ns_window.screen() else {
+                    return false;
+                };
+                let here = ns_window.frame();
+                entry.restore_frame = Some((
+                    here.origin.x,
+                    here.origin.y,
+                    here.size.width,
+                    here.size.height,
+                ));
+                screen.visibleFrame()
+            } else {
+                // Nothing remembered - the window was maximised by the platform,
+                // or at startup - so let AppKit do what it knows.
+                let Some((x, y, width, height)) = entry.restore_frame.take() else {
+                    return false;
+                };
+                NSRect::new(NSPoint::new(x, y), NSSize::new(width, height))
+            };
+
+            ns_window.setFrame_display_animate(frame, true, false);
+        }
+
+        true
+    }
+}
+
 fn set_maximized(entry: &mut crate::windows::WindowEntry, maximized: bool) {
     if maximized {
         entry.window.set_min_inner_size(NO_LIMIT);
         entry.window.set_max_inner_size(NO_LIMIT);
-        entry.window.set_maximized(true);
-        return;
     }
 
-    entry.window.set_maximized(false);
-    entry.window.set_min_inner_size(entry.min_size);
-    entry.window.set_max_inner_size(entry.max_size);
+    // `animateZoom` keeps the platform animation, and the lag with it.
+    let snapped = zoom_in_one_step(entry, maximized);
+
+    if !snapped {
+        entry.window.set_maximized(maximized);
+    }
+
+    if !maximized {
+        entry.window.set_min_inner_size(entry.min_size);
+        entry.window.set_max_inner_size(entry.max_size);
+    }
 }
 
 /// Spelled out because `None` alone leaves the size type ambiguous.

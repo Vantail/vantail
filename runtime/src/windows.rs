@@ -86,6 +86,14 @@ pub struct WindowEntry {
     pub size: LogicalSize<f64>,
     // Declared before `window`: struct fields drop in declaration order, and
     // the webview holds a raw handle into the window it was built on.
+    /// Animate maximise and restore, rather than snapping. macOS only.
+    pub animate_zoom: bool,
+
+    /// Where the window was before it was maximised, so a snap can put it
+    /// back. AppKit keeps its own copy for an animated zoom; this is the one
+    /// for when we set the frame ourselves.
+    pub restore_frame: Option<(f64, f64, f64, f64)>,
+
     pub webview: WebView,
     pub window: Window,
 }
@@ -417,6 +425,8 @@ impl WindowManager {
             title_bar_shape,
             title_bar_watch,
             decorations: config.decorations,
+            animate_zoom: config.animate_zoom,
+            restore_frame: None,
             focused: false,
             size,
             webview,
