@@ -346,6 +346,9 @@ fn run() -> Result<(), String> {
                         // to move them again - on every frame of the drag, or
                         // they visibly snap home while the user holds on.
                         entry.reapply_title_bar();
+                        // A corner shape is a path, not a property: it has to
+                        // be rebuilt at the new size or it keeps the old one.
+                        entry.reshape_corners();
                         windows.deliver(
                             Some(&label),
                             &Outgoing::Event(IpcEvent::new(

@@ -72,6 +72,19 @@ export const windowSchema = z
       .optional(),
     scroll: z.boolean().optional(),
     animateZoom: z.boolean().optional(),
+    borderRadius: z
+      .union([
+        z.number().nonnegative(),
+        z
+          .object({
+            topLeft: z.number().nonnegative().optional(),
+            topRight: z.number().nonnegative().optional(),
+            bottomLeft: z.number().nonnegative().optional(),
+            bottomRight: z.number().nonnegative().optional(),
+          })
+          .strict(),
+      ])
+      .optional(),
     transparent: z.boolean().optional(),
     alwaysOnTop: z.boolean().optional(),
     center: z.boolean().optional(),

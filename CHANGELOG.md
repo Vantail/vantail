@@ -4,6 +4,16 @@ Notable changes per release.
 
 ## Unreleased
 
+### Added
+
+- `window.borderRadius` rounds a frameless window's corners and clips the page
+  to the shape. A number rounds all four, or give each corner its own radius -
+  `{ topLeft: 20, topRight: 4 }` - and anything left out stays square. macOS
+  only; ignored on a window that has a frame.
+
+- A `splash` example: a frameless window with its own corner radii that hands
+  over to the application window.
+
 ### Changed
 
 - Maximise and restore snap rather than animating, so the page is never left

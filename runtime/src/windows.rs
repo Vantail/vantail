@@ -89,6 +89,10 @@ pub struct WindowEntry {
     /// Animate maximise and restore, rather than snapping. macOS only.
     pub animate_zoom: bool,
 
+    /// The corner radii, kept because a shape mask has to be rebuilt from the
+    /// new bounds every time the window changes size.
+    pub corner_radii: Option<crate::config::Radii>,
+
     /// Where the window was before it was maximised, so a snap can put it
     /// back. AppKit keeps its own copy for an animated zoom; this is the one
     /// for when we set the frame ourselves.
@@ -185,6 +189,20 @@ impl WindowEntry {
     /// on the next call that happened to remeasure. Nothing about the metrics
     /// changes with the width, so this places them again and leaves the page
     /// alone.
+    /// Rebuild the corner shape for the window's new size.
+    ///
+    /// Only needed for four different radii: one radius is a `cornerRadius`,
+    /// which follows the layer on its own.
+    pub fn reshape_corners(&self) {
+        let Some(radii) = self.corner_radii else {
+            return;
+        };
+        if radii.uniform().is_some() {
+            return;
+        }
+        round_corners(&self.webview, Some(radii), None);
+    }
+
     pub fn reapply_title_bar(&mut self) {
         if self.title_bar_style != TitleBarStyle::Hidden {
             return;
@@ -392,6 +410,13 @@ impl WindowManager {
                     .as_deref()
                     .and_then(crate::config::parse_color),
                 scroll: config.scroll,
+                // A framed window already has the platform's corners; rounding
+                // the content inside them leaves a notch where the two shapes
+                // disagree, so the setting only applies without a frame.
+                corners: config
+                    .border_radius
+                    .filter(|_| !has_decorations(config))
+                    .and_then(crate::config::BorderRadius::radii),
             },
         )?;
         // Again, now the webview is attached. Putting the content view in
@@ -426,6 +451,10 @@ impl WindowManager {
             title_bar_watch,
             decorations: config.decorations,
             animate_zoom: config.animate_zoom,
+            corner_radii: config
+                .border_radius
+                .filter(|_| !has_decorations(config))
+                .and_then(crate::config::BorderRadius::radii),
             restore_frame: None,
             focused: false,
             size,
@@ -466,16 +495,7 @@ fn build_window(
         .clone()
         .unwrap_or_else(|| rt.config.app.name.clone());
 
-    // A hidden title bar has no bar to decorate. On macOS the decorations
-    // stay on - that is what keeps the traffic lights, and the bar itself is
-    // removed by the platform-specific calls below. Everywhere else the only
-    // way to lose the bar is to lose the frame with it.
-    let hidden = config.title_bar_style == TitleBarStyle::Hidden;
-    let decorations = if hidden && !cfg!(target_os = "macos") {
-        false
-    } else {
-        config.decorations
-    };
+    let decorations = has_decorations(config);
 
     let mut builder = WindowBuilder::new()
         .with_title(title)
@@ -503,7 +523,7 @@ fn build_window(
     }
 
     #[cfg(target_os = "macos")]
-    if hidden {
+    if config.title_bar_style == TitleBarStyle::Hidden {
         use tao::platform::macos::WindowBuilderExtMacOS;
 
         // The three together are what "no bar, but keep the buttons" means:
@@ -601,6 +621,8 @@ struct Presentation {
     title_bar: crate::chrome::titlebar::Metrics,
     background: Option<(u8, u8, u8, u8)>,
     scroll: bool,
+    /// The four radii, or `None` for the platform's own corners.
+    corners: Option<crate::config::Radii>,
 }
 
 fn build_webview(
@@ -678,7 +700,176 @@ fn build_webview(
         None => builder,
     };
 
-    attach(builder, window)
+    let webview = attach(builder, window)?;
+    round_corners(&webview, look.corners, look.background);
+    Ok(webview)
+}
+
+/// Clip the window to its corner radii.
+///
+/// One radius on all four corners is a `cornerRadius` on the layer, which the
+/// platform draws itself and keeps right through a resize for free. Four
+/// different radii is not something a layer can express, so that case gets a
+/// shape mask - a path the runtime builds and has to rebuild whenever the
+/// window changes size, which is why `reshape_corners` exists.
+///
+/// The page is clipped either way, so content cannot spill past a corner.
+/// macOS for now; the radii are read on every platform so they are not dead
+/// code where nothing acts on them.
+fn round_corners(
+    webview: &WebView,
+    radii: Option<crate::config::Radii>,
+    background: Option<(u8, u8, u8, u8)>,
+) {
+    let Some(radii) = radii else {
+        return;
+    };
+
+    #[cfg(target_os = "macos")]
+    {
+        use wry::WebViewExtMacOS;
+        unsafe {
+            let ns_window = webview.ns_window();
+            let Some(content) = ns_window.contentView() else {
+                return;
+            };
+            let _: () = objc2::msg_send![&*content, setWantsLayer: true];
+            let layer: *mut objc2::runtime::AnyObject = objc2::msg_send![&*content, layer];
+            if layer.is_null() {
+                return;
+            }
+
+            let _: () = objc2::msg_send![layer, setMasksToBounds: true];
+
+            // A window given a background colour is opaque, and paints that
+            // colour across its whole square frame - behind the rounded
+            // content view, filling the corners back in. So the colour moves
+            // to the layer that is actually clipped, which keeps what it was
+            // for: something to look at before the page has painted.
+            if let Some((red, green, blue, alpha)) = background {
+                let clear: *mut objc2::runtime::AnyObject =
+                    objc2::msg_send![objc2::class!(NSColor), clearColor];
+                let _: () = objc2::msg_send![&*ns_window, setOpaque: false];
+                let _: () = objc2::msg_send![&*ns_window, setBackgroundColor: clear];
+
+                let colour = CGColorCreateGenericRGB(
+                    f64::from(red) / 255.0,
+                    f64::from(green) / 255.0,
+                    f64::from(blue) / 255.0,
+                    f64::from(alpha) / 255.0,
+                );
+                let _: () = objc2::msg_send![layer, setBackgroundColor: colour];
+                CGColorRelease(colour);
+            }
+
+            if let Some(radius) = radii.uniform() {
+                let _: () = objc2::msg_send![layer, setCornerRadius: radius];
+                let _: () =
+                    objc2::msg_send![layer, setMask: std::ptr::null::<objc2::runtime::AnyObject>()];
+                return;
+            }
+
+            // A layer has one `cornerRadius`, so four different ones are drawn
+            // by masking with a path instead.
+            let _: () = objc2::msg_send![layer, setCornerRadius: 0.0f64];
+            apply_shape(layer, radii);
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    let _ = (webview, radii, background);
+}
+
+/// Mask a layer with a rounded-rectangle path of four independent radii.
+///
+/// Rebuilt from the layer's current bounds every time, because a path is fixed
+/// geometry: unlike `cornerRadius` it does not follow the layer when the
+/// window resizes.
+#[cfg(target_os = "macos")]
+unsafe fn apply_shape(layer: *mut objc2::runtime::AnyObject, radii: crate::config::Radii) {
+    use objc2_foundation::NSRect;
+
+    let bounds: NSRect = unsafe { objc2::msg_send![layer, bounds] };
+    let (w, h) = (bounds.size.width, bounds.size.height);
+    if w <= 0.0 || h <= 0.0 {
+        return;
+    }
+
+    // No corner may eat more than half an edge, or the arcs cross over.
+    let cap = (w.min(h)) / 2.0;
+    let tl = radii.top_left.min(cap);
+    let tr = radii.top_right.min(cap);
+    let bl = radii.bottom_left.min(cap);
+    let br = radii.bottom_right.min(cap);
+
+    unsafe {
+        let path = CGPathCreateMutable();
+        if path.is_null() {
+            return;
+        }
+
+        // Core Graphics puts the origin at the bottom left, so `h` is the top.
+        let nil = std::ptr::null();
+        CGPathMoveToPoint(path, nil, bl, 0.0);
+        CGPathAddLineToPoint(path, nil, w - br, 0.0);
+        CGPathAddArcToPoint(path, nil, w, 0.0, w, br, br);
+        CGPathAddLineToPoint(path, nil, w, h - tr);
+        CGPathAddArcToPoint(path, nil, w, h, w - tr, h, tr);
+        CGPathAddLineToPoint(path, nil, tl, h);
+        CGPathAddArcToPoint(path, nil, 0.0, h, 0.0, h - tl, tl);
+        CGPathAddLineToPoint(path, nil, 0.0, bl);
+        CGPathAddArcToPoint(path, nil, 0.0, 0.0, bl, 0.0, bl);
+        CGPathCloseSubpath(path);
+
+        let shape: *mut objc2::runtime::AnyObject =
+            objc2::msg_send![objc2::class!(CAShapeLayer), layer];
+        let _: () = objc2::msg_send![shape, setPath: path];
+        let _: () = objc2::msg_send![shape, setFrame: bounds];
+        let _: () = objc2::msg_send![layer, setMask: shape];
+
+        CGPathRelease(path);
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "CoreGraphics", kind = "framework")]
+unsafe extern "C" {
+    fn CGPathCreateMutable() -> *mut std::ffi::c_void;
+    fn CGPathMoveToPoint(path: *mut std::ffi::c_void, m: *const std::ffi::c_void, x: f64, y: f64);
+    fn CGPathAddLineToPoint(
+        path: *mut std::ffi::c_void,
+        m: *const std::ffi::c_void,
+        x: f64,
+        y: f64,
+    );
+    fn CGPathAddArcToPoint(
+        path: *mut std::ffi::c_void,
+        m: *const std::ffi::c_void,
+        x1: f64,
+        y1: f64,
+        x2: f64,
+        y2: f64,
+        radius: f64,
+    );
+    fn CGPathCloseSubpath(path: *mut std::ffi::c_void);
+    fn CGPathRelease(path: *mut std::ffi::c_void);
+    fn CGColorCreateGenericRGB(r: f64, g: f64, b: f64, a: f64) -> *mut std::ffi::c_void;
+    fn CGColorRelease(colour: *mut std::ffi::c_void);
+}
+
+/// Whether the window keeps a frame of its own.
+///
+/// A hidden title bar has no bar to decorate. On macOS the decorations stay
+/// on - that is what keeps the traffic lights, and the bar itself is removed
+/// by the platform-specific calls elsewhere. Everywhere else the only way to
+/// lose the bar is to lose the frame with it.
+fn has_decorations(config: &crate::config::WindowConfig) -> bool {
+    let hidden = config.title_bar_style == TitleBarStyle::Hidden;
+    if hidden && !cfg!(target_os = "macos") {
+        false
+    } else {
+        config.decorations
+    }
 }
 
 /// Put the webview inside the window.

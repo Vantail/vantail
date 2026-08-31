@@ -19,6 +19,14 @@ export interface AppConfig {
   icon?: string;
 }
 
+/** Which corners a window rounds, and by how much. */
+export interface WindowCorners {
+  topLeft?: number;
+  topRight?: number;
+  bottomLeft?: number;
+  bottomRight?: number;
+}
+
 export interface WindowConfig {
   title?: string;
   width?: number;
@@ -101,6 +109,29 @@ export interface WindowConfig {
    * Turn it on for the platform animation, and the lag with it.
    */
   animateZoom?: boolean;
+
+  /**
+   * Round the window's corners, in logical pixels.
+   *
+   * A number rounds all four. An object rounds the corners it names and
+   * leaves the rest square:
+   *
+   * ```ts
+   * borderRadius: 12
+   * borderRadius: { topLeft: 12, topRight: 12 }
+   * ```
+   *
+   * Each corner takes its own radius, and anything left out is square.
+   *
+   * Only for a window with no frame of its own - `decorations: false`. A
+   * decorated window already has the platform's corners, and rounding the
+   * content inside them leaves a notch where the two shapes disagree, so the
+   * setting is ignored there.
+   *
+   * The runtime clips the page to the shape, so content cannot spill past a
+   * corner and no CSS is needed. macOS only for now; ignored elsewhere.
+   */
+  borderRadius?: number | WindowCorners;
   /**
    * How tall the bar your application draws should be.
    *

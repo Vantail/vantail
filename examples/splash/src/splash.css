@@ -1,0 +1,77 @@
+/*
+ * The splash window draws everything: it has no frame, no title bar and no
+ * buttons, so the orange goes right to the edge and the corners are the
+ * window's own shape rather than anything painted here.
+ *
+ * Nothing sets `border-radius`. The runtime clips the window to the radii in
+ * `vantail.config.ts` and the page is clipped with it, so a background that
+ * runs to the edge is enough.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+:root {
+  --orange: #ff6a13;
+  --ink: #3d1400;
+
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: grid;
+  background: var(--orange);
+  color: #fff;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  place-items: center;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+main {
+  width: 100%;
+  padding: 0 34px;
+  text-align: left;
+}
+
+.name {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.what {
+  margin: 2px 0 26px;
+  color: rgb(255 255 255 / 78%);
+}
+
+.track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgb(61 20 0 / 22%);
+}
+
+.fill {
+  width: 0;
+  height: 100%;
+  border-radius: 3px;
+  background: #fff;
+}
+
+.step {
+  margin: 12px 0 0;
+  color: rgb(255 255 255 / 72%);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}

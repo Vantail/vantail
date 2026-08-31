@@ -423,6 +423,44 @@ without the rest of the window changing:
 The stylesheet is appended to `<html>` before the page's own is parsed, so an
 application that disagrees just overrides it.
 
+### Rounded corners
+
+```ts
+// vantail.config.ts
+window: { decorations: false, borderRadius: 12 },
+
+// or one radius per corner; anything left out is square
+window: {
+  decorations: false,
+  borderRadius: { topLeft: 20, topRight: 4, bottomLeft: 4, bottomRight: 20 },
+},
+```
+
+The runtime clips the page to the shape, so content cannot spill past a corner
+and no CSS is needed to match. A radius larger than half the shorter side is
+capped to it, which turns into an arch rather than a broken outline.
+
+One radius on all four corners is a `cornerRadius` on the layer, which the
+platform draws and keeps right through a resize on its own. Four different
+radii is not something a layer can express, so that case is drawn with a shape
+mask - a path the runtime rebuilds whenever the window changes size. Worth
+knowing only because it is the more expensive of the two: prefer a single
+number when a single number will do.
+
+`backgroundColor` moves with the shape. A window given one is opaque and
+paints that colour across its whole square frame, which would fill the corners
+back in - so for a rounded window the colour is set on the clipped layer
+instead. It still shows before the page has painted, and it is now the right
+shape while it does.
+
+Only for a window with no frame of its own. A decorated window already has the
+platform's corners, and rounding the content inside them leaves a notch where
+the two shapes disagree, so the setting is ignored there. On macOS a hidden
+title bar is still a framed window - that is what keeps the traffic lights -
+so this applies to `decorations: false` only.
+
+macOS for now; ignored on Windows and Linux.
+
 ### Maximising
 
 Maximise and restore snap rather than animating.

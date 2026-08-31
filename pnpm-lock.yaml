@@ -179,6 +179,25 @@ importers:
         specifier: ^8.0.0
         version: 8.2.2(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)
 
+  examples/splash:
+    dependencies:
+      '@vantail/api':
+        specifier: workspace:^
+        version: link:../../packages/api
+    devDependencies:
+      '@vantail/cli':
+        specifier: workspace:^
+        version: link:../../packages/cli
+      '@vantail/vite':
+        specifier: workspace:^
+        version: link:../../packages/vite
+      typescript:
+        specifier: ^7.0.0
+        version: 7.0.2
+      vite:
+        specifier: ^8.0.0
+        version: 8.2.2(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)
+
   examples/tabs:
     dependencies:
       '@vantail/api':

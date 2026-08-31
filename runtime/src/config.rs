@@ -167,6 +167,14 @@ pub struct WindowConfig {
     /// and the page is right in the next frame.
     #[serde(default)]
     pub animate_zoom: bool,
+
+    /// Round the window's corners, in logical pixels.
+    ///
+    /// Only honoured for a window with no decorations: a framed one already
+    /// has the platform's corners, and rounding the content inside them
+    /// leaves a notch where the two shapes disagree.
+    #[serde(default)]
+    pub border_radius: Option<BorderRadius>,
     /// Whether the platform draws the window buttons, or the application does.
     ///
     /// macOS keeps its traffic lights when the title bar is hidden, and they
@@ -225,6 +233,72 @@ pub enum TitleBarButtons {
     /// None: the application draws them, and `insetLeft` is zero so it knows
     /// to.
     Hidden,
+}
+
+/// How much of a window's corners to round.
+///
+/// A number rounds all four; naming corners gives each its own radius and
+/// leaves the rest square.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(untagged)]
+pub enum BorderRadius {
+    All(f64),
+    Corners(Corners),
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Corners {
+    pub top_left: Option<f64>,
+    pub top_right: Option<f64>,
+    pub bottom_left: Option<f64>,
+    pub bottom_right: Option<f64>,
+}
+
+/// The four radii, in logical pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Radii {
+    pub top_left: f64,
+    pub top_right: f64,
+    pub bottom_left: f64,
+    pub bottom_right: f64,
+}
+
+impl Radii {
+    /// Whether one `cornerRadius` can draw this, or it needs a shape.
+    pub fn uniform(self) -> Option<f64> {
+        (self.top_left == self.top_right
+            && self.top_left == self.bottom_left
+            && self.top_left == self.bottom_right)
+            .then_some(self.top_left)
+    }
+}
+
+impl BorderRadius {
+    /// The four radii, or `None` when nothing would be rounded.
+    pub fn radii(self) -> Option<Radii> {
+        let radii = match self {
+            Self::All(radius) => Radii {
+                top_left: radius,
+                top_right: radius,
+                bottom_left: radius,
+                bottom_right: radius,
+            },
+            Self::Corners(corners) => Radii {
+                top_left: corners.top_left.unwrap_or(0.0),
+                top_right: corners.top_right.unwrap_or(0.0),
+                bottom_left: corners.bottom_left.unwrap_or(0.0),
+                bottom_right: corners.bottom_right.unwrap_or(0.0),
+            },
+        };
+
+        let rounded = radii.top_left > 0.0
+            || radii.top_right > 0.0
+            || radii.bottom_left > 0.0
+            || radii.bottom_right > 0.0;
+
+        rounded.then_some(radii)
+    }
 }
 
 /// A position in logical pixels, for nudging the traffic lights.
@@ -372,6 +446,73 @@ mod tests {
         .expect("a minimal config should load");
         assert!(config.show_in_dock);
         assert!(config.quit_on_last_window_closed);
+    }
+
+    #[test]
+    fn naming_corners_gives_each_its_own_radius() {
+        let all = BorderRadius::All(10.0).radii().expect("a radius rounds");
+        assert_eq!(all.uniform(), Some(10.0), "one value on all four corners");
+
+        // A radius of zero rounds nothing, rather than rounding by zero.
+        assert!(BorderRadius::All(0.0).radii().is_none());
+        assert!(
+            BorderRadius::Corners(Corners::default()).radii().is_none(),
+            "no corner named is no rounding"
+        );
+
+        let top = BorderRadius::Corners(Corners {
+            top_left: Some(8.0),
+            top_right: Some(8.0),
+            ..Corners::default()
+        })
+        .radii()
+        .expect("naming two corners rounds");
+        assert_eq!(top.top_left, 8.0);
+        assert_eq!(top.top_right, 8.0);
+        assert_eq!(top.bottom_left, 0.0, "anything left out is square");
+        assert_eq!(top.bottom_right, 0.0);
+        assert_eq!(
+            top.uniform(),
+            None,
+            "square corners need a shape, not a radius"
+        );
+
+        let mixed = BorderRadius::Corners(Corners {
+            top_left: Some(20.0),
+            top_right: Some(4.0),
+            bottom_left: Some(12.0),
+            bottom_right: Some(0.0),
+        })
+        .radii()
+        .expect("four different radii round");
+        assert_eq!(mixed.top_left, 20.0);
+        assert_eq!(mixed.top_right, 4.0);
+        assert_eq!(mixed.bottom_left, 12.0);
+        assert_eq!(mixed.uniform(), None);
+    }
+
+    #[test]
+    fn a_window_has_the_platforms_corners_unless_it_names_a_radius() {
+        let config: Config = serde_json::from_value(serde_json::json!({
+            "app": { "name": "A", "identifier": "dev.test.a" },
+            "window": {},
+        }))
+        .expect("a minimal config should load");
+        assert!(config.window.border_radius.is_none());
+
+        let config: Config = serde_json::from_value(serde_json::json!({
+            "app": { "name": "A", "identifier": "dev.test.a" },
+            "window": { "decorations": false, "borderRadius": 12 },
+        }))
+        .expect("a window naming a radius should load");
+        assert_eq!(
+            config
+                .window
+                .border_radius
+                .and_then(BorderRadius::radii)
+                .and_then(Radii::uniform),
+            Some(12.0),
+        );
     }
 
     #[test]
