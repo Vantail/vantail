@@ -10,8 +10,8 @@ export default defineConfig({
 
   /**
    * The window the application opens with is the splash, not the application.
-   * `src/splash.ts` opens the real one and then closes this - in that order,
-   * because closing the last window quits.
+   * `src/SplashScreen.tsx` opens the real one and then closes this - in that
+   * order, because closing the last window quits.
    */
   window: {
     title: "Starting",
@@ -26,7 +26,7 @@ export default defineConfig({
 
     // Its own shape. Square at the top right, gently rounded on the other two,
     // and a deeper curve at the bottom left. The runtime clips the page to it,
-    // so `src/splash.css` sets no `border-radius` of its own.
+    // so nothing in `src/index.css` sets a `border-radius` of its own.
     borderRadius: {
       topLeft: 15,
       topRight: 0,
@@ -41,4 +41,10 @@ export default defineConfig({
 
   // Nothing to grant: the application opens a window and closes one, and both
   // are its own.
+  //
+  // Note what is *not* here: `titleBarStyle`, `titleBarHeight` and the
+  // application window's `backgroundColor`. A window made at runtime starts
+  // from the defaults rather than from this block, so everything the
+  // application window needs is asked for where it is created - see
+  // `handOver` in `src/SplashScreen.tsx`.
 });

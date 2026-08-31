@@ -17,7 +17,8 @@ Notable changes per release.
   maximised.
 
 - A `splash` example: a frameless window with its own corner radii that hands
-  over to the application window.
+  over to an application window drawing its own title bar. React, Tailwind v4
+  and shadcn/ui.
 
 ### Changed
 
@@ -30,6 +31,12 @@ Notable changes per release.
   keeps the platform animation. macOS only.
 
 ### Fixed
+
+- **`createWindow` would not type-check a `backgroundColor`.** The runtime has
+  always read it from the options a window is created with, and the docs have
+  always said the options are the `window` block from the config, but
+  `WindowOptions` was missing the field - so the one window that most needs it,
+  a runtime-created one with a dark page, could not ask for it without a cast.
 
 - **Windows: a window with a menu grew every time it was maximised and
   restored** - 20px of height per size limit put back, so 80px a cycle. The

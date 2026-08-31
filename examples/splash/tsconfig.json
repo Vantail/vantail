@@ -4,12 +4,20 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "jsx": "react-jsx",
     "strict": true,
     "noUnusedLocals": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "verbatimModuleSyntax": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+
+    // The alias shadcn generates its imports against. Vite has to be told the
+    // same thing separately - see `vite.config.ts` - because this file only
+    // teaches the type checker where `@/components/ui/button` lives, and the
+    // bundler still has to resolve it for real.
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": ["src", "vantail.config.ts", "vite.config.ts"]
 }

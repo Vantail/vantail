@@ -549,7 +549,7 @@ And seven built around a particular shape of window:
 | [tabs](examples/tabs)                   | React           | Tabs drawn in the title bar, Chrome-style                          |
 | [workspace](examples/workspace)         | React           | A two-row bar - a dark command bar with a tab strip under it, after the Windows shape |
 | [player](examples/player)               | React           | A tall media bar with transport controls                           |
-| [splash](examples/splash)               | none            | A frameless splash with its own corner radii, handing over to the app window |
+| [splash](examples/splash)               | React, shadcn/ui | A frameless splash with its own corner radii, handing over to an app window that draws its own title bar |
 | [chat](examples/chat)                   | Bun, Hono, htmx | Server-rendered, with the server shipped as a compiled sidecar     |
 
 Run one against a local build with `vantail dev` - or `pnpm dev` in the

@@ -11,11 +11,24 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@vantail/api": "workspace:^"
+    "@radix-ui/react-progress": "^1.1.16",
+    "@radix-ui/react-slot": "^1.3.3",
+    "@vantail/api": "workspace:^",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.38.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
     "@vantail/cli": "workspace:^",
     "@vantail/vite": "workspace:^",
+    "@vitejs/plugin-react": "^6.0.0",
+    "tailwindcss": "^4.3.3",
     "typescript": "^7.0.0",
     "vite": "^8.0.0"
   }

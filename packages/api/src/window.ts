@@ -83,6 +83,18 @@ export interface WindowOptions {
    * reserved needs no new branch.
    */
   titleBarButtons?: TitleBarButtons;
+  /**
+   * What the window is painted before its page has painted anything.
+   *
+   * `#rgb`, `#rrggbb` or `#rrggbbaa`. It is also the colour under the strip a
+   * live resize opens up while the web view catches up, so a window whose page
+   * is dark and whose background is not shows a pale band down one side for as
+   * long as the drag lasts.
+   *
+   * Ignored on a transparent window, where a colour behind it is not a
+   * background but the end of the effect.
+   */
+  backgroundColor?: string;
   transparent?: boolean;
   alwaysOnTop?: boolean;
   center?: boolean;

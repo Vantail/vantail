@@ -1,0 +1,144 @@
+/*
+ * The one stylesheet, loaded by both windows.
+ *
+ * Tailwind v4 takes its configuration from CSS rather than from a
+ * `tailwind.config.js`, so this file is the whole of it: `@theme inline` is
+ * what turns the variables below into utilities, which is how `bg-background`
+ * and `text-muted-foreground` exist at all.
+ *
+ * The palette is shadcn's neutral one, unchanged, plus one token of this
+ * application's own - see `--brand`. Keeping the rest stock is the point:
+ * anything pasted in from the shadcn registry lands in a project it already
+ * understands.
+ */
+
+@import "tailwindcss";
+
+/*
+ * shadcn's components are written against a `dark:` variant that keys off a
+ * class rather than the media query, because the class is the only version an
+ * application can override. `src/theme.ts` puts that class on, and follows the
+ * system unless the window asks it not to.
+ */
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.625rem;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+
+  /*
+   * The orange the splash is painted in, and the only colour this example
+   * adds to the stock palette. It is also the window's `backgroundColor` in
+   * `vantail.config.ts` - the two are the same paint, one applied by the
+   * runtime before the page exists and one by the page afterwards, and they
+   * have to match or the window flashes as the second replaces the first.
+   */
+  --brand: oklch(0.68 0.19 43);
+  --brand-foreground: oklch(1 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.269 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.371 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    margin: 0;
+
+    /*
+     * The window is the viewport. Chrome an application draws itself - a title
+     * bar, a splash - does not scroll away from the top of the window, so the
+     * scrolling happens inside one region further in and never here.
+     */
+    overflow: hidden;
+
+    /*
+     * Nothing up here is a document to be selected from, and a selection
+     * dragged out of a title bar is the tell of a bar that is only a picture
+     * of one. The app's content area opts back in with `select-text`.
+     */
+    user-select: none;
+    -webkit-user-select: none;
+  }
+}
+
+/*
+ * Neither window sets a `border-radius`. The splash has its corners from
+ * `window.borderRadius` in `vantail.config.ts`, and the runtime clips the page
+ * to that shape - a radius here as well would be a second, slightly different
+ * curve drawn just inside the real one.
+ */
