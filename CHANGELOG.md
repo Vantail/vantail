@@ -36,8 +36,8 @@ Everything since v0.1.17.
 ### Changed
 
 - Examples no longer wire up their own window dragging.
-- The `showcase` and `vanilla` examples set `window.scroll: true`, being pages
-  rather than fixed frames.
+- The `showcase` and `vanilla` examples, and the `npm create @vantail`
+  templates, set `window.scroll: true`, being pages rather than fixed frames.
 
 ---
 

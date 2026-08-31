@@ -10,6 +10,12 @@ export default defineConfig({
   },
 
   window: {
+    // This starter is a page: it shows a file's contents, which can be
+    // longer than the window. A Vantail window is a fixed frame by default -
+    // it does not scroll - so it says otherwise. Delete this once the layout
+    // is panes that scroll on their own.
+    scroll: true,
+
     title: "__APP_NAME__",
     width: 900,
     height: 640,

@@ -455,7 +455,7 @@ moves instead of the thing being clicked.
 
 Calling `preventDefault()` on the `pointerdown` also keeps the runtime out of
 the way, which is how you take over a region yourself - see
-{@link appWindow.startDragging} for when that is worth doing.
+`appWindow.startDragging()` is for when that is worth doing.
 
 `-webkit-app-region: drag` is a Chromium extension. It does nothing in a
 WKWebView, so a CSS property would work on two platforms out of three, which

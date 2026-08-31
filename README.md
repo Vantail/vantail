@@ -214,6 +214,33 @@ straight to `execve` as a vector - there is never a command string for
 something else to re-parse, so shell injection is not mitigated here, it is
 absent. Each rule pins the program and, if you want, every argument position.
 
+## The window is a frame, not a page
+
+Two defaults follow from that, and neither needs any code.
+
+**It does not scroll.** The document stays put, does not rubber-band at its
+edges, and has no scrollbars. What scrolls is the panes inside it, on their
+own `overflow`. A window that really is a document says so:
+
+```ts
+// vantail.config.ts
+window: { scroll: true },
+```
+
+**A hidden title bar still drags.** `titleBarStyle: "hidden"` lets the page run
+to the top edge, and the runtime moves the window from the band that bar left
+behind - a double click there maximises it, and controls in it are skipped.
+
+Three attributes adjust both:
+
+| Attribute                | Effect                                          |
+| ------------------------ | ----------------------------------------------- |
+| `data-vantail-drag`      | This subtree moves the window                    |
+| `data-vantail-no-drag`   | This subtree does not                            |
+| `data-vantail-scrollbar` | This subtree keeps its scrollbars                |
+
+[docs/api.md](docs/api.md) has the rest.
+
 ## More than one window
 
 Windows are named by a **label**. `main` is the one the config opens; the rest

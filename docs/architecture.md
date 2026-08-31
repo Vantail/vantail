@@ -55,14 +55,28 @@ await filesystem.readText("/Users/jeroen/notes.txt");
 
 ## The bridge
 
-The injected script knows nothing about methods, promises or errors. It is a
-pipe with three operations: `postMessage`, `subscribe`, and `_dispatch`. All
-the ergonomics live in `@vantail/api`, so new methods and event types arrive
-with an SDK update alone.
+For the SDK the injected script is a pipe with three operations:
+`postMessage`, `subscribe`, and `_dispatch`. It knows nothing about methods,
+promises or errors - all the ergonomics live in `@vantail/api`, so new methods
+and event types arrive with an SDK update alone.
 
 The SDK can therefore load _late_. Anything the runtime dispatches before
 `@vantail/api` subscribes is held in a backlog and delivered on subscription,
 so a call made during module evaluation cannot lose its response.
+
+It also does the few things a page should not have to write for itself, all of
+them before the first paint:
+
+- sets the title bar metrics as CSS variables on `:root`;
+- injects the stylesheet that makes a window a fixed frame rather than a page,
+  unless `window.scroll` says otherwise;
+- moves the window when the title bar band is dragged, and maximises it on a
+  double click there.
+
+That last one means the bridge makes calls of its own. They go out through the
+same `postMessage` with ids it recognises, and their replies are dropped rather
+than pushed into the backlog - a page that never loads the SDK would otherwise
+accumulate them for the life of the window.
 
 ## Windows
 
