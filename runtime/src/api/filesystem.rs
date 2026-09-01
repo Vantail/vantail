@@ -350,7 +350,9 @@ mod tests {
     //! demands, which is the part a reader cannot verify by looking.
 
     use super::*;
-    use crate::permissions::{FilesystemConfig, PathScopeConfig, PermissionsConfig, RawPath, Vars};
+    use crate::permissions::{
+        normalize, FilesystemConfig, PathScopeConfig, PermissionsConfig, RawPath, Vars,
+    };
 
     fn permissions(read: Vec<String>, write: Vec<String>) -> Permissions {
         let vars = Vars::resolve("dev.vantail.test", Path::new("/tmp"));
@@ -368,8 +370,16 @@ mod tests {
         .expect("permissions compile")
     }
 
+    /// A base directory in the same form `check_path` will produce.
+    ///
+    /// Through `normalize` rather than `canonicalize`, because the scope
+    /// patterns below are built from this string and then compared against
+    /// whatever `check_path` returns. On Windows `canonicalize` alone returns
+    /// a verbatim `\\?\C:\...` path, and a pattern built from that matches
+    /// nothing `normalize` ever produces - which is exactly how these tests
+    /// first failed on Windows while passing everywhere else.
     fn temp_dir() -> PathBuf {
-        std::fs::canonicalize(std::env::temp_dir()).unwrap_or_else(|_| std::env::temp_dir())
+        normalize(&std::env::temp_dir()).expect("the temp directory normalises")
     }
 
     #[test]
