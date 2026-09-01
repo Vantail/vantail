@@ -246,7 +246,6 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
     match method {
         "window.create" => return create(ctx, params),
         "window.list" => return Ok(json!(ctx.windows.labels())),
-        "window.current" => return Ok(json!(ctx.source)),
         "window.exists" => {
             let target: Target = serde_json::from_value(params).unwrap_or_default();
             let label = target.label.unwrap_or_else(|| ctx.source.to_string());
