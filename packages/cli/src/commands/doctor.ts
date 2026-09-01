@@ -8,9 +8,12 @@
 import { spawn } from "node:child_process";
 
 import {
+  isSupportedPlatform,
   resolveRuntimeBinary,
   RuntimeNotFoundError,
   type RuntimeVariant,
+  supportedPlatformNames,
+  UnsupportedPlatformError,
 } from "@vantail/runtime";
 import { findConfigFile, loadConfig } from "@vantail/shared/load";
 
@@ -155,12 +158,29 @@ async function runtimeCheck(
       hint:
         error instanceof RuntimeNotFoundError
           ? `npm install --save-optional ${error.packageName}`
-          : String(error),
+          : error instanceof UnsupportedPlatformError
+            ? // The platform row below says which ones there are.
+              `nothing is published for ${error.platform}-${error.arch}`
+            : String(error),
     });
   }
 }
 
 function platformCheck(): Check {
+  const here = `${process.platform}-${process.arch}`;
+
+  // The row somebody reads first when nothing works, so it should be the one
+  // that says the machine is out of scope rather than reporting ok and
+  // leaving the runtime row to fail for a reason that sounds fixable.
+  if (!isSupportedPlatform()) {
+    return {
+      name: "platform",
+      ok: false,
+      detail: `${here} - no runtime is published for it`,
+      hint: `published: ${supportedPlatformNames().join(", ")}`,
+    };
+  }
+
   // Linux is exercised now - the suite runs there in a container, on X11.
   // Wayland runs but has a known protocol error under load; see the README.
   const hint =
@@ -171,7 +191,7 @@ function platformCheck(): Check {
   return {
     name: "platform",
     ok: true,
-    detail: `${process.platform}-${process.arch}`,
+    detail: here,
     ...(hint ? { hint } : {}),
   };
 }

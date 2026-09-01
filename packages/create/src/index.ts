@@ -12,6 +12,8 @@ import { createInterface } from "node:readline/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { isSupportedPlatform, supportedPlatformNames } from "@vantail/runtime";
+
 import { suggestIdentifier, toPackageName } from "./naming.js";
 
 const TEMPLATES = [
@@ -30,6 +32,8 @@ const templatesRoot = resolve(
 );
 
 async function main(): Promise<number> {
+  if (!supportedHere()) return 1;
+
   const argv = process.argv.slice(2);
   const flags = new Map<string, string>();
   const positional: string[] = [];
@@ -103,6 +107,32 @@ Created ${name} in ${directory}
   } finally {
     rl?.close();
   }
+}
+
+/**
+ * Whether this machine can run what we are about to write.
+ *
+ * Checked before anything is created rather than left to `npm install`: the
+ * optional dependency that would fail is named after a package that does not
+ * exist, so the error there is a 404 next to a project directory, which reads
+ * like the tool is broken rather than like the platform is out of scope.
+ */
+function supportedHere(): boolean {
+  // Same rule as the runtime resolver: an explicit binary is somebody saying
+  // they have built this themselves, and that answer is theirs to give.
+  if (process.env["VANTAIL_RUNTIME_BIN"]) return true;
+  if (isSupportedPlatform()) return true;
+
+  console.error(
+    `Vantail publishes no runtime for ${process.platform}-${process.arch}.\n\n` +
+      `Published platforms:\n` +
+      supportedPlatformNames()
+        .map((name) => `  ${name}`)
+        .join("\n") +
+      `\n\nNothing was created. If you have built the runtime yourself, set ` +
+      `$VANTAIL_RUNTIME_BIN and run this again.`,
+  );
+  return false;
 }
 
 interface ScaffoldInput {

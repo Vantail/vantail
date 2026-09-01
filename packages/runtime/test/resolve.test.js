@@ -8,14 +8,19 @@
 
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import { readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
 import {
+  isSupportedPlatform,
   resolveRuntimeBinary,
   runtimeBinaryName,
   runtimePackageName,
+  supportedPlatformNames,
+  supportedTargets,
+  UnsupportedPlatformError,
 } from "../dist/index.js";
 
 const scratch = [];
@@ -167,5 +172,101 @@ describe("runtime variants", () => {
     });
     assert.equal(resolved.source, "workspace");
     assert.equal(resolved.profile, "release");
+  });
+});
+
+/**
+ * Refusing a platform by name.
+ *
+ * `runtimePackageName` will happily build `@vantail/runtime-freebsd-x64`,
+ * because it is string concatenation. Nothing publishes that package, so the
+ * install command the old error printed returned a 404 - a confidently wrong
+ * answer, which is worse than no answer. These drive the resolver with
+ * injected values, so none of it needs the hardware.
+ */
+describe("unsupported platforms", () => {
+  before(() => {
+    // An override short-circuits the check on purpose, so it has to be gone.
+    delete process.env.VANTAIL_RUNTIME_BIN;
+  });
+
+  it("refuses an Intel Mac rather than naming a package that does not exist", () => {
+    assert.throws(
+      () => resolveRuntimeBinary({ platform: "darwin", arch: "x64" }),
+      (error) => {
+        assert.ok(
+          error instanceof UnsupportedPlatformError,
+          `threw ${error.name}, not UnsupportedPlatformError`,
+        );
+        assert.match(error.message, /darwin-x64/);
+        return true;
+      },
+    );
+  });
+
+  it("refuses a platform nothing is built for at all", () => {
+    assert.throws(
+      () => resolveRuntimeBinary({ platform: "freebsd", arch: "x64" }),
+      UnsupportedPlatformError,
+    );
+  });
+
+  it("says which platforms do exist, so the message ends somewhere", () => {
+    // The failure this replaces was an install command that 404s. A refusal
+    // that does not say what would work is barely an improvement.
+    try {
+      resolveRuntimeBinary({ platform: "darwin", arch: "x64" });
+      assert.fail("resolved a platform that is not published");
+    } catch (error) {
+      assert.ok(error.supported.length > 0, "listed no supported platforms");
+      assert.match(error.message, /darwin-arm64/);
+      for (const name of error.supported) {
+        assert.match(error.message, new RegExp(name.replace(/[-]/g, "\\$&")));
+      }
+    }
+  });
+
+  it("takes the list from platforms.json rather than a copy of it", () => {
+    // The point of reading the file: publishing a new target is a row there
+    // and nothing else. A hand-written list here would pass while the real
+    // one drifted.
+    const platforms = JSON.parse(
+      readFileSync(new URL("../platforms.json", import.meta.url), "utf8"),
+    );
+
+    assert.deepEqual(
+      supportedPlatformNames(),
+      platforms.targets.map((target) => `${target.platform}-${target.arch}`),
+    );
+    assert.deepEqual(supportedTargets(), platforms.targets);
+  });
+
+  it("still resolves the platforms that are published", () => {
+    // The regression that would matter most: refusing everybody.
+    for (const target of supportedTargets()) {
+      assert.ok(
+        isSupportedPlatform(target.platform, target.arch),
+        `${target.platform}-${target.arch} is in platforms.json but rejected`,
+      );
+    }
+
+    // darwin-arm64 resolves as it did before, out of this checkout's own
+    // build rather than a package, which is what running here has always done.
+    const resolved = resolveRuntimeBinary({ platform: "darwin", arch: "arm64" });
+    assert.ok(resolved.path);
+  });
+
+  it("lets an explicit binary through on any platform", () => {
+    // Somebody who compiled the runtime for a platform we do not publish is
+    // not asking permission, and the resolver should not second-guess them.
+    const override = join(scratch[0] ?? tmpdir(), "vantail-runtime");
+    writeFileSync(override, "binary");
+    process.env.VANTAIL_RUNTIME_BIN = override;
+    try {
+      const resolved = resolveRuntimeBinary({ platform: "freebsd", arch: "x64" });
+      assert.equal(resolved.source, "env");
+    } finally {
+      delete process.env.VANTAIL_RUNTIME_BIN;
+    }
   });
 });

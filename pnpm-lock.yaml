@@ -365,6 +365,10 @@ importers:
         version: 8.2.2(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)
 
   packages/create:
+    dependencies:
+      '@vantail/runtime':
+        specifier: workspace:^
+        version: link:../runtime
     devDependencies:
       '@vantail/shared':
         specifier: workspace:^

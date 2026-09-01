@@ -14,10 +14,14 @@
  *    the crypto it carries costs about 3 MB.
  * 3. A `cargo build` inside this repository - how Vantail's own examples run
  *    before anything is published.
+ *
+ * Step 2 is only attempted for a platform `platforms.json` says is published.
+ * Naming a package that was never built produces an install command that 404s,
+ * which is a worse answer than saying the platform is out of scope.
  */
 
 import { createRequire } from "node:module";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -67,6 +71,78 @@ export interface ResolveOptions {
   prefer?: "newest" | "release";
 }
 
+/** One target the release pipeline publishes a runtime for. */
+export interface SupportedTarget {
+  /** The npm package carrying the default build for this target. */
+  package: string;
+  platform: NodeJS.Platform;
+  arch: string;
+  /** The Rust target triple it is compiled from. */
+  rust: string;
+  /** 1 is exercised on every change, 2 is built and smoke tested. */
+  tier: number;
+}
+
+let targets: SupportedTarget[] | undefined;
+
+/**
+ * The targets a runtime is published for.
+ *
+ * Read from `platforms.json` rather than written out here. That file is what
+ * the release pipeline builds from, and it ships inside this package, so the
+ * list an installed copy reports is the list that was actually published.
+ * Adding a platform stays one row there instead of an edit in four places.
+ */
+export function supportedTargets(): SupportedTarget[] {
+  if (!targets) {
+    const path = join(dirname(fileURLToPath(import.meta.url)), "..", "platforms.json");
+    ({ targets } = JSON.parse(readFileSync(path, "utf8")) as { targets: SupportedTarget[] });
+  }
+  return targets;
+}
+
+/** Every published target as `platform-arch`, for saying so in a message. */
+export function supportedPlatformNames(): string[] {
+  return supportedTargets().map((target) => `${target.platform}-${target.arch}`);
+}
+
+export function isSupportedPlatform(
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+): boolean {
+  return supportedTargets().some(
+    (target) => target.platform === platform && target.arch === arch,
+  );
+}
+
+/**
+ * Asked for a platform no runtime is published for.
+ *
+ * Distinct from `RuntimeNotFoundError` because the answer is different. Not
+ * found means supported but not installed here, and `npm install` fixes it.
+ * This means there is nothing to install, and an install command would 404 -
+ * which is what this package used to tell people on an Intel Mac.
+ */
+export class UnsupportedPlatformError extends Error {
+  readonly platform: string;
+  readonly arch: string;
+  /** Every `platform-arch` there is a published runtime for. */
+  readonly supported: string[];
+
+  constructor(platform: string, arch: string, supported: string[]) {
+    super(
+      `Vantail publishes no runtime for ${platform}-${arch}.\n\n` +
+        `Published platforms:\n${supported.map((name) => `  ${name}`).join("\n")}\n\n` +
+        `If you have built the runtime yourself, point at it:\n` +
+        `  export VANTAIL_RUNTIME_BIN=/path/to/vantail-runtime`,
+    );
+    this.name = "UnsupportedPlatformError";
+    this.platform = platform;
+    this.arch = arch;
+    this.supported = supported;
+  }
+}
+
 export class RuntimeNotFoundError extends Error {
   readonly packageName: string;
 
@@ -108,6 +184,13 @@ export function resolveRuntimeBinary(options: ResolveOptions = {}): RuntimeResol
     const path = resolvePath(override);
     if (isExecutable(path)) return { path, source: "env" };
     tried.push(`${path} (from $VANTAIL_RUNTIME_BIN)`);
+  }
+
+  // Deliberately after the override: somebody who has pointed at their own
+  // build has already answered this question, and on a platform nothing is
+  // published for that is the only answer there is.
+  if (!isSupportedPlatform(platform, arch)) {
+    throw new UnsupportedPlatformError(platform, arch, supportedPlatformNames());
   }
 
   const fromPackage = fromInstalledPackage(packageName, platform, cwd, tried);
