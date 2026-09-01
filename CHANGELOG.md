@@ -4,6 +4,64 @@ Notable changes per release.
 
 ## Unreleased
 
+## 0.1.21
+
+### Added
+
+- **Unsupported platforms are refused by name.** Vantail publishes a runtime
+  for five targets, and `darwin-x64` is not one of them - so an Intel Mac
+  cannot run a Vantail application. Until now it was told to
+  `npm install @vantail/runtime-darwin-x64`, which 404s, because the package
+  name was built by string concatenation and never checked against anything.
+
+  `vantail doctor` now fails its platform check by name and lists the targets
+  that exist, `npm create @vantail` refuses before writing a project rather
+  than leaving one that cannot install, and `@vantail/runtime` throws
+  `UnsupportedPlatformError` - distinct from `RuntimeNotFoundError`, because
+  "there is nothing to install" and "it is not installed here" deserve
+  different answers. Setting `$VANTAIL_RUNTIME_BIN` still works everywhere:
+  someone who compiled the runtime themselves has already answered the
+  question.
+
+  The list comes from `platforms.json`, which ships inside `@vantail/runtime`
+  and is what the release pipeline builds from, so it cannot drift from what
+  was published. `supportedTargets()`, `supportedPlatformNames()` and
+  `isSupportedPlatform()` are exported if an application wants to ask.
+
+- **A scaffolded project ships a release workflow.** `npm create @vantail`
+  writes `.github/workflows/release.yml`, which builds a `.dmg`, `.msi` and
+  `.deb` on their own runners from one tag and attaches them to a draft
+  release. There is no cross-compilation - each installer needs tooling that
+  only exists on its own platform - so this is the part everyone was
+  otherwise writing from scratch.
+
+- [docs/distribution.md](docs/distribution.md): shipping one application to
+  macOS, Windows and Linux, which platforms exist and at what tier, and what
+  signing needs on each.
+
+### Changed
+
+- A path from JavaScript is now a distinct type inside the runtime, and only
+  the permission check can turn one into a path the filesystem will accept.
+  Nothing an application can see has changed. The filesystem sandbox rests on
+  the handler using the checked path rather than the raw string, and until now
+  that was a convention held up by review: a handler written later could have
+  read the raw string, compiled, passed every test, and quietly escaped the
+  scope. It no longer compiles.
+
+- `@vantail/create` now depends on `@vantail/runtime`, so it can read the
+  published platform list rather than carry a copy that would go stale.
+
+### Removed
+
+- The `window.current` IPC method. It returned the calling window's label and
+  had no SDK wrapper, no documentation and no caller - the label has always
+  reached the page another way, which is what `currentWindow()` reads. Only an
+  application calling `invoke("window.current")` by hand is affected; use
+  `currentWindow()`, which needs no permission and no round trip.
+
+## 0.1.20
+
 ### Added
 
 - `window.borderRadius` rounds a frameless window's corners and clips the page
