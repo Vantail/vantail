@@ -2,6 +2,9 @@
 name = "vantail-runtime"
 version.workspace = true
 edition.workspace = true
+# Inherited explicitly: a `[workspace.package]` key is a template, and a member
+# that does not opt in simply has no MSRV, so cargo enforces nothing.
+rust-version.workspace = true
 license.workspace = true
 description = "The Vantail native runtime: a thin native layer for JavaScript applications."
 

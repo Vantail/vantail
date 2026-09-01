@@ -2,6 +2,12 @@
 
 ## Getting set up
 
+Node 20.19 or newer, pnpm, and Rust 1.94. The Rust version is pinned in
+[`rust-toolchain.toml`](rust-toolchain.toml), so `rustup` installs and selects
+it for you the first time you build here - there is nothing to choose. A cargo
+that does not come from rustup ignores that file, so check `cargo --version`
+if a build behaves unlike CI.
+
 ```bash
 pnpm install
 pnpm build            # the TypeScript packages
@@ -91,6 +97,17 @@ installable without waiting for a release.
 
 Move the `Unreleased` entries in [CHANGELOG.md](CHANGELOG.md) under the new
 version number first.
+
+Then decide about Rust. The toolchain in
+[`rust-toolchain.toml`](rust-toolchain.toml) is bumped by hand, here, as a
+release step - not on a schedule and not automatically. Take the current
+stable, run `cargo fmt --all --check` and
+`cargo clippy --all-targets --all-features -- --deny warnings` against it, and
+move the pin only if both are clean. If clippy has added a lint that fires,
+that is a change to make on its own branch rather than inside a release. Move
+`rust-version` in [Cargo.toml](Cargo.toml) with it only when the code actually
+needs the newer compiler; it is what applications are promised, so it should
+move less often than the pin.
 
 ```bash
 node scripts/version.mjs patch

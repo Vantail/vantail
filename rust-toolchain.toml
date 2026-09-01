@@ -1,0 +1,14 @@
+# The Rust this project builds with, pinned so it does not move on its own.
+#
+# CI lints with `--deny warnings`, and clippy adds lints in most releases. On a
+# floating `stable` the first run after a Rust release goes red on whichever
+# pull request happens to be open, and its author gets a failure that has
+# nothing to do with their change. `release.yml` has the larger version of the
+# same problem: the five native binaries users download would be built by a
+# toolchain nobody chose.
+#
+# Bumping this is a deliberate step in a release, not something that happens
+# while nobody is looking. See CONTRIBUTING.md.
+[toolchain]
+channel = "1.94"
+components = ["rustfmt", "clippy"]
