@@ -3,7 +3,7 @@ resolver = "2"
 members = ["runtime"]
 
 [workspace.package]
-version = "0.1.20"
+version = "0.1.21"
 edition = "2021"
 # The oldest Rust this builds on. A separate statement from the toolchain
 # pinned in rust-toolchain.toml: that one says what CI and contributors build
