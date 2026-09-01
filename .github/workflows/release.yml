@@ -48,13 +48,13 @@ jobs:
       ready: ${{ steps.decide.outputs.ready }}
       build_runtimes: ${{ steps.decide.outputs.build_runtimes }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           # The last release tag is what a dev build takes its binaries from,
           # and a shallow clone has no tags.
           fetch-depth: 0
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           # pnpm is not installed in this job, and nothing here needs it.
@@ -212,7 +212,7 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             runner: ubuntu-22.04-arm
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install Linux webview dependencies
         if: runner.os == 'Linux'
@@ -283,7 +283,7 @@ jobs:
           cp target/${{ matrix.target }}/release/vantail-runtime* \
              "dist-runtime/${{ matrix.target }}$SUFFIX/"
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ARTIFACT }}
           path: dist-runtime/${{ env.ARTIFACT }}
@@ -312,10 +312,10 @@ jobs:
       # fails at the last step, after the five native builds have already run.
       id-token: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v5
-      - uses: actions/setup-node@v5
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -358,7 +358,7 @@ jobs:
       # Every artifact lands in dist-runtime/<target>/, which is the layout
       # the packaging script expects. Nothing to download when the native
       # builds were skipped.
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         if: needs.plan.outputs.build_runtimes == 'true'
         with:
           path: dist-runtime
