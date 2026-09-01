@@ -8,6 +8,28 @@ vantail package               # a native bundle
 vantail package --installer   # and an installer around it
 ```
 
+## Where an application can run
+
+The runtime is published for five targets, and an application runs where there
+is a runtime:
+
+| Target         | Tier | |
+| -------------- | ---- | --- |
+| `darwin-arm64` | 1    | Apple Silicon. **No Intel Mac build is published.** |
+| `win32-x64`    | 1    | |
+| `win32-arm64`  | 2    | |
+| `linux-x64`    | 2    | |
+| `linux-arm64`  | 2    | |
+
+Tier 1 is exercised on every change; tier 2 is built and smoke tested. The list
+lives in [`packages/runtime/platforms.json`](../packages/runtime/platforms.json),
+which the release pipeline builds from, so adding a platform is a row there
+rather than an edit in several places.
+
+`vantail doctor` fails its platform check by name on anything not in that list,
+and `npm create @vantail` refuses rather than scaffolding a project that cannot
+run.
+
 ## How the binary is found
 
 [`@vantail/runtime`](../packages/runtime) resolves in this order:
@@ -56,7 +78,9 @@ vantail package --installer
 | Linux    | `.deb` | Written directly - `ar` plus two tarballs, no `dpkg-deb` needed |
 
 Each is built on its own platform, because the bundle it wraps can only be
-produced there anyway.
+produced there anyway. Shipping all three from one tag is
+[docs/distribution.md](distribution.md); a scaffolded project already has the
+workflow that does it.
 
 The `.deb` is assembled by hand rather than shelled out to `dpkg-deb` so that
 a Linux package can be cut from any machine. It installs into

@@ -132,3 +132,42 @@ describe("the api readme keeps up with the api", () => {
     );
   });
 });
+
+describe("the api reference keeps up with the api", () => {
+  /**
+   * The docs compress siblings into one row: `onWindowCreated/Ready/Closed`
+   * documents three functions. Expand those before looking, or the check
+   * reports drift that is not there - which is exactly what a first draft of
+   * this test did.
+   */
+  function expandSiblings(markdown) {
+    return markdown.replace(
+      /\b([A-Za-z]+)([A-Z][A-Za-z]*)((?:\/[A-Z][A-Za-z]*)+)/g,
+      (_, stem, first, rest) =>
+        [stem + first, ...rest.slice(1).split("/").map((part) => stem + part)].join(" "),
+    );
+  }
+
+  it("names every value `@vantail/api` exports", async () => {
+    // `packages/api/README.md` is already checked above. This is the other
+    // half: docs/api.md is where the README sends people for the detail, and
+    // nothing until now noticed when something shipped without arriving here.
+    const doc = expandSiblings(await readFile(join(root, "docs/api.md"), "utf8"));
+
+    // Documented as behaviour rather than by name: the error codes have their
+    // own table and every example matches on the string, so an application
+    // never writes `ErrorCode` even though the package exports it.
+    const byBehaviour = new Set(["ErrorCode"]);
+
+    const missing = (await publicApi())
+      .filter((name) => !byBehaviour.has(name))
+      .filter((name) => !new RegExp(`\\b${name}\\b`).test(doc));
+
+    assert.deepEqual(
+      missing,
+      [],
+      `docs/api.md does not mention: ${missing.join(", ")}.\n` +
+        "Document it, or add it to `byBehaviour` if it is covered another way.",
+    );
+  });
+});

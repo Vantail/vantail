@@ -148,10 +148,16 @@ async function scaffold(input: ScaffoldInput): Promise<void> {
   });
 
   // npm refuses to publish a file called `.gitignore`, so templates ship it
-  // under a placeholder name.
-  const placeholder = join(input.target, "_gitignore");
-  if (existsSync(placeholder)) {
-    await rename(placeholder, join(input.target, ".gitignore"));
+  // under a placeholder name. `_github` rides along for the same reason: it
+  // is not worth finding out per-file which dot-entries survive a publish.
+  for (const { shipped, wanted } of [
+    { shipped: "_gitignore", wanted: ".gitignore" },
+    { shipped: "_github", wanted: ".github" },
+  ]) {
+    const placeholder = join(input.target, shipped);
+    if (existsSync(placeholder)) {
+      await rename(placeholder, join(input.target, wanted));
+    }
   }
 
   await substitute(join(input.target, "package.json"), input);

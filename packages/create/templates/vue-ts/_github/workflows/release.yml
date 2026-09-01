@@ -1,0 +1,94 @@
+# Build installers for macOS, Windows and Linux, and attach them to a release.
+#
+# There is no cross-compilation: `vantail package` lays out a bundle for the
+# machine it runs on, because a .dmg needs macOS tooling and an .msi needs WiX
+# on Windows. So this is one job per operating system, and a fourth that
+# collects what they produced.
+#
+# Tag a version to run it:
+#
+#     git tag -a v0.1.0 -m "v0.1.0" && git push --follow-tags
+#
+# `git push --follow-tags` ignores lightweight tags, so the `-a` matters.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  # Run it by hand to check the build works before committing to a tag.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One platform failing should not throw away installers that built.
+      fail-fast: false
+      matrix:
+        include:
+          # macos-latest is Apple Silicon. Vantail publishes no Intel runtime,
+          # so there is no darwin-x64 build to make here.
+          - { os: macos-latest, name: macOS, artifact: "*.dmg" }
+          - { os: windows-latest, name: Windows, artifact: "*.msi" }
+          - { os: ubuntu-22.04, name: Linux, artifact: "*.deb" }
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # The webview is the OS's own, and on Linux that means WebKitGTK. macOS
+      # and Windows have theirs already.
+      - name: Install Linux webview dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libwebkit2gtk-4.1-0 \
+            libgtk-3-0 \
+            libayatana-appindicator3-1
+
+      # WiX builds the .msi. Without it `--installer` writes the .wxs and says
+      # so rather than failing, which would make this job pass with no
+      # installer in it.
+      - name: Install WiX
+        if: runner.os == 'Windows'
+        run: dotnet tool install --global wix
+
+      # `npm install` rather than `npm ci`: a freshly scaffolded project has no
+      # lockfile yet. Commit one and switch to `npm ci` for reproducible builds.
+      - run: npm install
+
+      # `vantail package` runs the web build itself first, so there is no
+      # separate build step. Artifacts land in `build/`, the default outDir.
+      - run: npx vantail package --installer
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: build/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  release:
+    name: Release
+    needs: build
+    runs-on: ubuntu-22.04
+    # Only a tag produces a release; a manual run just proves the build works.
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          draft: true
+          generate_release_notes: true

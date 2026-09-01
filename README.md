@@ -562,6 +562,8 @@ example's own directory, which is the same thing.
   JavaScript to the OS and back.
 - [docs/permissions.md](docs/permissions.md) - the permission model in full.
 - [docs/packaging.md](docs/packaging.md) - bundles, installers and signing.
+- [docs/distribution.md](docs/distribution.md) - shipping one application to
+  macOS, Windows and Linux from one tag, and which platforms exist.
 - [docs/updater.md](docs/updater.md) - signing keys, manifests, and what
   `install` actually does.
 - [SECURITY.md](SECURITY.md) - what counts as a vulnerability here, and how
