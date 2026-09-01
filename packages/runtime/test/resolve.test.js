@@ -241,7 +241,7 @@ describe("unsupported platforms", () => {
     assert.deepEqual(supportedTargets(), platforms.targets);
   });
 
-  it("still resolves the platforms that are published", () => {
+  it("still resolves the platforms that are published", async () => {
     // The regression that would matter most: refusing everybody.
     for (const target of supportedTargets()) {
       assert.ok(
@@ -250,16 +250,48 @@ describe("unsupported platforms", () => {
       );
     }
 
-    // darwin-arm64 resolves as it did before, out of this checkout's own
-    // build rather than a package, which is what running here has always done.
-    const resolved = resolveRuntimeBinary({ platform: "darwin", arch: "arm64" });
-    assert.ok(resolved.path);
+    // And that the resolver agrees with the predicate, for every one of them.
+    //
+    // Built here rather than leaning on this repository's own `target/`, for
+    // two reasons that both bite on CI: a runner that has not compiled the
+    // runtime has nothing there at all, and the binary is named for the
+    // platform - a Windows runner produces `vantail-runtime.exe`, so asking
+    // it about darwin finds nothing. A test that needs either is testing the
+    // machine.
+    const checkout = await mkdtemp(join(tmpdir(), "vantail-supported-"));
+    scratch.push(checkout);
+    await mkdir(join(checkout, "runtime"), { recursive: true });
+    await writeFile(join(checkout, "runtime", "Cargo.toml"), "[package]\n", "utf8");
+    await mkdir(join(checkout, "target", "release"), { recursive: true });
+
+    // Both spellings, so one workspace answers for every target.
+    for (const name of new Set(supportedTargets().map((t) => runtimeBinaryName(t.platform)))) {
+      await writeFile(join(checkout, "target", "release", name), "release", "utf8");
+    }
+
+    for (const target of supportedTargets()) {
+      const resolved = resolveRuntimeBinary({
+        cwd: checkout,
+        platform: target.platform,
+        arch: target.arch,
+      });
+      assert.ok(
+        resolved.path,
+        `${target.platform}-${target.arch} is published but did not resolve`,
+      );
+    }
   });
 
-  it("lets an explicit binary through on any platform", () => {
+  it("lets an explicit binary through on any platform", async () => {
     // Somebody who compiled the runtime for a platform we do not publish is
     // not asking permission, and the resolver should not second-guess them.
-    const override = join(scratch[0] ?? tmpdir(), "vantail-runtime");
+    //
+    // Its own directory rather than one an earlier suite happened to create:
+    // borrowing `scratch[0]` made this pass only while the suites ran in the
+    // order they are written.
+    const home = await mkdtemp(join(tmpdir(), "vantail-override-"));
+    scratch.push(home);
+    const override = join(home, "vantail-runtime");
     writeFileSync(override, "binary");
     process.env.VANTAIL_RUNTIME_BIN = override;
     try {
