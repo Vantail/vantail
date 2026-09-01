@@ -13,18 +13,18 @@ use serde_json::{json, Value};
 
 use crate::error::{code, ApiError, ApiResult};
 use crate::ipc::Request;
-use crate::permissions::Access;
+use crate::permissions::{Access, Permissions, RawPath};
 use crate::state::Runtime;
 
 #[derive(Deserialize)]
 struct PathParams {
-    path: String,
+    path: RawPath,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WriteParams {
-    path: String,
+    path: RawPath,
     contents: String,
     /// Create missing parent directories first. Off by default so a typo in a
     /// path fails loudly instead of quietly building a directory tree.
@@ -35,7 +35,7 @@ struct WriteParams {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RecursiveParams {
-    path: String,
+    path: RawPath,
     #[serde(default)]
     recursive: bool,
 }
@@ -43,7 +43,7 @@ struct RecursiveParams {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WriteBinaryParams {
-    path: String,
+    path: RawPath,
     /// Base64. See the note on `MAX_BINARY_BYTES`.
     data: String,
     #[serde(default)]
@@ -52,8 +52,8 @@ struct WriteBinaryParams {
 
 #[derive(Deserialize)]
 struct FromToParams {
-    from: String,
-    to: String,
+    from: RawPath,
+    to: RawPath,
 }
 
 /// Binary payloads cross the IPC boundary as base64 inside a JSON string,
@@ -193,8 +193,8 @@ pub fn dispatch(rt: &Runtime, method: &str, params: Value) -> ApiResult {
 
         "filesystem.copy" => {
             let FromToParams { from, to } = Request::params(method, params)?;
-            let from = rt.permissions.check_path(&from, Access::Read)?;
-            let to = rt.permissions.check_path(&to, Access::Write)?;
+            // Copying reads the source and writes the destination.
+            let (from, to) = check_pair(&rt.permissions, &from, &to, Access::Read)?;
             std::fs::copy(&from, &to)
                 .map(|_| Value::Null)
                 .map_err(|e| ApiError::io(&format!("Could not copy {}", from.display()), e))
@@ -203,8 +203,7 @@ pub fn dispatch(rt: &Runtime, method: &str, params: Value) -> ApiResult {
         "filesystem.rename" => {
             let FromToParams { from, to } = Request::params(method, params)?;
             // Renaming removes the original, so the source needs write too.
-            let from = rt.permissions.check_path(&from, Access::Write)?;
-            let to = rt.permissions.check_path(&to, Access::Write)?;
+            let (from, to) = check_pair(&rt.permissions, &from, &to, Access::Write)?;
             std::fs::rename(&from, &to)
                 .map(|_| Value::Null)
                 .map_err(|e| ApiError::io(&format!("Could not rename {}", from.display()), e))
@@ -212,6 +211,29 @@ pub fn dispatch(rt: &Runtime, method: &str, params: Value) -> ApiResult {
 
         _ => Err(ApiError::unknown_method(method)),
     }
+}
+
+/// Check both sides of a two-path operation, and return both checked paths.
+///
+/// Named rather than inline because the interesting part is `from_access`, and
+/// getting it wrong is invisible: `copy` reads the source, `rename` unlinks it,
+/// so `rename` needs write on a path `copy` only needs to read. A version that
+/// checks only the destination, or checks the source as a read, still copies
+/// and renames correctly for every file the caller was allowed to touch. It
+/// fails only for the files it was supposed to stop, which is the failure
+/// nothing notices.
+///
+/// The destination is always a write. There is no operation here where it is
+/// not.
+fn check_pair(
+    permissions: &Permissions,
+    from: &RawPath,
+    to: &RawPath,
+    from_access: Access,
+) -> Result<(PathBuf, PathBuf), ApiError> {
+    let from = permissions.check_path(from, from_access)?;
+    let to = permissions.check_path(to, Access::Write)?;
+    Ok((from, to))
 }
 
 fn too_large(path: &Path, size: u64) -> ApiError {
@@ -316,4 +338,111 @@ fn epoch_millis(time: Option<SystemTime>) -> Value {
     time.and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map(|d| json!(d.as_millis() as u64))
         .unwrap_or(Value::Null)
+}
+
+#[cfg(test)]
+mod tests {
+    //! The two-path operations.
+    //!
+    //! `copy` and `rename` are where a missing check is easiest to introduce
+    //! and hardest to see, because the wrong version still works for every
+    //! file the caller was allowed to touch. These pin which access each side
+    //! demands, which is the part a reader cannot verify by looking.
+
+    use super::*;
+    use crate::permissions::{FilesystemConfig, PathScopeConfig, PermissionsConfig, RawPath, Vars};
+
+    fn permissions(read: Vec<String>, write: Vec<String>) -> Permissions {
+        let vars = Vars::resolve("dev.vantail.test", Path::new("/tmp"));
+        Permissions::compile(
+            &PermissionsConfig {
+                filesystem: FilesystemConfig {
+                    read: PathScopeConfig::Patterns(read),
+                    write: PathScopeConfig::Patterns(write),
+                    ..FilesystemConfig::default()
+                },
+                ..PermissionsConfig::default()
+            },
+            &vars,
+        )
+        .expect("permissions compile")
+    }
+
+    fn temp_dir() -> PathBuf {
+        std::fs::canonicalize(std::env::temp_dir()).unwrap_or_else(|_| std::env::temp_dir())
+    }
+
+    #[test]
+    fn rename_denies_a_source_outside_the_write_scope() {
+        // The case a careless implementation gets wrong: the destination is
+        // perfectly legal, so checking only the destination passes. Renaming
+        // unlinks the source, so this would move a file out of a directory
+        // the application was never allowed to write to.
+        let base = temp_dir();
+        let permissions = permissions(
+            vec![format!("{}/**", base.display())],
+            vec![format!("{}/allowed/**", base.display())],
+        );
+
+        let outside = RawPath::new(format!("{}/elsewhere/notes.txt", base.display()));
+        let inside = RawPath::new(format!("{}/allowed/notes.txt", base.display()));
+
+        let error = check_pair(&permissions, &outside, &inside, Access::Write)
+            .expect_err("renamed a file out of a directory that is not writable");
+        assert_eq!(error.code, code::PERMISSION_DENIED);
+    }
+
+    #[test]
+    fn copy_allows_the_same_source_rename_refuses() {
+        // The pair that shows the two are not interchangeable. Reading a file
+        // to copy it elsewhere is allowed; the same file cannot be renamed,
+        // because that removes the original.
+        let base = temp_dir();
+        let permissions = permissions(
+            vec![format!("{}/**", base.display())],
+            vec![format!("{}/allowed/**", base.display())],
+        );
+
+        let source = RawPath::new(format!("{}/elsewhere/notes.txt", base.display()));
+        let destination = RawPath::new(format!("{}/allowed/copy.txt", base.display()));
+
+        assert!(check_pair(&permissions, &source, &destination, Access::Read).is_ok());
+        assert!(check_pair(&permissions, &source, &destination, Access::Write).is_err());
+    }
+
+    #[test]
+    fn a_legal_source_still_needs_a_legal_destination() {
+        // The other half: a writable source does not license writing anywhere.
+        let base = temp_dir();
+        let permissions = permissions(
+            vec![format!("{}/**", base.display())],
+            vec![format!("{}/allowed/**", base.display())],
+        );
+
+        let source = RawPath::new(format!("{}/allowed/notes.txt", base.display()));
+        let destination = RawPath::new(format!("{}/elsewhere/notes.txt", base.display()));
+
+        let error = check_pair(&permissions, &source, &destination, Access::Write)
+            .expect_err("wrote outside the write scope");
+        assert_eq!(error.code, code::PERMISSION_DENIED);
+    }
+
+    #[test]
+    fn both_returned_paths_are_the_normalised_ones() {
+        // Rule 2 for two-path operations: what was checked is what gets used,
+        // on both sides. A `..` that survived into either return value would
+        // mean the check and the rename disagreed about one of them.
+        let base = temp_dir();
+        let permissions = permissions(
+            vec![format!("{}/**", base.display())],
+            vec![format!("{}/**", base.display())],
+        );
+
+        let from = RawPath::new(format!("{}/allowed/../a.txt", base.display()));
+        let to = RawPath::new(format!("{}/allowed/../b.txt", base.display()));
+
+        let (from, to) = check_pair(&permissions, &from, &to, Access::Write).expect("allowed");
+        assert_eq!(from, base.join("a.txt"));
+        assert_eq!(to, base.join("b.txt"));
+    }
 }

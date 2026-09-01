@@ -19,13 +19,13 @@ use serde_json::{json, Value};
 
 use crate::error::{ApiError, ApiResult};
 use crate::ipc::{Event, Outgoing, Request};
-use crate::permissions::Access;
+use crate::permissions::{Access, RawPath};
 use crate::state::Runtime;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WatchParams {
-    path: String,
+    path: RawPath,
     /// Watch everything underneath a directory too. Default `false`.
     #[serde(default)]
     recursive: bool,

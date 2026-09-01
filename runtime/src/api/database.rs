@@ -45,7 +45,7 @@ use serde_json::{json, Map, Value};
 
 use crate::error::{ApiError, ApiResult};
 use crate::ipc::{Outgoing, Request, Response};
-use crate::permissions::Access;
+use crate::permissions::{Access, RawPath};
 use crate::state::{MainCtx, Runtime};
 
 const BASE64: base64::engine::general_purpose::GeneralPurpose =
@@ -70,7 +70,7 @@ const TRANSACTION_IDLE: Duration = Duration::from_secs(30);
 struct OpenParams {
     /// Where the file lives. Checked against `permissions.filesystem` write
     /// scope, the same as any other write.
-    path: String,
+    path: RawPath,
     /// Fail rather than create the file. Default `false`.
     #[serde(default)]
     read_only: bool,
@@ -125,7 +125,7 @@ struct TransactionParams {
 struct SnapshotParams {
     id: u32,
     /// Where to write the copy. Also checked as a write.
-    path: String,
+    path: RawPath,
 }
 
 // ---------------------------------------------------------------------------

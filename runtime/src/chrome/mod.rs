@@ -531,8 +531,16 @@ pub fn load_icon(rt: &Runtime, path: &str) -> Result<tray_icon::Icon, ApiError> 
     let resolved: PathBuf = if let Some(rest) = path.strip_prefix("$RESOURCE/") {
         rt.resource_dir.join(rest)
     } else if std::path::Path::new(path).is_absolute() {
-        rt.permissions
-            .check_path(path, crate::permissions::Access::Read)?
+        // Wrapped rather than taken as a `RawPath` argument: this function
+        // reads the string first, to decide which of the three kinds of path
+        // it is. The two branches either side resolve against `resource_dir`,
+        // which is the application's own bundle and needs no scope check -
+        // only the absolute case is reaching for an arbitrary file, and that
+        // is the one that goes through the scope.
+        rt.permissions.check_path(
+            &crate::permissions::RawPath::new(path),
+            crate::permissions::Access::Read,
+        )?
     } else {
         rt.resource_dir.join(path)
     };

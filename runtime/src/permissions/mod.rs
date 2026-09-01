@@ -9,6 +9,11 @@
 //!    operates on that same normalised path - never on the raw string from
 //!    JavaScript. Check and use always agree, so `..` and symlinks cannot
 //!    point somewhere the check did not see.
+//!
+//! Rule 2 is enforced by the type system rather than by review: a path from
+//! JavaScript arrives as [`RawPath`], which cannot be handed to `std::fs` at
+//! all. [`Permissions::check_path`] is the only way to get a usable `PathBuf`
+//! out of one.
 
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
@@ -589,6 +594,32 @@ impl DatabaseConfig {
     }
 }
 
+/// A path exactly as JavaScript sent it. Deliberately not usable as a `Path`.
+///
+/// There is no `Deref`, no `AsRef<Path>`, no `Into<PathBuf>` and no accessor
+/// for the inner string. The only way to turn one into something the
+/// filesystem will accept is [`Permissions::check_path`], which normalises it
+/// and checks the result against the scope.
+///
+/// That is the whole point. Rule 2 at the top of this module used to be a
+/// convention that a handler written later could quietly forget, with nothing
+/// but review standing in the way. A handler that forgets it now does not
+/// compile.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(transparent)]
+pub struct RawPath(String);
+
+impl RawPath {
+    /// Wrap a string that arrived from somewhere other than a JSON payload.
+    ///
+    /// For callers holding a path they have not checked yet, so it can go
+    /// through `check_path` like everything else. Constructing one grants
+    /// nothing; it is still only a `PathBuf` once checked.
+    pub fn new(raw: impl Into<String>) -> Self {
+        Self(raw.into())
+    }
+}
+
 /// Which side of the filesystem a check is for.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Access {
@@ -682,8 +713,10 @@ impl Permissions {
     ///
     /// Returns the normalised path; callers must use it for the actual
     /// operation so that what was checked is what gets touched.
-    pub fn check_path(&self, raw: &str, access: Access) -> Result<PathBuf, ApiError> {
-        let path = normalize(Path::new(raw))?;
+    pub fn check_path(&self, raw: &RawPath, access: Access) -> Result<PathBuf, ApiError> {
+        // The only read of `RawPath.0` in the codebase. Everything downstream
+        // works from the `PathBuf` this returns.
+        let path = normalize(Path::new(&raw.0))?;
 
         if self.granted_contains(&path, access) {
             return Ok(path);
@@ -916,6 +949,14 @@ fn describe(scope: &PathScope) -> String {
 /// The path need not exist: the deepest existing ancestor is canonicalised and
 /// the remaining components appended. `..` is resolved lexically first, so it
 /// can never survive into the returned path.
+///
+/// Resolving `..` *before* canonicalising looks wrong and is not, so: given
+/// `/allowed/link/../secret`, where `link` is a symlink pointing outside, this
+/// returns `/allowed/secret` while the OS would resolve the same string to
+/// `/secret`. Disagreeing with the OS is safe only because the handler opens
+/// what this returned rather than what JavaScript sent - the two agree because
+/// they are the same value. That is rule 2 at the top of this module, and it
+/// is why `RawPath` exists to make it unforgettable.
 pub fn normalize(path: &Path) -> Result<PathBuf, ApiError> {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
@@ -988,6 +1029,16 @@ pub fn strip_verbatim(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
+/// A path as JavaScript would have sent it.
+///
+/// Production code only ever gets a `RawPath` by deserializing one. A test has
+/// to build it, which is the only reason this exists - and it lives out here
+/// because all four test modules below need it.
+#[cfg(test)]
+fn sent(path: impl Into<String>) -> RawPath {
+    RawPath::new(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1038,10 +1089,12 @@ mod tests {
         });
 
         let inside = format!("{}/allowed/notes.txt", base.display());
-        assert!(permissions.check_path(&inside, Access::Read).is_ok());
+        assert!(permissions.check_path(&sent(inside), Access::Read).is_ok());
 
         let escape = format!("{}/allowed/../secret.txt", base.display());
-        let error = permissions.check_path(&escape, Access::Read).unwrap_err();
+        let error = permissions
+            .check_path(&sent(escape), Access::Read)
+            .unwrap_err();
         assert_eq!(error.code, crate::error::code::PERMISSION_DENIED);
     }
 
@@ -1060,7 +1113,7 @@ mod tests {
         // same path, or the check means nothing.
         let raw = format!("{}/x/../y.txt", base.display());
         assert_eq!(
-            permissions.check_path(&raw, Access::Read).unwrap(),
+            permissions.check_path(&sent(raw), Access::Read).unwrap(),
             base.join("y.txt")
         );
     }
@@ -1098,7 +1151,7 @@ mod tests {
         let base = temp_dir();
 
         assert!(permissions
-            .check_path(&format!("{}/a.txt", base.display()), Access::Read)
+            .check_path(&sent(format!("{}/a.txt", base.display())), Access::Read)
             .is_err());
         assert!(!permissions.dialog);
         assert!(!permissions.clipboard_read);
@@ -1116,20 +1169,20 @@ mod tests {
         let sibling = base.join("not-chosen.txt");
 
         assert!(permissions
-            .check_path(&picked.to_string_lossy(), Access::Read)
+            .check_path(&sent(picked.to_string_lossy()), Access::Read)
             .is_err());
 
         permissions.grant_from_dialog(&picked, Access::Read);
 
         assert!(permissions
-            .check_path(&picked.to_string_lossy(), Access::Read)
+            .check_path(&sent(picked.to_string_lossy()), Access::Read)
             .is_ok());
         assert!(permissions
-            .check_path(&sibling.to_string_lossy(), Access::Read)
+            .check_path(&sent(sibling.to_string_lossy()), Access::Read)
             .is_err());
         // A read grant is not a write grant.
         assert!(permissions
-            .check_path(&picked.to_string_lossy(), Access::Write)
+            .check_path(&sent(picked.to_string_lossy()), Access::Write)
             .is_err());
     }
 
@@ -1143,7 +1196,7 @@ mod tests {
 
         assert!(permissions
             .check_path(
-                &directory.join("inside.txt").to_string_lossy(),
+                &sent(directory.join("inside.txt").to_string_lossy()),
                 Access::Read
             )
             .is_ok());
@@ -1163,7 +1216,7 @@ mod tests {
 
         permissions.grant_from_dialog(&picked, Access::Read);
         assert!(permissions
-            .check_path(&picked.to_string_lossy(), Access::Read)
+            .check_path(&sent(picked.to_string_lossy()), Access::Read)
             .is_err());
     }
 
@@ -1176,10 +1229,10 @@ mod tests {
         permissions.grant_from_dialog(&picked, Access::Write);
 
         assert!(permissions
-            .check_path(&picked.to_string_lossy(), Access::Write)
+            .check_path(&sent(picked.to_string_lossy()), Access::Write)
             .is_ok());
         assert!(permissions
-            .check_path(&picked.to_string_lossy(), Access::Read)
+            .check_path(&sent(picked.to_string_lossy()), Access::Read)
             .is_ok());
     }
 
@@ -1236,7 +1289,7 @@ mod tests {
 
         let target = raw.join("vantail-symlink-scope.txt");
         assert!(permissions
-            .check_path(&target.to_string_lossy(), Access::Read)
+            .check_path(&sent(target.to_string_lossy()), Access::Read)
             .is_ok());
     }
 
@@ -1428,12 +1481,12 @@ mod drop_grant_tests {
 
         // Nothing in the config mentions it.
         assert!(permissions
-            .check_path("/tmp/dropped.txt", Access::Read)
+            .check_path(&sent("/tmp/dropped.txt"), Access::Read)
             .is_err());
 
         permissions.grant_from_drop(dropped);
         assert!(permissions
-            .check_path("/tmp/dropped.txt", Access::Read)
+            .check_path(&sent("/tmp/dropped.txt"), Access::Read)
             .is_ok());
     }
 
@@ -1443,7 +1496,7 @@ mod drop_grant_tests {
         let permissions = permissions(true);
         permissions.grant_from_drop(Path::new("/tmp/dropped.txt"));
         assert!(permissions
-            .check_path("/tmp/dropped.txt", Access::Write)
+            .check_path(&sent("/tmp/dropped.txt"), Access::Write)
             .is_err());
     }
 
@@ -1454,7 +1507,7 @@ mod drop_grant_tests {
         let permissions = permissions(true);
         permissions.grant_from_drop(Path::new("/tmp/./sub/../spelled.txt"));
         assert!(permissions
-            .check_path("/tmp/spelled.txt", Access::Read)
+            .check_path(&sent("/tmp/spelled.txt"), Access::Read)
             .is_ok());
     }
 
@@ -1463,7 +1516,7 @@ mod drop_grant_tests {
         let permissions = permissions(false);
         permissions.grant_from_drop(Path::new("/tmp/dropped.txt"));
         assert!(permissions
-            .check_path("/tmp/dropped.txt", Access::Read)
+            .check_path(&sent("/tmp/dropped.txt"), Access::Read)
             .is_err());
     }
 }
