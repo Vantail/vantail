@@ -564,6 +564,10 @@ example's own directory, which is the same thing.
 - [docs/packaging.md](docs/packaging.md) - bundles, installers and signing.
 - [docs/updater.md](docs/updater.md) - signing keys, manifests, and what
   `install` actually does.
+- [SECURITY.md](SECURITY.md) - what counts as a vulnerability here, and how
+  to report one privately.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) - Contributor Covenant 2.1, and
+  where to report a problem.
 - [CHANGELOG.md](CHANGELOG.md) - what changed in each release.
 
 ## Contributing
