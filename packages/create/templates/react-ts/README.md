@@ -1,6 +1,6 @@
 # __APP_NAME__
 
-Built with [Vantail](https://github.com/jeroenvanwissen/vantail).
+Built with [Vantail](https://github.com/Vantail/vantail).
 
 ```bash
 npm install

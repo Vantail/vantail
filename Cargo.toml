@@ -6,7 +6,7 @@ members = ["runtime"]
 version = "0.1.20"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/jeroenvanwissen/vantail"
+repository = "https://github.com/Vantail/vantail"
 
 [profile.release]
 opt-level = "z"
