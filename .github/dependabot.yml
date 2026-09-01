@@ -1,0 +1,49 @@
+# Monthly and grouped, so a quiet month is one pull request rather than twenty.
+#
+# The pairing with `audit.yml` is deliberate: the audit says what is known to
+# be wrong, this moves things before anyone reports anything. Neither runs on
+# pull requests, so neither can turn somebody else's change red.
+version: 2
+updates:
+  # Actions matter more here than they look. Every workflow pins to a moving
+  # ref - `actions/checkout@v5` is a tag, `rustsec/audit-check@v2` is a
+  # branch - so a ref repointed under us is picked up silently on the next
+  # run. This is the only thing watching for that. Pinning by commit SHA
+  # instead would be stronger and is a separate decision; it would apply to
+  # every action in every workflow, not just the ones added here.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # The runtime bundles rustls and webpki-roots through `ureq`, SQLite
+  # through `rusqlite/bundled`, and vendored OpenSSL in the sqlcipher
+  # variant. It also verifies the Ed25519 signature on an update bundle
+  # before executing it, and that code depends on this tree.
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      # Split so a routine patch sweep stays reviewable at a glance and a
+      # major, which is the one that needs reading, arrives on its own.
+      cargo-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 5
+
+  # One entry covers the workspace: pnpm workspaces are resolved from the root
+  # lockfile, so per-package entries would produce competing pull requests
+  # against the same file.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      npm-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 5

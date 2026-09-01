@@ -1,0 +1,62 @@
+name: Audit
+
+# Weekly rather than on every pull request, on purpose.
+#
+# An advisory published today turns a commit that was green yesterday red
+# today, through no fault of the person who wrote it. CI that fails for
+# reasons unrelated to the change is CI people learn to ignore, and then it
+# stops catching the failures that do matter. `release.yml` already reasons
+# this way, where a dev build that cannot proceed warns instead of failing.
+#
+# The urgency is real even so: the runtime ships as a precompiled binary, so
+# an application developer cannot patch a transitive Rust dependency
+# themselves - they wait for a release here. A week is the compromise.
+on:
+  schedule:
+    # Monday morning, so a finding gets looked at on a working day rather
+    # than sitting over a weekend.
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: audit
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  audit:
+    name: Advisories
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-22.04' }}
+    permissions:
+      # `rustsec/audit-check` reports through a check run rather than stdout.
+      checks: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      # Reads Cargo.lock, so it needs no toolchain and builds nothing. The
+      # lockfile is committed and the release builds `--locked`, which is
+      # what makes scanning it the same thing as scanning what shipped.
+      #
+      # `cargo-deny` would cover this plus licence and duplicate checking.
+      # That is more than advisories, needs a `deny.toml` with policy
+      # decisions in it, and is worth choosing on its own rather than
+      # arriving as a side effect of wanting an audit.
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # `--prod` because a vulnerability in a build-time devDependency is not
+      # something an application that installs `@vantail/*` can be reached
+      # through. The published packages carry the production tree only.
+      - run: pnpm audit --prod
