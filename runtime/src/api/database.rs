@@ -31,7 +31,7 @@
 //!   connection for the life of the process.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
@@ -792,7 +792,7 @@ const KEY_BYTES: usize = 32;
 /// this a wrong key would surface later as an unrelated-looking error in the
 /// middle of an application's first query.
 #[cfg(feature = "database-encryption")]
-fn apply_key(connection: &Connection, key: &str, path: &PathBuf) -> Result<(), ApiError> {
+fn apply_key(connection: &Connection, key: &str, path: &Path) -> Result<(), ApiError> {
     connection
         .pragma_update(None, "key", format!("x'{key}'"))
         .map_err(|e| failed("Could not key the database", &e))?;
@@ -819,7 +819,7 @@ fn apply_key(connection: &Connection, key: &str, path: &PathBuf) -> Result<(), A
 /// unencrypted and hand back a working database, and the application would
 /// have no way to tell that its ledger was in the clear.
 #[cfg(not(feature = "database-encryption"))]
-fn apply_key(_connection: &Connection, _key: &str, _path: &PathBuf) -> Result<(), ApiError> {
+fn apply_key(_connection: &Connection, _key: &str, _path: &Path) -> Result<(), ApiError> {
     Err(ApiError::unsupported(
         "This runtime was built without database encryption. Rebuild with the \
          `database-encryption` feature, or open the database without `keySecret`.",
@@ -1189,7 +1189,7 @@ mod tests {
         );
 
         // And so is opening it as a plain database.
-        assert!(connect(&path, false, None).is_err_or_unreadable());
+        assert!(connect(&path, false, None).was_refused());
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -1199,12 +1199,12 @@ mod tests {
     /// back readable rows.
     #[cfg(feature = "database-encryption")]
     trait Unreadable {
-        fn is_err_or_unreadable(self) -> bool;
+        fn was_refused(self) -> bool;
     }
 
     #[cfg(feature = "database-encryption")]
     impl Unreadable for Result<Connection, ApiError> {
-        fn is_err_or_unreadable(self) -> bool {
+        fn was_refused(self) -> bool {
             match self {
                 Err(_) => true,
                 Ok(connection) => query(&connection, "select note from entry", &[], false).is_err(),

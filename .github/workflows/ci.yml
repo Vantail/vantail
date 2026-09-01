@@ -80,7 +80,12 @@ jobs:
         run: node scripts/version-drift.mjs
 
       - run: cargo fmt --all --check
-      - run: cargo clippy --all-targets -- --deny warnings
+      # `--all-features` because the release matrix publishes a sqlcipher
+      # variant of every target, and `database-encryption` is not a default
+      # feature. Without this, the code behind it is built and shipped
+      # without ever being linted. The `features` job below only runs
+      # `cargo check`, which compiles it but runs no lints.
+      - run: cargo clippy --all-targets --all-features -- --deny warnings
       - run: pnpm build
       - run: pnpm --recursive run typecheck
 

@@ -17,3 +17,5 @@ dist-packages/
 # --locked. A global ignore of Cargo.lock is common and would break that
 # silently, so it is un-ignored here rather than left to each machine.
 !Cargo.lock
+
+tasks/
