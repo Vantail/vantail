@@ -30,9 +30,14 @@ jobs:
     name: Advisories
     runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-22.04' }}
     permissions:
-      # `rustsec/audit-check` reports through a check run rather than stdout.
+      # `rustsec/audit-check` reports through a check run rather than stdout,
+      # except on the `schedule` trigger, where there is no commit under
+      # review to attach a check to and it files an issue instead. Both
+      # paths need granting; without `issues: write` the weekly run fails
+      # with "Resource not accessible by integration" after a clean audit.
       checks: write
       contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v7
 
