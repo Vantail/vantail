@@ -4,6 +4,16 @@ Notable changes per release.
 
 ## Unreleased
 
+### Fixed
+
+- **TLS 1.3 handshake messages at the wrong encryption level are now
+  rejected.** `rustls` 0.23.43 accepted a handshake message packed into the
+  same record as the key-changing message before it, against RFC 8446 section
+  5.1 (RUSTSEC-2026-0285). This is a lockfile-only patch to 0.23.45 - the same
+  move the monthly dependency sweep would have made, taken now because the
+  HTTP client, the updater and WebSockets all ship this code to every
+  application.
+
 ## 0.1.21
 
 ### Added
