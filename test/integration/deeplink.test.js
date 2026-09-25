@@ -94,8 +94,21 @@ await save();
   );
 }
 
-/** Wait for the application to write its report, or give up. */
-async function report(root, predicate, timeoutMs = 12_000) {
+/**
+ * Wait for the application to write its report, or fail saying what it had.
+ *
+ * Throws rather than returning whatever it last read. Every caller asserts
+ * against the result, so a timeout that returned `undefined` surfaced as
+ * `Cannot read properties of undefined` on the assertion line below - which
+ * names neither the wait that actually failed nor what the application had
+ * managed to report.
+ *
+ * 30s rather than the 12s this used to allow: the first launch in the suite
+ * pays for the platform's webview starting cold, which on a fresh Windows
+ * runner is most of that budget on its own. Every other wait in the
+ * integration suite allows 20s or more.
+ */
+async function report(root, predicate, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   let last;
   while (Date.now() < deadline) {
@@ -107,7 +120,9 @@ async function report(root, predicate, timeoutMs = 12_000) {
     }
     await new Promise((wait) => setTimeout(wait, 150));
   }
-  return last;
+  throw new Error(
+    `nothing matched within ${timeoutMs}ms; the application last reported ${JSON.stringify(last)}`,
+  );
 }
 
 /**
