@@ -330,7 +330,14 @@ describe("release workflow", () => {
       // Native runners rather than cross-compilation: the runtime links
       // against the platform's webview, tray and HID libraries.
       const wantsArm = entry.target.startsWith("aarch64");
-      const runnerIsArm = entry.runner.includes("arm") || entry.runner === "macos-14";
+      // GitHub's macOS images are Apple silicon from `macos-14` onward, and
+      // say nothing about it in the label; `macos-13` and earlier are Intel.
+      // Read as a number rather than matched against the one label in use at
+      // the time, so bumping the image for a newer SDK is not a test change.
+      const macos = /^macos-(\d+)/.exec(entry.runner);
+      const runnerIsArm = macos
+        ? Number(macos[1]) >= 14
+        : entry.runner.includes("arm");
       assert.equal(
         runnerIsArm,
         wantsArm,
