@@ -4,6 +4,29 @@ Notable changes per release.
 
 ## Unreleased
 
+### Fixed
+
+- **A stale single-instance socket no longer blocks the next launch.**
+  On macOS the single-instance lock is a socket file, and a crash or SIGKILL
+  left it behind with nobody listening - so the next launch failed with
+  `could not claim single instance: Address already in use (os error 48)`
+  and ran without single-instance protection. An `AddrInUse` is now followed
+  by another handover attempt (for a concurrent starter that just won the
+  race), and only when nobody answers is the file treated as stale, removed,
+  and bound again.
+
+## 0.1.22
+
+### Fixed
+
+- **TLS 1.3 handshake messages at the wrong encryption level are now
+  rejected.** `rustls` 0.23.43 accepted a handshake message packed into the
+  same record as the key-changing message before it, against RFC 8446 section
+  5.1 (RUSTSEC-2026-0285). This is a lockfile-only patch to 0.23.45 - the same
+  move the monthly dependency sweep would have made, taken now because the
+  HTTP client, the updater and WebSockets all ship this code to every
+  application.
+
 ## 0.1.21
 
 ### Added

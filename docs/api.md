@@ -251,8 +251,12 @@ they scale with it.
 `insetLeft` does change with the taller bar: macOS starts its buttons a little
 further in there, and the reported inset says so.
 
-Their **size** is not yours to set either - macOS draws them at a fixed 12
-points whatever the bar is. If you want bigger ones, take the platform's away
+Their **size** is not yours to set either - macOS draws them at a fixed size
+whatever the bar is. That size is the platform's, not the application's: it
+was 14 points on every macOS this has been measured on, including the
+redesigned buttons in macOS 27, which changed how they are painted rather
+than the frames they occupy - so read `buttonHeight` instead of assuming a
+number. If you want bigger ones, take the platform's away
 and draw your own:
 
 ```ts
