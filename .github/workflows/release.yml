@@ -201,8 +201,17 @@ jobs:
           - variant: sqlcipher
             features: "--features database-encryption"
 
+          # The runner decides which macOS SDK the runtime is linked
+          # against, and AppKit decides how an application *looks* from
+          # that: a binary linked against a pre-26 SDK is drawn in
+          # compatibility mode - Sequoia's 28pt title bar and flat window
+          # buttons - on every later macOS, whatever the machine is running.
+          # `macos-14` links against 14.5, which is how a Vantail window on
+          # macOS 27 kept the old window buttons while every window around it
+          # had the new ones (#3). The smoke test below checks the linked SDK
+          # so that a future runner change cannot quietly bring it back.
           - target: aarch64-apple-darwin
-            runner: macos-14
+            runner: macos-26
           - target: x86_64-pc-windows-msvc
             runner: windows-2022
           - target: aarch64-pc-windows-msvc
@@ -272,6 +281,16 @@ jobs:
           if [ -f "$BIN.exe" ]; then BIN="$BIN.exe"; fi
           "$BIN" --version
           "$BIN" --help > /dev/null
+          # See the runner comment above: too old an SDK is a working binary
+          # that AppKit draws the way it drew things two releases ago.
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            SDK=$(otool -l "$BIN" | awk '/LC_BUILD_VERSION/{f=1} f && /sdk/{print $2; exit}')
+            echo "linked against macOS SDK $SDK"
+            if [ "${SDK%%.*}" -lt 26 ]; then
+              echo "::error::runtime linked against macOS SDK $SDK; 26 or newer is needed for current window chrome"
+              exit 1
+            fi
+          fi
 
       - name: Collect
         shell: bash
