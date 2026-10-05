@@ -60,14 +60,23 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
             let IconParams { icon, template } = Request::params(method, params)?;
             let icon = crate::chrome::load_icon(ctx.rt, &icon)?;
             let tray = ctx.chrome.tray()?;
-            match template {
-                Some(template) => tray
-                    .set_icon_with_as_template(Some(icon), template)
-                    .map_err(|e| ApiError::internal(format!("Could not set the tray icon: {e}")))?,
-                None => tray
-                    .set_icon(Some(icon))
-                    .map_err(|e| ApiError::internal(format!("Could not set the tray icon: {e}")))?,
-            }
+            // Leaving `template` out keeps the icon drawn the way it already
+            // was. A plain `set_icon` would quietly turn a template icon into
+            // a coloured one, so the current state has to be read first.
+            #[cfg(target_os = "macos")]
+            let set = if template.unwrap_or_else(|| tray.icon_is_template()) {
+                tray.set_icon_templated(Some(icon))
+            } else {
+                tray.set_icon(Some(icon))
+            };
+            // Template images are a macOS idea; elsewhere the icon is drawn
+            // as-is.
+            #[cfg(not(target_os = "macos"))]
+            let set = {
+                let _ = template;
+                tray.set_icon(Some(icon))
+            };
+            set.map_err(|e| ApiError::internal(format!("Could not set the tray icon: {e}")))?;
             Ok(Value::Null)
         }
 

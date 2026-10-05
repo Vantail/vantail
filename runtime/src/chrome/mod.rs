@@ -34,6 +34,7 @@ pub struct TraySpec {
     pub title: Option<String>,
     /// Render the icon as a monochrome template, which is what macOS wants so
     /// the icon inverts correctly in dark menu bars.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     #[serde(default)]
     pub icon_as_template: bool,
     pub menu: Option<Vec<MenuSpec>>,
@@ -431,16 +432,19 @@ impl Chrome {
             TrayIconBuilder::new().with_menu_on_left_click(spec.left_click == TrayLeftClick::Menu);
 
         if let Some(path) = &spec.icon {
-            builder = builder.with_icon(load_icon(rt, path)?);
+            builder = match load_icon(rt, path)? {
+                // Template images are a macOS idea; elsewhere the icon is
+                // drawn as-is.
+                #[cfg(target_os = "macos")]
+                icon if spec.icon_as_template => builder.with_icon_templated(icon),
+                icon => builder.with_icon(icon),
+            };
         }
         if let Some(tooltip) = &spec.tooltip {
             builder = builder.with_tooltip(tooltip);
         }
         if let Some(menu) = menu.clone() {
             builder = builder.with_menu(Box::new(menu));
-        }
-        if spec.icon_as_template {
-            builder = builder.with_icon_as_template(true);
         }
 
         // Replaced rather than mutated: the builder is the only place several
