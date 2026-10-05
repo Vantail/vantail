@@ -1,0 +1,20 @@
+# Advisories `cargo audit` and the weekly `audit.yml` run should not report.
+#
+# Each entry is here because nothing in this repository can act on it, not
+# because it does not matter. Both come from gtk-rs 0.18, which tao and wry
+# (through webkit2gtk `=2.0.2`) still require on Linux. gtk 0.19 exists and
+# moves to a glib with both fixes, but neither windowing crate has followed,
+# and muda and tray-icon only follow them. When `cargo tree -i glib@0.18.5
+# --target all` comes back empty, delete this file.
+[advisories]
+ignore = [
+  # glib 0.18: `VariantStrIter` is unsound. Nothing in the tree calls it -
+  # the only references to `VariantStrIter` or `str_array_iter` across every
+  # dependency are inside glib itself - and the runtime does not use glib
+  # directly. Fixed in glib 0.20.
+  "RUSTSEC-2024-0429",
+  # proc-macro-error is unmaintained. It is a proc-macro, pulled in by
+  # glib-macros, so it runs in the compiler and none of it ships in the
+  # binary.
+  "RUSTSEC-2024-0370",
+]
