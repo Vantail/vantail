@@ -25,10 +25,10 @@
     "test:integration": "node --test --test-concurrency=1 test/integration/*.test.js"
   },
   "devDependencies": {
-    "@types/node": "^26.0.0",
+    "@types/node": "^26.6.3",
     "@vantail/runtime": "workspace:*",
     "typescript": "^7.0.0",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.1"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
