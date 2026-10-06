@@ -10,5 +10,5 @@
 # Bumping this is a deliberate step in a release, not something that happens
 # while nobody is looking. See CONTRIBUTING.md.
 [toolchain]
-channel = "1.94"
+channel = "1.99"
 components = ["rustfmt", "clippy"]
