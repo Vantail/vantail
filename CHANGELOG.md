@@ -4,6 +4,33 @@ Notable changes per release.
 
 ## Unreleased
 
+## 0.1.23
+
+### Fixed
+
+- **`tray.setIcon` with a `template` option changes the icon on Linux and
+  Windows.** Template images are a macOS idea, and the call underneath did
+  nothing at all elsewhere - not drawing the icon as a template, and not
+  drawing it as anything else either, so the old icon stayed. The option is
+  now ignored there and the icon is set. On macOS nothing changes: leaving
+  `template` out still keeps the icon drawn the way it already was.
+
+### Changed
+
+- **Native dependencies moved forward**, including the window and webview
+  layer: tao 0.37.1, wry 0.57, muda 0.21 and tray-icon 0.26 (which have to
+  move together - tray-icon is built on muda's menu types), dirs 7, and patch
+  releases of ureq, keyring, mdns-sd, interprocess, notify-rust and open. The
+  runtime is now built with Rust 1.99; the minimum to build it from source is
+  still 1.94.
+
+  One edge on macOS: a tray created with `iconAsTemplate: true` but no
+  `icon`, and given one later with `tray.setIcon(path)`, now draws it as-is.
+  Pass `{ template: true }` to `setIcon` for a template image.
+
+- **`npm create @vantail` scaffolds against Vite `^8.3.1`**, the range the
+  examples are built and tested with.
+
 ## 0.1.22
 
 ### Fixed
