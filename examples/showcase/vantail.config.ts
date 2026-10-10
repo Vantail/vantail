@@ -96,6 +96,10 @@ export default defineConfig({
     // database may live.
     database: true,
 
+    // The keyed store every window stays in sync with. Reading is gated by
+    // `read`; each key written must match a `write` pattern.
+    sharedState: { read: true, write: ["demo.*", "showcase.**"] },
+
     network: {
       // A bare host covers every scheme, so `echo.websocket.org` is reachable
       // over both https and wss with one rule.

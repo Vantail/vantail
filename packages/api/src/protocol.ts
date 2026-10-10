@@ -53,6 +53,9 @@ export const ErrorCode = {
   INTERNAL: "INTERNAL",
   /** The caller abandoned the request before it answered. */
   CANCELLED: "CANCELLED",
+  SHARED_STATE_NOT_SERIALIZABLE: "SHARED_STATE_NOT_SERIALIZABLE",
+  SHARED_STATE_KEY_DENIED: "SHARED_STATE_KEY_DENIED",
+  SHARED_STATE_PERSIST_FAILED: "SHARED_STATE_PERSIST_FAILED",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

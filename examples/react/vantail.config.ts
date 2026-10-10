@@ -64,5 +64,10 @@ export default defineConfig({
     shell: {
       allow: [{ program: "/usr/bin/uptime", args: [] }],
     },
+
+    // Cross-window shared state for the sync demo (`demo.*` keys). Both
+    // windows read the same key via `sharedState.get` and stay in step via
+    // `sharedState.subscribe`; either writes via `sharedState.set`.
+    sharedState: { read: true, write: ["demo.*"], persist: false },
   },
 });

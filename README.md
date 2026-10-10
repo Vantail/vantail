@@ -117,6 +117,8 @@ hid            list | open | opened
 
 secrets        set | get | has | delete
 
+sharedState    get | set | subscribe
+
 shell          open
 
 updater        check | download | install | downloadAndInstall | pending
@@ -283,6 +285,29 @@ app.listen<{ from: string }>("hello", ({ from }) => console.log(from));
 Two windows are two webviews with nothing shared between them, so anything
 they need to tell each other goes out through the runtime and back in -
 `app.emit` and `app.listen` are that round trip.
+
+For state rather than messages, `sharedState` is the keyed, observable store
+over the same transport - the runtime owns it, every window holds a
+synchronised copy:
+
+```ts
+import { sharedState } from "@vantail/api";
+
+await sharedState.set("demo.counter", count + 1);
+
+// The current value arrives immediately, then every change from any window.
+const stop = sharedState.subscribe<number>("demo.counter", (value) => show(value));
+```
+
+```ts
+// vantail.config.ts
+permissions: {
+  sharedState: { read: true, write: ["demo.*"], persist: false },
+},
+```
+
+Last write wins; values must be JSON-serializable. See
+[docs/api.md](docs/api.md) and [docs/permissions.md](docs/permissions.md).
 
 ## Menus, tray, and everything outside the window
 

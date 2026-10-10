@@ -157,6 +157,22 @@ const shellPermissions = z
   })
   .strict();
 
+const sharedStatePermissions = z
+  .object({
+    read: z.boolean().optional(),
+    write: z.array(z.string()).optional(),
+    persist: z.boolean().optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.persist === true && (value.write ?? []).length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "`permissions.sharedState.persist` needs `permissions.sharedState.write` to be non-empty: persisted state must be writable to be useful",
+      });
+    }
+  });
 const PREDEFINED = [
   "separator",
   "copy",
@@ -390,6 +406,7 @@ export const permissionsSchema = z
       .optional(),
     mdns: z.union([z.boolean(), z.array(z.string())]).optional(),
     hid: hidPermissions.optional(),
+    sharedState: sharedStatePermissions.optional(),
   })
   .strict();
 

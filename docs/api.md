@@ -15,6 +15,7 @@ import {
   notification,
   os,
   process,
+  sharedState,
   shell,
   tray,
   updater,
@@ -1655,6 +1656,51 @@ See [updater.md](updater.md) for the publishing side.
 | `pending()`                       | Whether a verified update is already on disk                |
 | `onProgress(handler)`             | The same events, subscribed separately                      |
 
+## sharedState
+
+```ts
+import { sharedState } from "@vantail/api";
+
+await sharedState.set("demo.counter", 1);
+const count = await sharedState.get<number>("demo.counter", 0);
+const stop = sharedState.subscribe<number>("demo.counter", (value) => show(value));
+stop();
+```
+
+A keyed, observable store shared by every window. The runtime is the
+authority: writes go renderer -> runtime -> all renderers, so there is no
+"which window wins?" race. Last write wins.
+
+This complements `app.emit` / `app.listen` rather than replacing them: those
+stay the low-level fire-and-forget message bus, while this is a keyed store
+with read-before-write semantics and change subscriptions. Both ride the same
+transport - changes arrive as `sharedState.changed` events over the existing
+IPC channel. No new channel, no WebSocket, no `MessagePort`.
+
+| Method                                            | Returns                                                        |
+| ------------------------------------------------- | -------------------------------------------------------------- |
+| `sharedState.get(key, default?)`                  | The current value, or `default` when unset (`null` without one) |
+| `sharedState.set(key, value)`                     | Writes the value, broadcasts the change to every window        |
+| `sharedState.subscribe(key, callback)`            | Calls back with the current value now, then every change; returns an idempotent unsubscribe |
+
+`get` with a `default` never writes it implicitly. `subscribe` delivers the
+current value immediately on subscription - which is what makes
+`useSyncExternalStore` wiring trivial without a shim - then subsequent
+changes. The returned unsubscribe function is idempotent.
+
+Values must be JSON-serializable; anything else rejects with
+`SHARED_STATE_NOT_SERIALIZABLE`. Reads are gated by
+`permissions.sharedState.read` (`PERMISSION_DENIED` when off); writes are
+gated by `permissions.sharedState.write` globs
+(`SHARED_STATE_KEY_DENIED` when no pattern matches). Persistence failures
+reject with `SHARED_STATE_PERSIST_FAILED`. See
+[permissions.md](permissions.md#shared-state) for the glob semantics.
+
+Framework adapters (a React `useSyncExternalStore` hook, a Vue `ref`
+wrapper, a Svelte store) are consumer-side and intentionally out of core -
+`subscribe` returns a plain callback + unsubscribe function on purpose, and
+may become a separate optional package.
+
 ## Errors
 
 ```ts
@@ -1681,6 +1727,9 @@ try {
 | `INVALID_UTF8`      | A text call on a file that is not text                 |
 | `UNSUPPORTED`       | Not available on this platform or in this build        |
 | `CANCELLED`         | The call was abandoned - see `network`'s `signal`      |
+| `SHARED_STATE_NOT_SERIALIZABLE` | The value cannot cross the JSON boundary        |
+| `SHARED_STATE_KEY_DENIED`       | The key matches no `sharedState.write` pattern  |
+| `SHARED_STATE_PERSIST_FAILED`   | The JSON file under `$APPDATA` could not be written |
 | `INTERNAL`          | A bug in Vantail                                       |
 
 ## Escape hatches

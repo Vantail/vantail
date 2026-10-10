@@ -363,6 +363,8 @@ export interface PermissionsConfig {
    * about itself. A name is whatever a device claims; an id is assigned.
    */
   hid?: boolean | HidRule[];
+  /** Cross-window keyed store. Default: no reads, no writes, no persistence. */
+  sharedState?: SharedStatePermissions;
 }
 
 export interface HidRule {
@@ -371,6 +373,26 @@ export interface HidRule {
   productId?: number;
   /** Narrow further to one HID usage page, e.g. `0xFFA0` for vendor-defined. */
   usagePage?: number;
+}
+
+/**
+ * A keyed, observable store shared by every window.
+ *
+ * `read` gates `get` and `subscribe`; `write` is a list of key globs gating
+ * `set`; `persist` writes the map to a JSON file under `$APPDATA` and
+ * hydrates it on launch. `persist: true` requires `write` to be non-empty.
+ *
+ * Key globs split on `.`: a single `*` stops at a `.` boundary
+ * (`user.*` matches `user.name` but not `user.name.first`), while `**`
+ * crosses them (`user.**` matches both).
+ */
+export interface SharedStatePermissions {
+  /** Default `false`. */
+  read?: boolean;
+  /** Glob patterns per key. Default `[]` (no writes). */
+  write?: string[];
+  /** Default `false`. */
+  persist?: boolean;
 }
 
 /** A menu entry. `type` defaults to `normal` when omitted. */

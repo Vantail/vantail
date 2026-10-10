@@ -46,6 +46,11 @@ permissions: {
   database: boolean,            // default false
   mdns: boolean | string[],     // default: nothing
   hid: boolean | HidRule[],     // default: nothing
+  sharedState: {                // default: no reads, no writes, no persistence
+    read: boolean,              // default false
+    write: string[],            // glob patterns per key; default []
+    persist: boolean,           // default false
+  },
   os: boolean,                  // default true
   window: boolean,              // default true
 }
@@ -450,6 +455,49 @@ filter is applied to enumeration as well as to opening.
 
 **`secrets` is a plain boolean.** Entries are namespaced by the application's
 `identifier` regardless, so two applications cannot reach each other's.
+
+## Shared state
+
+```ts
+permissions: {
+  sharedState: {
+    read: true,             // default false
+    write: ["demo.*"],      // glob patterns per key; default [] (no writes)
+    persist: false,         // default false
+  },
+}
+```
+
+Reads (`get`, `subscribe`) are gated by `read`: with `read: false` both
+reject with `PERMISSION_DENIED`. Writes (`set`) are gated by `write`: the key
+must match at least one pattern, or `set` rejects with
+`SHARED_STATE_KEY_DENIED`.
+
+### Key globs
+
+Keys split on `.`, and the globs follow the filesystem scope spirit on that
+boundary rather than on `/`:
+
+- `*` matches within one segment and stops at a `.`: `user.*` matches
+  `user.name` but not `user.name.first`.
+- `**` crosses segment boundaries: `user.**` matches both, and also `user`
+  itself when it stands alone as a segment.
+- Within one segment, `*` matches any run and `?` matches one character.
+
+This deliberately differs from the filesystem globs, where `*` stops at `/`
+and `**` crosses directories: keys are not paths, so the boundary is `.`
+rather than `/`. The shape - one star for one level, two for any depth - is
+the same idea in both places, which is why the spelling matches.
+
+### Persistence
+
+`persist: true` writes the map to a JSON file under `$APPDATA`
+(`shared-state.json`) on every write and hydrates it on launch, so state
+survives a restart. In-memory for the session is the default.
+
+`persist: true` requires `write` to be non-empty, since persisted state must
+be writable to be useful - config validation fails otherwise, before any
+window exists.
 
 ## Shortcuts and starting at login
 

@@ -66,6 +66,7 @@ database       SQLite in a file the user owns, optionally encrypted
 mdns           discover services on the local network
 hid            talk to USB HID hardware
 secrets        the platform keychain
+sharedState    a keyed store every window stays in sync with
 deepLink       your own URL scheme
 updater        check, download, install, relaunch
 ```

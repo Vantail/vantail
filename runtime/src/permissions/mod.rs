@@ -81,6 +81,89 @@ pub struct PermissionsConfig {
     /// USB HID devices the application may open. Default: none.
     #[serde(default)]
     pub hid: HidConfig,
+    /// Cross-window keyed store. Default: no reads, no writes, no persistence.
+    #[serde(default)]
+    pub shared_state: SharedStateConfig,
+}
+
+/// A keyed, observable store shared by every window.
+///
+/// `read` gates `get` and `subscribe`; `write` is a list of key globs gating
+/// `set`; `persist` writes the map to a JSON file under `$APPDATA` and
+/// hydrates it on launch.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SharedStateConfig {
+    #[serde(default)]
+    pub read: bool,
+    #[serde(default)]
+    pub write: Vec<String>,
+    #[serde(default)]
+    pub persist: bool,
+}
+
+/// Whether a key may be written, matching the filesystem glob spirit but on
+/// `.` boundaries: a single `*` stops at a `.`, `**` crosses them.
+///
+/// `user.*` matches `user.name` but not `user.name.first`;
+/// `user.**` matches both. Within one segment `*` (and `?`) behave like a
+/// shell glob.
+pub fn shared_key_matches(pattern: &str, key: &str) -> bool {
+    match_segments(
+        &pattern.split('.').collect::<Vec<_>>(),
+        &key.split('.').collect::<Vec<_>>(),
+    )
+}
+
+fn match_segments(pattern: &[&str], key: &[&str]) -> bool {
+    if pattern.is_empty() {
+        return key.is_empty();
+    }
+    if pattern[0] == "**" {
+        // `**` crosses `.` boundaries: zero or more segments.
+        for i in 0..=key.len() {
+            if match_segments(&pattern[1..], &key[i..]) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if key.is_empty() {
+        return false;
+    }
+    if !segment_matches(pattern[0], key[0]) {
+        return false;
+    }
+    match_segments(&pattern[1..], &key[1..])
+}
+
+fn segment_matches(pattern: &str, text: &str) -> bool {
+    // Small glob over one `.`-separated segment: `*` matches any run within
+    // the segment, `?` matches one char. Anything else is literal.
+    let p: Vec<char> = pattern.chars().collect();
+    let t: Vec<char> = text.chars().collect();
+    let (mut pi, mut ti) = (0usize, 0usize);
+    let (mut star, mut mark) = (None::<usize>, 0usize);
+    while ti < t.len() {
+        if pi < p.len() && (p[pi] == '?' || p[pi] == t[ti]) {
+            pi += 1;
+            ti += 1;
+        } else if pi < p.len() && p[pi] == '*' {
+            star = Some(pi);
+            mark = ti;
+            pi += 1;
+        } else if let Some(s) = star {
+            pi = s + 1;
+            mark += 1;
+            ti = mark;
+        } else {
+            return false;
+        }
+    }
+    while pi < p.len() && p[pi] == '*' {
+        pi += 1;
+    }
+    pi == p.len()
 }
 
 /// `false` | `true` | a list of device rules.
@@ -150,6 +233,7 @@ impl Default for PermissionsConfig {
             database: DatabaseConfig::default(),
             mdns: TextScopeConfig::default(),
             hid: HidConfig::default(),
+            shared_state: SharedStateConfig::default(),
         }
     }
 }
@@ -560,6 +644,9 @@ pub struct Permissions {
     pub database: bool,
     mdns: TextScope,
     hid: HidConfig,
+    pub shared_read: bool,
+    pub shared_write: Vec<String>,
+    pub shared_persist: bool,
     granted: Mutex<Grants>,
 }
 
@@ -671,6 +758,15 @@ impl Permissions {
             );
         }
 
+        // Persisted state with nowhere to write it is a config mistake, not a
+        // runtime surprise: say so before a window exists.
+        if config.shared_state.persist && config.shared_state.write.is_empty() {
+            return Err(
+                "`permissions.sharedState.persist` needs `permissions.sharedState.write` to be non-empty: persisted state must be writable to be useful."
+                    .to_string(),
+            );
+        }
+
         Ok(Self {
             fs_read: PathScope::compile(&config.filesystem.read, vars)?,
             fs_write: PathScope::compile(&config.filesystem.write, vars)?,
@@ -695,6 +791,9 @@ impl Permissions {
             database: config.database.allowed(),
             mdns: TextScope::compile(&config.mdns)?,
             hid: config.hid.clone(),
+            shared_read: config.shared_state.read,
+            shared_write: config.shared_state.write.clone(),
+            shared_persist: config.shared_state.persist,
             granted: Mutex::new(Grants::default()),
         })
     }
@@ -858,6 +957,34 @@ impl Permissions {
             "`shell.open` is not allowed for `{target}`. Allowed: {}",
             self.shell_open.describe()
         )))
+    }
+
+    /// Whether a shared-state key may be read.
+    pub fn check_shared_read(&self, method: &str) -> Result<(), ApiError> {
+        self.require(self.shared_read, method)
+    }
+
+    /// Whether a shared-state key may be written. The key must match at
+    /// least one `sharedState.write` pattern.
+    pub fn check_shared_write(&self, key: &str) -> Result<(), ApiError> {
+        if self
+            .shared_write
+            .iter()
+            .any(|pattern| shared_key_matches(pattern, key))
+        {
+            return Ok(());
+        }
+        Err(ApiError::new(
+            crate::error::code::SHARED_STATE_KEY_DENIED,
+            format!(
+                "`sharedState.set` is not allowed for `{key}`. Allowed: {}",
+                if self.shared_write.is_empty() {
+                    "nothing".to_string()
+                } else {
+                    self.shared_write.join(", ")
+                }
+            ),
+        ))
     }
 
     /// Record a path the user chose in a native dialog.

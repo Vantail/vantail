@@ -87,6 +87,7 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, request: Request) -> Option<Response> {
     // Everything else is either cheap or needs the main thread anyway.
     let result = match namespace.as_str() {
         "app" => api::app::dispatch(ctx, &method, params),
+        "sharedState" => api::shared_state::dispatch(ctx, &method, params),
         "window" => api::window::dispatch(ctx, &method, params),
         "dialog" => api::dialog::dispatch(ctx, &method, params),
         "clipboard" => api::clipboard::dispatch(ctx.rt, &method, params),

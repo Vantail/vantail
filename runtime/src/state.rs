@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use tao::event_loop::{EventLoopProxy, EventLoopWindowTarget};
 
 use crate::api::process::Registry;
+use crate::api::shared_state::SharedState;
 use crate::chrome::Chrome;
 use crate::config::{Config, LoadedConfig};
 use crate::ipc::{Outgoing, UserEvent};
@@ -39,6 +40,8 @@ pub struct Runtime {
     pub sockets: crate::api::websocket::Sockets,
     /// Open SQLite connections, each on its own thread.
     pub databases: crate::api::database::Databases,
+    /// Cross-window keyed store. The runtime owns it; windows hold copies.
+    pub shared_state: SharedState,
     proxy: Mutex<EventLoopProxy<UserEvent>>,
 }
 
@@ -46,6 +49,8 @@ impl Runtime {
     pub fn new(loaded: LoadedConfig, proxy: EventLoopProxy<UserEvent>) -> Result<Self, String> {
         let vars = Vars::resolve(&loaded.config.app.identifier, &loaded.dist_dir);
         let permissions = Permissions::compile(&loaded.config.permissions, &vars)?;
+        let shared_state =
+            SharedState::new(permissions.shared_persist, &loaded.config.app.identifier);
 
         Ok(Self {
             config: loaded.config,
@@ -60,6 +65,7 @@ impl Runtime {
             requests: crate::api::network::InFlight::default(),
             sockets: crate::api::websocket::Sockets::default(),
             databases: crate::api::database::Databases::default(),
+            shared_state,
             proxy: Mutex::new(proxy),
         })
     }

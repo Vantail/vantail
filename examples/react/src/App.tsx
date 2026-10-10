@@ -35,6 +35,7 @@ import {
   process,
   runtimeVersion,
   screen,
+  sharedState,
   shortcut,
   tray,
   VantailError,
@@ -48,6 +49,8 @@ interface OpenFile {
 }
 
 const SETTINGS = "settings";
+const SYNC = "sync";
+const SYNC_KEY = "demo.counter";
 
 export function App() {
   const [file, setFile] = useState<OpenFile | null>(null);
@@ -62,6 +65,7 @@ export function App() {
   const [changes, setChanges] = useState<string[]>([]);
   const [hotkey, setHotkey] = useState(false);
   const [sleepEvents, setSleepEvents] = useState(false);
+  const [syncCount, setSyncCount] = useState<number | null>(null);
 
   // Static app facts are injected before any script runs, so no await needed.
   const info = app.infoSync();
@@ -121,6 +125,21 @@ export function App() {
       ),
     );
 
+    // Cross-window shared state: the current value arrives immediately on
+    // subscribe, then every change from either window.
+    let stopSync: (() => void) | undefined;
+    void sharedState
+      .get<number>(SYNC_KEY, 0)
+      .then((value) => setSyncCount(value))
+      .catch((cause) => report(cause));
+    try {
+      stopSync = sharedState.subscribe<number>(SYNC_KEY, (value) =>
+        setSyncCount(value),
+      );
+    } catch (cause) {
+      report(cause);
+    }
+
     return () => {
       stopMenu();
       stopTray();
@@ -129,6 +148,7 @@ export function App() {
       stopResume();
       stopHotkey();
       stopWatch();
+      stopSync?.();
     };
   }, []);
 
@@ -210,6 +230,38 @@ export function App() {
         { to: SETTINGS },
       );
       await refreshWindows();
+    } catch (cause) {
+      report(cause);
+    }
+  }
+
+  async function openSync() {
+    setNote(null);
+    try {
+      const existing = await getWindow(SYNC).exists();
+      if (existing) {
+        await getWindow(SYNC).focus();
+        return;
+      }
+      // Resolves once the new window's page is running, so its
+      // `sharedState.subscribe` gets the current value rather than racing it.
+      await createWindow(SYNC, {
+        url: "sync.html",
+        title: "Sync",
+        width: 420,
+        height: 300,
+      });
+      await refreshWindows();
+    } catch (cause) {
+      report(cause);
+    }
+  }
+
+  async function bumpSync(delta: number) {
+    setNote(null);
+    try {
+      const current = await sharedState.get<number>(SYNC_KEY, 0);
+      await sharedState.set(SYNC_KEY, current + delta);
     } catch (cause) {
       report(cause);
     }
@@ -407,6 +459,7 @@ export function App() {
           Select file
         </button>
         <button onClick={() => void openSettings()}>Second window</button>
+        <button onClick={() => void openSync()}>Open sync window</button>
         <button onClick={() => void toggleTray()}>
           {trayOn ? "Remove tray" : "Add tray"}
         </button>
@@ -463,6 +516,21 @@ export function App() {
       ) : null}
 
       {note ? <p className="note">{note}</p> : null}
+
+      <section className="empty">
+        <h2>Shared counter</h2>
+        <p className="meta">
+          Key <code>{SYNC_KEY}</code> - set it here or in the sync window; the
+          other reflects the change without a reload.
+        </p>
+        <p className="meta">
+          {syncCount === null ? "loading..." : `count: ${syncCount}`}
+        </p>
+        <div className="actions">
+          <button onClick={() => void bumpSync(1)}>+1</button>
+          <button onClick={() => void bumpSync(-1)}>-1</button>
+        </div>
+      </section>
 
       {file ? (
         <section className="file">

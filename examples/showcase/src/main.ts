@@ -27,6 +27,7 @@ import { osPanel } from "./panels/os.js";
 import { processPanel } from "./panels/process.js";
 import { rawPanel } from "./panels/raw.js";
 import { screenPanel } from "./panels/screen.js";
+import { sharedStatePanel } from "./panels/shared.js";
 import {
   autostartPanel,
   notificationPanel,
@@ -78,6 +79,7 @@ function build() {
     networkPanel(),
     databasePanel(),
     secretsPanel(),
+    sharedStatePanel(),
     mdnsPanel(),
     hidPanel(),
     updaterPanel(),

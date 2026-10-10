@@ -4,6 +4,31 @@ Notable changes per release.
 
 ## Unreleased
 
+### Added
+
+- **`sharedState`: a keyed, observable store shared by every window.**
+  The runtime owns it - writes go renderer -> runtime -> all renderers, so
+  there is no "which window wins?" race. Last write wins.
+
+  ```ts
+  await sharedState.set("demo.counter", count + 1);
+  const count = await sharedState.get<number>("demo.counter", 0);
+  const stop = sharedState.subscribe<number>("demo.counter", (value) => show(value));
+  ```
+
+  `subscribe` delivers the current value immediately, then every change, which
+  is what makes `useSyncExternalStore` wiring trivial without a shim. Values
+  must be JSON-serializable (`SHARED_STATE_NOT_SERIALIZABLE` otherwise).
+  Reads are gated by `permissions.sharedState.read` (`PERMISSION_DENIED`
+  when off); writes by `permissions.sharedState.write` key globs
+  (`SHARED_STATE_KEY_DENIED` when nothing matches - `*` stops at a `.`
+  boundary, `**` crosses them). `persist: true` writes the map to a JSON file
+  under `$APPDATA` and hydrates it on launch (`SHARED_STATE_PERSIST_FAILED`
+  when that fails), and needs `write` to be non-empty. This complements
+  `app.emit` / `app.listen` over the same transport rather than replacing
+  them. The React example gains an "Open sync window" demo on
+  `demo.counter`.
+
 ## 0.1.23
 
 ### Fixed
