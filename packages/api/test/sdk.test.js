@@ -63,6 +63,7 @@ const {
   network,
   notification,
   os,
+  print,
   process: childProcess,
   runtimeVersion,
   secrets,
@@ -740,4 +741,39 @@ test("a second launch reports what it was asked to do", () => {
   });
   assert.deepEqual(seen, [{ args: ["vantail", "myapp://x"], cwd: "/home/me" }]);
   stop();
+});
+
+test("print.document sends exactly the source it was given", async () => {
+  const html = await callAndCapture(() =>
+    print.document({ html: "<h1>hi</h1>" }),
+  );
+  assert.equal(html.request.method, "print.document");
+  assert.deepEqual(html.request.params, { html: "<h1>hi</h1>" });
+
+  const pdf = await callAndCapture(() =>
+    print.document({ pdfPath: "/tmp/invoice.pdf" }),
+  );
+  assert.equal(pdf.request.method, "print.document");
+  assert.deepEqual(pdf.request.params, { pdfPath: "/tmp/invoice.pdf" });
+});
+
+test("print.document refuses both sources before anything is posted", async () => {
+  posted.length = 0;
+  await assert.rejects(
+    print.document({ html: "<h1>hi</h1>", pdfPath: "/tmp/a.pdf" }),
+    (error) => {
+      assert.ok(VantailError.is(error, "INVALID_ARGUMENT"));
+      return true;
+    },
+  );
+  assert.equal(posted.length, 0);
+});
+
+test("print.document refuses no source before anything is posted", async () => {
+  posted.length = 0;
+  await assert.rejects(print.document({}), (error) => {
+    assert.ok(VantailError.is(error, "INVALID_ARGUMENT"));
+    return true;
+  });
+  assert.equal(posted.length, 0);
 });

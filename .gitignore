@@ -2,6 +2,7 @@ node_modules/
 dist/
 target/
 .vantail/
+.freebuff/
 build/
 *.tsbuildinfo
 .DS_Store

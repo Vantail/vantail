@@ -3978,6 +3978,7 @@ dependencies = [
  "tray-icon",
  "tungstenite",
  "ureq",
+ "webview2-com",
  "windows",
  "wry",
 ]

@@ -51,6 +51,7 @@ clipboard      text and images
 menu           the application menu, and context menus
 tray           an icon in the menu bar or system tray
 notification   a notification from the OS
+print          the native print dialog, for content you generated - never the app UI
 shortcut       key combinations claimed system-wide
 autostart      starting when the user logs in
 power          notices when the machine suspends and resumes

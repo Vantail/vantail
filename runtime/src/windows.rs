@@ -14,6 +14,7 @@ use tao::event_loop::{EventLoopProxy, EventLoopWindowTarget};
 use tao::window::{Fullscreen, Window, WindowBuilder, WindowId};
 use wry::{WebView, WebViewBuilder};
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::chrome::titlebar;
@@ -272,11 +273,44 @@ impl WindowEntry {
     }
 }
 
+/// What a print job renders. Decided before any view exists, so the hidden
+/// view only ever holds caller-supplied content - never an application page.
+pub enum PrintContent {
+    Html(String),
+    /// Already normalised by the permission check; what was checked is what
+    /// the hidden view opens.
+    Pdf(PathBuf),
+}
+
+/// A hidden view rendering one print job.
+///
+/// Not an application window: it is never listed, never addressable by
+/// label, has no IPC bridge, and is dropped - window and all - as soon as
+/// its dialog closes. Declared `webview` before `window` for the same reason
+/// as `WindowEntry`: struct fields drop in declaration order, and the
+/// webview holds a raw handle into the window it was built on.
+pub struct PrintJob {
+    pub id: u64,
+    /// The IPC request to answer once the dialog has closed.
+    pub request_id: String,
+    /// The window that asked, which the answer goes back to.
+    pub source: String,
+    pub webview: WebView,
+    /// Kept, not read: dropping it closes the hidden window, which is the
+    /// teardown. A field that is only ever dropped still owns something.
+    #[allow(dead_code)]
+    pub window: Window,
+}
+
 #[derive(Default)]
 pub struct WindowManager {
     /// A `Vec` rather than a map: applications have a handful of windows, and
     /// creation order is the order `window.list()` should report.
     entries: Vec<WindowEntry>,
+    /// Print jobs in flight. Kept apart from `entries` on purpose: nothing
+    /// here is a window the application can name, list, focus or close.
+    print_jobs: Vec<PrintJob>,
+    next_print_job: u64,
 }
 
 impl WindowManager {
@@ -337,6 +371,71 @@ impl WindowManager {
         let before = self.entries.len();
         self.entries.retain(|entry| entry.label != label);
         self.entries.len() != before
+    }
+
+    /// Open a hidden view rendering one print job.
+    ///
+    /// The window is never shown and never listed; the webview is bare - no
+    /// bridge script, no IPC handler, no custom protocol - so nothing in it
+    /// can call back into the runtime. The only thing that will ever touch
+    /// it is the native print dialog, once, when the page reports it has
+    /// finished loading. Returns the job id the load handler will announce.
+    pub fn begin_print_job(
+        &mut self,
+        target: &EventLoopWindowTarget<UserEvent>,
+        proxy: EventLoopProxy<UserEvent>,
+        request_id: &str,
+        source: &str,
+        content: PrintContent,
+    ) -> Result<u64, String> {
+        let id = self.next_print_job;
+        self.next_print_job += 1;
+
+        // A full page width, so normally laid-out content has nothing
+        // overflowing to the right when it prints. macOS prints the frame it
+        // sees; this is the frame it gets.
+        let window = WindowBuilder::new()
+            .with_title("Vantail Print")
+            .with_inner_size(LogicalSize::new(1024.0, 768.0))
+            .with_visible(false)
+            .build(target)
+            .map_err(|e| format!("Could not open the print view: {e}"))?;
+
+        let ready = proxy.clone();
+        let mut builder =
+            WebViewBuilder::new().with_on_page_load_handler(move |event, _url| {
+                // Render completion, not a guess: the dialog opens onto loaded
+                // content, never onto a half-rendered page.
+                if matches!(event, wry::PageLoadEvent::Finished) {
+                    let _ = ready.send_event(UserEvent::PrintReady { job: id });
+                }
+            });
+
+        builder = match &content {
+            PrintContent::Html(html) => builder.with_html(html.clone()),
+            PrintContent::Pdf(path) => builder.with_url(print_file_url(path)),
+        };
+
+        let webview = attach(builder, &window)?;
+
+        self.print_jobs.push(PrintJob {
+            id,
+            request_id: request_id.to_string(),
+            source: source.to_string(),
+            webview,
+            window,
+        });
+        Ok(id)
+    }
+
+    /// Take a finished-loading job out, for its dialog and teardown.
+    ///
+    /// The job is removed here, before the dialog runs: whatever happens
+    /// next - printed, cancelled, failed - the hidden view is dropped with
+    /// the returned value and never lingers.
+    pub fn take_print_job(&mut self, id: u64) -> Option<PrintJob> {
+        let at = self.print_jobs.iter().position(|job| job.id == id)?;
+        Some(self.print_jobs.remove(at))
     }
 
     /// Deliver to one window, or to all of them when `label` is `None`.
@@ -504,6 +603,47 @@ fn ensure_trailing_slash(url: &str) -> String {
     } else {
         format!("{url}/")
     }
+}
+
+/// A `file://` URL for a print job's PDF.
+///
+/// The path comes from the permission check already normalised and absolute;
+/// it is encoded segment by segment so `/` keeps separating while spaces and
+/// the rest travel safely.
+fn print_file_url(path: &Path) -> String {
+    use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
+    use std::path::Component;
+
+    // Unreserved characters travel literally; everything else - spaces
+    // especially - is encoded. `/` never reaches the encoder: it separates,
+    // because encoding happens per segment.
+    const SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
+        .remove(b'-')
+        .remove(b'_')
+        .remove(b'.')
+        .remove(b'~');
+
+    let mut url = String::from("file://");
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => {
+                url.push('/');
+                url.push_str(
+                    &utf8_percent_encode(&prefix.as_os_str().to_string_lossy(), SEGMENT)
+                        .to_string(),
+                );
+            }
+            Component::RootDir => {}
+            Component::Normal(part) => {
+                url.push('/');
+                url.push_str(
+                    &utf8_percent_encode(&part.to_string_lossy(), SEGMENT).to_string(),
+                );
+            }
+            Component::CurDir | Component::ParentDir => {}
+        }
+    }
+    url
 }
 
 /// A size limit is only a limit if both dimensions are given: tao takes one
@@ -1229,6 +1369,14 @@ mod tests {
             corner_radii(&config).is_some(),
             !cfg!(target_os = "macos"),
             "a hidden title bar is a frame on macOS and no frame anywhere else"
+        );
+    }
+
+    #[test]
+    fn print_file_urls_encode_segments_but_keep_slashes() {
+        assert_eq!(
+            print_file_url(Path::new("/tmp/my invoice.pdf")),
+            "file:///tmp/my%20invoice.pdf"
         );
     }
 

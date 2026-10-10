@@ -414,6 +414,24 @@ fn run() -> Result<(), String> {
                 windows.deliver(window.as_deref(), &outgoing);
             }
 
+            Event::UserEvent(UserEvent::PrintReady { job }) => {
+                // Taken out before the dialog runs, so the hidden view is
+                // torn down with it whatever happens next - printed,
+                // cancelled or failed. It never belonged to any window, and
+                // it never becomes reachable as one.
+                let Some(print) = windows.take_print_job(job) else {
+                    return;
+                };
+                let result = api::print::run_print_dialog(&print.webview);
+                windows.deliver(
+                    Some(&print.source),
+                    &Outgoing::Response(crate::ipc::Response::from_result(
+                        print.request_id,
+                        result,
+                    )),
+                );
+            }
+
             _ => {}
         }
     });

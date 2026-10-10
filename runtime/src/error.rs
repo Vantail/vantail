@@ -11,6 +11,9 @@ use serde_json::Value;
 pub mod code {
     pub const UNKNOWN_METHOD: &str = "UNKNOWN_METHOD";
     pub const INVALID_PARAMS: &str = "INVALID_PARAMS";
+    /// The params parsed, but their combination is not something the call
+    /// accepts - e.g. two mutually exclusive options given together.
+    pub const INVALID_ARGUMENT: &str = "INVALID_ARGUMENT";
     pub const PERMISSION_DENIED: &str = "PERMISSION_DENIED";
     pub const NOT_FOUND: &str = "NOT_FOUND";
     pub const ALREADY_EXISTS: &str = "ALREADY_EXISTS";
@@ -50,6 +53,10 @@ impl ApiError {
 
     pub fn invalid_params(message: impl Into<String>) -> Self {
         Self::new(code::INVALID_PARAMS, message)
+    }
+
+    pub fn invalid_argument(message: impl Into<String>) -> Self {
+        Self::new(code::INVALID_ARGUMENT, message)
     }
 
     pub fn denied(message: impl Into<String>) -> Self {

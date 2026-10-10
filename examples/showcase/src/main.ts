@@ -24,6 +24,7 @@ import { menuPanel } from "./panels/menu.js";
 import { databasePanel } from "./panels/database.js";
 import { networkPanel } from "./panels/network.js";
 import { osPanel } from "./panels/os.js";
+import { printPanel } from "./panels/print.js";
 import { processPanel } from "./panels/process.js";
 import { rawPanel } from "./panels/raw.js";
 import { screenPanel } from "./panels/screen.js";
@@ -70,6 +71,7 @@ function build() {
     menuPanel(),
     trayPanel(),
     notificationPanel(),
+    printPanel(),
     shortcutPanel(),
     autostartPanel(),
     powerPanel(),

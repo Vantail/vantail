@@ -14,6 +14,7 @@ import {
   menu,
   notification,
   os,
+  print,
   process,
   shell,
   tray,
@@ -837,6 +838,39 @@ await notification.show({ title: "Export", body: "Finished", icon: "..." });
 
 On macOS notifications are delivered through the bundle identifier, so an
 unbundled `vantail dev` run reports `UNSUPPORTED`. Try `vantail package`.
+
+## print
+
+No permission flag. The native print dialog is the authorisation: it opens on
+every call, and the user picks the printer, the copies and the page range - or
+cancels and nothing happens. See
+[permissions.md](permissions.md#why-printing-has-no-permission-flag).
+
+```ts
+await print.document({ html: invoiceHtml });
+await print.document({ pdfPath: "/path/to/invoice.pdf" });
+```
+
+Exactly one of `html` or `pdfPath`. Passing both, neither, or an empty string
+rejects with `INVALID_ARGUMENT`.
+
+- `html` is a complete document the runtime renders in a hidden view of its
+  own. Inline the styles it needs: that view knows nothing of the
+  application's own CSS, so a page that looks right in the app prints blank
+  or unstyled unless its print HTML is self-contained.
+- `pdfPath` is a PDF file on disk. Printing it reads it, so it is checked
+  against `permissions.filesystem` read scope exactly as if the application
+  had read it itself - including the session grant when the path came from a
+  dialog or a drop.
+
+Resolves once the dialog has closed, whether the user printed or cancelled.
+On Windows the platform offers no close notification, so it resolves once the
+dialog is on screen instead.
+
+The guarantee: **the application's own UI can never be printed through this
+API.** There is no argument-less call and no way to name a window. Only
+caller-supplied content is rendered, only in the hidden view, which is torn
+down when the dialog closes.
 
 ## menu
 
@@ -1674,6 +1708,7 @@ try {
 | `NO_RUNTIME`        | The page is not inside a Vantail window                |
 | `UNKNOWN_METHOD`    | No such method - usually an SDK newer than the runtime |
 | `INVALID_PARAMS`    | The native side rejected the arguments                 |
+| `INVALID_ARGUMENT`  | The arguments parsed but conflict - e.g. `print` given both `html` and `pdfPath` |
 | `PERMISSION_DENIED` | Not allowed by `vantail.config.ts`                     |
 | `NOT_FOUND`         | No such file or directory                              |
 | `ALREADY_EXISTS`    |                                                        |
