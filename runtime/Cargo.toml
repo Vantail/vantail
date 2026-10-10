@@ -131,6 +131,9 @@ objc2-foundation = { version = "0.3", features = ["NSNotification", "NSString", 
 # The version and features tao already resolves to, so this adds nothing to
 # the tree.
 [target.'cfg(target_os = "windows")'.dependencies]
+# The system print dialog: `ICoreWebView2_16::ShowPrintUI`. Same version wry
+# resolves to, so the `ICoreWebView2` its webview hands over is this crate's.
+webview2-com = "0.39"
 windows = { version = "0.62", features = [
   "Win32_Foundation",
   "Win32_Graphics_Dwm",

@@ -82,6 +82,7 @@ export {
 } from "./process.js";
 export { screen, type Screen } from "./screen.js";
 export { power } from "./power.js";
+export { print, type PrintDocumentOptions } from "./print.js";
 export { secrets } from "./secrets.js";
 export { shell } from "./shell.js";
 export { shortcut, type RegisterOptions, type Shortcut } from "./shortcut.js";

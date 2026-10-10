@@ -157,6 +157,7 @@ pub mod websocket {
 
 pub mod notification;
 pub mod os;
+pub mod print;
 pub mod process;
 
 pub mod screen;

@@ -30,6 +30,10 @@ pub enum UserEvent {
     /// A request wants to reach a host the config did not name, and
     /// `permissions.network.grantFromPrompt` says to ask.
     ///
+    /// A hidden print view has finished loading its content. The dialog for
+    /// it runs on the event loop thread next, and the hidden view is torn
+    /// down straight after.
+    PrintReady { job: u64 },
     /// It arrives here because the event loop is the only thread that may
     /// open a dialog; the thread that asked is blocked on `answer` until it
     /// hears back.

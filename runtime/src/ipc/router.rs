@@ -84,6 +84,14 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, request: Request) -> Option<Response> {
             .map(|result| Response::from_result(id, result));
     }
 
+    // Printing renders in a hidden view and answers once its dialog has
+    // closed, so this answers later too - or not at all yet, when the view
+    // is still loading.
+    if namespace == "print" {
+        return api::print::dispatch(ctx, &id, &method, params)
+            .map(|result| Response::from_result(id, result));
+    }
+
     // Everything else is either cheap or needs the main thread anyway.
     let result = match namespace.as_str() {
         "app" => api::app::dispatch(ctx, &method, params),

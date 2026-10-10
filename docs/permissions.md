@@ -58,6 +58,25 @@ not reaching outside itself. Everything else starts closed.
 Omitting the `permissions` block entirely gives you exactly these defaults -
 windows and machine facts, and nothing else.
 
+## Why printing has no permission flag
+
+`print.document` asks for nothing in this block, and that is deliberate
+rather than missing. A flag here answers "may the application do this on its
+own?", and printing never happens on its own: the native dialog opens on
+every call, in front of the user, and nothing is printed unless they go
+through with it. The dialog is the authorisation, the same way a file picker
+is for the file it picks.
+
+The actual gate is structural, not configurational. The call takes explicit
+content - `html` or `pdfPath` - and the runtime renders only that, in a
+hidden view that is never attached to any application window. There is no
+call that prints the application's own UI, so a compromised page cannot turn
+this API into a way to exfiltrate what is on screen.
+
+What still checks: a `pdfPath` is a file being read, so it goes through
+`permissions.filesystem` read scope like any other read - including the
+session grant when the user picked it in a dialog.
+
 ## Path scopes
 
 A `PathScope` is one of four things:

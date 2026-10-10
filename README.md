@@ -126,6 +126,8 @@ os             platform | arch | info | infoSync | homeDir | tempDir
                appDataDir | appConfigDir | resourceDir
 
 notification   show
+
+print          document
 ```
 
 Everything returns a promise. Failures reject with a `VantailError` carrying a
@@ -539,6 +541,8 @@ package` refuses one unless you pass `--allow-debug-runtime`.
   calls that are meant to be refused shown alongside the ones that work.
 - [examples/react](examples/react) - a smaller, more realistic application.
 - [examples/vanilla](examples/vanilla) - the same idea without a framework.
+- [examples/invoice](examples/invoice) - printing generated content: an
+  invoice as self-contained HTML, plus the same invoice as a PDF file.
 
 And seven built around a particular shape of window:
 
