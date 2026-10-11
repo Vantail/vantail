@@ -20,6 +20,12 @@ pub mod code {
     pub const INTERNAL: &str = "INTERNAL";
     /// The caller abandoned the request before it answered.
     pub const CANCELLED: &str = "CANCELLED";
+    /// A `sharedState.set` value that cannot be represented as JSON.
+    pub const SHARED_STATE_NOT_SERIALIZABLE: &str = "SHARED_STATE_NOT_SERIALIZABLE";
+    /// A `sharedState.set` for a key no `write` pattern covers.
+    pub const SHARED_STATE_KEY_DENIED: &str = "SHARED_STATE_KEY_DENIED";
+    /// The shared-state file under `$APPDATA` could not be read or written.
+    pub const SHARED_STATE_PERSIST_FAILED: &str = "SHARED_STATE_PERSIST_FAILED";
 }
 
 #[derive(Debug, Clone, Serialize)]

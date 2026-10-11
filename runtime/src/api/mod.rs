@@ -161,6 +161,8 @@ pub mod process;
 
 pub mod screen;
 
+pub mod shared_state;
+
 #[cfg(feature = "secrets")]
 pub mod secrets;
 
