@@ -51,6 +51,17 @@ input[type="number"] {
   padding: 4px 8px;
 }
 
+input[type="text"] {
+  width: 100%;
+  box-sizing: border-box;
+  background: #1e1a2b;
+  color: inherit;
+  border: 1px solid #3a3450;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 14px;
+}
+
 .totals {
   text-align: right;
   margin: 16px 0;
@@ -59,6 +70,7 @@ input[type="number"] {
 .row {
   display: flex;
   gap: 12px;
+  margin-top: 12px;
 }
 
 button {
@@ -78,6 +90,13 @@ button:disabled {
 
 button + button {
   background: #2c2838;
+}
+
+button.ghost {
+  background: transparent;
+  border: 1px solid #3a3450;
+  color: #cfc9e6;
+  padding: 6px 12px;
 }
 
 .status {

@@ -15,8 +15,8 @@ pnpm dev     # same as `vantail dev`: the app in a native window, with HMR
 Two buttons:
 
 - **Print invoice** calls `print.document({ html })` with the invoice HTML
-  built from the current line items. Edit a quantity and print again - the
-  document follows the data.
+  built from the current rows. Add, remove, or edit a row and print again -
+  the document follows the data.
 - **Print sample PDF** calls `print.document({ pdfPath })` with
   `public/sample-invoice.pdf`, resolved through `os.resourceDir()`. It is the
   secondary path for content that already exists as a file.

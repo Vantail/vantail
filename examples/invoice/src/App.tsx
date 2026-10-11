@@ -12,6 +12,14 @@ export function App() {
   const invoice = { ...demoInvoice, items };
   const { subtotal, tax, total } = totals(invoice);
 
+  const patch = (i: number, value: Partial<LineItem>) =>
+    setItems(items.map((it, j) => (j === i ? { ...it, ...value } : it)));
+
+  const remove = (i: number) => setItems(items.filter((_, j) => j !== i));
+
+  const add = () =>
+    setItems([...items, { description: "New item", qty: 1, unitPrice: 0 }]);
+
   async function run(label: string, work: () => Promise<{ printed: boolean }>) {
     setBusy(true);
     setStatus(`${label}\u2026`);
@@ -43,8 +51,8 @@ export function App() {
     <main>
       <h1>Invoice {demoInvoice.number}</h1>
       <p className="hint">
-        Edit the quantities, then print. What prints is a generated document -
-        not this window.
+        Add, remove, or edit rows, then print. What prints is the document
+        built from this data - not this window.
       </p>
 
       <table>
@@ -54,29 +62,65 @@ export function App() {
             <th>Qty</th>
             <th>Unit</th>
             <th>Amount</th>
+            <th aria-label="actions" />
           </tr>
         </thead>
         <tbody>
           {items.map((item, i) => (
             <tr key={i}>
-              <td>{item.description}</td>
+              <td>
+                <input
+                  type="text"
+                  aria-label={`item ${i + 1} description`}
+                  value={item.description}
+                  onChange={(event) => patch(i, { description: event.target.value })}
+                />
+              </td>
               <td>
                 <input
                   type="number"
                   min={0}
+                  aria-label={`item ${i + 1} quantity`}
                   value={item.qty}
                   onChange={(event) => {
                     const qty = Math.max(0, Number(event.target.value) || 0);
-                    setItems(items.map((it, j) => (j === i ? { ...it, qty } : it)));
+                    patch(i, { qty });
                   }}
                 />
               </td>
-              <td>{money(item.unitPrice)}</td>
+              <td>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  aria-label={`item ${i + 1} unit price`}
+                  value={item.unitPrice}
+                  onChange={(event) => {
+                    const unitPrice = Math.max(0, Number(event.target.value) || 0);
+                    patch(i, { unitPrice });
+                  }}
+                />
+              </td>
               <td>{money(item.qty * item.unitPrice)}</td>
+              <td>
+                <button
+                  className="ghost"
+                  aria-label={`remove item ${i + 1}`}
+                  onClick={() => remove(i)}
+                >
+                  &times;
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
+
+      <div className="row">
+        <button className="ghost" onClick={add}>
+          + Add row
+        </button>
+      </div>
 
       <p className="totals">
         Subtotal {money(subtotal)} &middot; Tax {money(tax)} &middot;{" "}
