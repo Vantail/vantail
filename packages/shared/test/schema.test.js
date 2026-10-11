@@ -253,3 +253,28 @@ test("every option the config interface documents is one the schema accepts", as
     );
   }
 });
+
+test("shared state permissions are accepted", () => {
+  const result = parseConfig({
+    ...valid,
+    permissions: { sharedState: { read: true, write: ["demo.*"], persist: false } },
+  });
+  assert.equal(result.ok, true);
+});
+
+test("shared state persistence without a write pattern is a config error", () => {
+  const result = parseConfig({
+    ...valid,
+    permissions: { sharedState: { read: true, persist: true } },
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /sharedState.*write|write.*sharedState/s);
+});
+
+test("a typo in the shared state permissions is not silently ignored", () => {
+  const result = parseConfig({
+    ...valid,
+    permissions: { sharedState: { read: true, writes: ["demo.*"] } },
+  });
+  assert.equal(result.ok, false);
+});

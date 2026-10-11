@@ -157,6 +157,25 @@ const shellPermissions = z
   })
   .strict();
 
+const sharedStatePermissions = z
+  .object({
+    read: z.boolean().optional(),
+    write: z.array(z.string()).optional(),
+    persist: z.boolean().optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    // Persisted state that can never be written is a config mistake: the
+    // runtime refuses the launch too, and this names it before anything runs.
+    if (value.persist === true && (value.write ?? []).length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "`permissions.sharedState.persist` needs at least one `permissions.sharedState.write` pattern",
+      });
+    }
+  });
+
 const PREDEFINED = [
   "separator",
   "copy",
@@ -374,6 +393,7 @@ export const permissionsSchema = z
     os: z.boolean().optional(),
     window: z.boolean().optional(),
     shell: shellPermissions.optional(),
+    sharedState: sharedStatePermissions.optional(),
     tray: z.boolean().optional(),
     shortcut: z.boolean().optional(),
     dragDrop: z.boolean().optional(),

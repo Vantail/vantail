@@ -302,6 +302,36 @@ export interface ShellPermissions {
   open?: boolean | string[];
 }
 
+/**
+ * Keyed state shared between every window of the application.
+ *
+ * The runtime owns the values; windows hold synchronised copies. Reads are
+ * one flag, writes are glob patterns per key, so a window that may show a
+ * value cannot necessarily change it:
+ *
+ * ```ts
+ * sharedState: { read: true, write: ["demo.*"], persist: false }
+ * ```
+ *
+ * A single `*` matches within one `.`-separated segment - `user.*` covers
+ * `user.name` but not `user.name.first` - while `**` crosses segments. This
+ * mirrors the filesystem scopes, where `*` stops at the separator, except
+ * the separator here is `.` rather than `/`. See `docs/permissions.md`.
+ *
+ * `persist: true` keeps the store in a JSON file under `$APPDATA` across
+ * restarts, and needs at least one `write` pattern - persisted state must be
+ * writable to be useful. The last write wins; there is no conflict
+ * resolution.
+ */
+export interface SharedStatePermissions {
+  /** Whether `sharedState.get` and `sharedState.subscribe` may read. */
+  read?: boolean;
+  /** Key patterns `sharedState.set` may write. Default: nothing. */
+  write?: string[];
+  /** Persist across restarts. Default `false`. Needs `write` to be non-empty. */
+  persist?: boolean;
+}
+
 export interface PermissionsConfig {
   filesystem?: FilesystemPermissions;
   dialog?: boolean;
@@ -313,6 +343,11 @@ export interface PermissionsConfig {
   window?: boolean;
   /** Running other programs, and `shell.open`. Default: nothing. */
   shell?: ShellPermissions;
+  /**
+   * Keyed state shared between every window. Default: no reads, no writes,
+   * no persistence.
+   */
+  sharedState?: SharedStatePermissions;
   /** Creating and changing the tray icon. Default `false`. */
   tray?: boolean;
 
