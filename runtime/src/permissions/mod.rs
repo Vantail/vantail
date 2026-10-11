@@ -972,7 +972,9 @@ impl Permissions {
     /// The permission check runs second and the store acts third.
     pub fn check_shared_key(key: &str) -> Result<(), ApiError> {
         if key.is_empty() {
-            return Err(ApiError::invalid_params("A shared-state key cannot be empty"));
+            return Err(ApiError::invalid_params(
+                "A shared-state key cannot be empty",
+            ));
         }
         if key.len() > 512 {
             return Err(ApiError::invalid_params(format!(
@@ -996,7 +998,11 @@ impl Permissions {
     /// Whether `sharedState.set` may write this key: the key must match at
     /// least one `write` pattern.
     pub fn check_shared_write(&self, key: &str) -> Result<(), ApiError> {
-        if self.shared_state_write.iter().any(|p| shared_key_matches(p, key)) {
+        if self
+            .shared_state_write
+            .iter()
+            .any(|p| shared_key_matches(p, key))
+        {
             return Ok(());
         }
         Err(ApiError::new(
@@ -1777,7 +1783,9 @@ mod shared_state_tests {
     fn key_length_has_a_boundary() {
         assert!(Permissions::check_shared_key(&"k".repeat(512)).is_ok());
         assert_eq!(
-            Permissions::check_shared_key(&"k".repeat(513)).unwrap_err().code,
+            Permissions::check_shared_key(&"k".repeat(513))
+                .unwrap_err()
+                .code,
             crate::error::code::INVALID_PARAMS
         );
     }

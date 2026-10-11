@@ -342,7 +342,7 @@ fn file_url(path: &std::path::Path) -> String {
     #[cfg(target_os = "windows")]
     let display = {
         let forward = display.replace('\\', "/");
-        if forward.starts_with("//") {
+        if forward.starts_with('/') {
             forward
         } else {
             format!("/{forward}")
@@ -562,7 +562,7 @@ fn on_pdf_captured(
 /// the dialog is unparented, which GTK still presents modally.
 #[cfg(target_os = "linux")]
 fn platform_print_linux(webview: &wry::WebView) -> Result<bool, ApiError> {
-    use webkit2gtk::prelude::PrintOperationExt;
+    use webkit2gtk::PrintOperationExt;
     use webkit2gtk::{PrintOperation, PrintOperationResponse};
     use wry::WebViewExtUnix;
 

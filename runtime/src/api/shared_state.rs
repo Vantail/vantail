@@ -58,8 +58,7 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
 
         "sharedState.set" => {
             let SetParams { key, value } = Request::params(method, params)?;
-            let broadcast =
-                prepare_set(&ctx.rt.permissions, &ctx.rt.shared, &key, value)?;
+            let broadcast = prepare_set(&ctx.rt.permissions, &ctx.rt.shared, &key, value)?;
             // To every window, including the caller: the caller's own copy
             // updates through the same path as everyone else's.
             ctx.windows
@@ -96,12 +95,7 @@ fn resolve_get(
 
 /// The `set` path without the windows: validate the key, check the write
 /// permission, store, and hand back the broadcast payload for delivery.
-fn prepare_set(
-    permissions: &Permissions,
-    store: &Store,
-    key: &str,
-    value: Value,
-) -> ApiResult {
+fn prepare_set(permissions: &Permissions, store: &Store, key: &str, value: Value) -> ApiResult {
     Permissions::check_shared_key(key)?;
     permissions.check_shared_write(key)?;
     check_serializable(&value)?;
@@ -134,7 +128,9 @@ fn check_serializable(value: &Value) -> Result<(), ApiError> {
     serde_json::to_string(value).map(|_| ()).map_err(|e| {
         ApiError::new(
             code::SHARED_STATE_NOT_SERIALIZABLE,
-            format!("This value cannot be shared between windows: it is not JSON-serialisable ({e})"),
+            format!(
+                "This value cannot be shared between windows: it is not JSON-serialisable ({e})"
+            ),
         )
     })
 }
@@ -241,7 +237,10 @@ fn load(path: &PathBuf) -> HashMap<String, Value> {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return HashMap::new(),
         Err(e) => {
-            eprintln!("vantail: could not read shared state at {}: {e}", path.display());
+            eprintln!(
+                "vantail: could not read shared state at {}: {e}",
+                path.display()
+            );
             return HashMap::new();
         }
     };
@@ -374,7 +373,10 @@ mod tests {
         store.set("demo.a", json!(1)).expect("set");
         // Read straight off disk, without going through the store again.
         let text = std::fs::read_to_string(&path).expect("file exists after one write");
-        assert!(text.contains("demo.a"), "a write must be durable at once: {text}");
+        assert!(
+            text.contains("demo.a"),
+            "a write must be durable at once: {text}"
+        );
 
         clean(&path);
     }
@@ -438,9 +440,14 @@ mod tests {
         let allowed = permissions(true, &["demo.*"]);
         let store = Store::ephemeral();
 
-        let answered =
-            resolve_get(&allowed, &store, "sharedState.get", "demo.missing", Some(json!(42)))
-                .expect("get");
+        let answered = resolve_get(
+            &allowed,
+            &store,
+            "sharedState.get",
+            "demo.missing",
+            Some(json!(42)),
+        )
+        .expect("get");
         assert_eq!(answered, json!(42));
         // The key is still unset afterwards.
         assert_eq!(
@@ -456,8 +463,14 @@ mod tests {
         store.set("demo.counter", json!(3)).expect("set");
 
         assert_eq!(
-            resolve_get(&allowed, &store, "sharedState.get", "demo.counter", Some(json!(99)))
-                .expect("get"),
+            resolve_get(
+                &allowed,
+                &store,
+                "sharedState.get",
+                "demo.counter",
+                Some(json!(99))
+            )
+            .expect("get"),
             json!(3)
         );
     }
