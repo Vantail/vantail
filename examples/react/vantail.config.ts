@@ -64,5 +64,9 @@ export default defineConfig({
     shell: {
       allow: [{ program: "/usr/bin/uptime", args: [] }],
     },
+
+    // The counter shared between the main window and the sync window. Both
+    // read it; either may write it.
+    sharedState: { read: true, write: ["demo.*"], persist: false },
   },
 });

@@ -1779,4 +1779,25 @@ mod shared_state_tests {
         assert!(permissions.shared_state_write.is_empty());
         assert!(!permissions.shared_state_persist);
     }
+
+    #[test]
+    fn the_json_shape_the_cli_writes_deserialises() {
+        // `vantail.json` carries `permissions` verbatim from the validated
+        // config, so this is the exact shape that has to land.
+        let config: PermissionsConfig = serde_json::from_value(serde_json::json!({
+            "sharedState": { "read": true, "write": ["demo.*"], "persist": false },
+        }))
+        .expect("sharedState block should load");
+        assert!(config.shared_state.read);
+        assert_eq!(config.shared_state.write, vec!["demo.*"]);
+        assert!(!config.shared_state.persist);
+
+        // And an unknown key inside it is refused, not silently kept.
+        assert!(
+            serde_json::from_value::<PermissionsConfig>(serde_json::json!({
+                "sharedState": { "read": true, "writes": ["demo.*"] },
+            }))
+            .is_err()
+        );
+    }
 }

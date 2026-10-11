@@ -35,6 +35,7 @@ import {
   process,
   runtimeVersion,
   screen,
+  sharedState,
   shortcut,
   tray,
   VantailError,
@@ -48,6 +49,8 @@ interface OpenFile {
 }
 
 const SETTINGS = "settings";
+const SYNC = "sync";
+const SYNC_KEY = "demo.counter";
 
 export function App() {
   const [file, setFile] = useState<OpenFile | null>(null);
@@ -62,6 +65,8 @@ export function App() {
   const [changes, setChanges] = useState<string[]>([]);
   const [hotkey, setHotkey] = useState(false);
   const [sleepEvents, setSleepEvents] = useState(false);
+  const [syncCount, setSyncCount] = useState<number | null>(null);
+  const [syncProblem, setSyncProblem] = useState<string | null>(null);
 
   // Static app facts are injected before any script runs, so no await needed.
   const info = app.infoSync();
@@ -121,6 +126,24 @@ export function App() {
       ),
     );
 
+    // The counter shared with the sync window: the current value arrives on
+    // subscribe, and every set from either window re-renders both.
+    const stopSync = sharedState.subscribe(SYNC_KEY, (value: unknown) => {
+      setSyncCount(typeof value === "number" ? value : null);
+    });
+    // A missing read permission fails the subscribe above (reported to the
+    // console there); this names it where the demo lives.
+    void sharedState.get(SYNC_KEY).then(
+      () => {},
+      (cause: unknown) => {
+        setSyncProblem(
+          VantailError.is(cause)
+            ? `${cause.code}: ${cause.message}`
+            : String(cause),
+        );
+      },
+    );
+
     return () => {
       stopMenu();
       stopTray();
@@ -129,6 +152,7 @@ export function App() {
       stopResume();
       stopHotkey();
       stopWatch();
+      stopSync();
     };
   }, []);
 
@@ -212,6 +236,41 @@ export function App() {
       await refreshWindows();
     } catch (cause) {
       report(cause);
+    }
+  }
+
+  async function openSync() {
+    setNote(null);
+    try {
+      const existing = await getWindow(SYNC).exists();
+      if (existing) {
+        await getWindow(SYNC).focus();
+        return;
+      }
+      // Resolves once the new window's page is running, so it subscribes
+      // before anything is set from here.
+      await createWindow(SYNC, {
+        url: "sync.html",
+        title: "Sync",
+        width: 420,
+        height: 300,
+      });
+      await refreshWindows();
+    } catch (cause) {
+      report(cause);
+    }
+  }
+
+  async function bumpSync(by: number) {
+    setSyncProblem(null);
+    try {
+      await sharedState.set(SYNC_KEY, (syncCount ?? 0) + by);
+    } catch (cause) {
+      setSyncProblem(
+        VantailError.is(cause)
+          ? `${cause.code}: ${cause.message}`
+          : String(cause),
+      );
     }
   }
 
@@ -407,6 +466,7 @@ export function App() {
           Select file
         </button>
         <button onClick={() => void openSettings()}>Second window</button>
+        <button onClick={() => void openSync()}>Open sync window</button>
         <button onClick={() => void toggleTray()}>
           {trayOn ? "Remove tray" : "Add tray"}
         </button>
@@ -444,6 +504,25 @@ export function App() {
         {sleepEvents ? "sleep events reported" : "no sleep events here"} | drag
         a file onto this window
       </p>
+
+      <section className="empty">
+        <p className="meta">
+          shared with the sync window through <code>sharedState</code> (key{" "}
+          <code>{SYNC_KEY}</code>) - set it in either window and the other
+          follows without a reload:
+        </p>
+        <p>
+          Counter:{" "}
+          {syncCount === null ? "unset - press +1 in either window" : syncCount}
+        </p>
+        <div className="window-controls">
+          <button className="primary" onClick={() => void bumpSync(1)}>
+            +1
+          </button>
+          <button onClick={() => void bumpSync(-1)}>-1</button>
+        </div>
+        {syncProblem ? <p className="note">{syncProblem}</p> : null}
+      </section>
 
       {dropped.length > 0 ? (
         <section className="empty">
