@@ -128,6 +128,8 @@ os             platform | arch | info | infoSync | homeDir | tempDir
                appDataDir | appConfigDir | resourceDir
 
 notification   show
+
+print          document
 ```
 
 Everything returns a promise. Failures reject with a `VantailError` carrying a

@@ -537,6 +537,26 @@ purpose rather than by inheritance.
 and a tray icon are visible when the app is not, and the updater downloads and
 executes code.
 
+## Printing has no permission
+
+`print.document` is absent from the shape above on purpose. Printing needs no
+permission gate because the gate is elsewhere, twice over:
+
+**The native dialog is the authorisation.** Nothing prints without a person
+choosing a printer, copies and a page range in a system dialog the
+application cannot click through - the same way a file picked in a native
+dialog is granted without a scope covering it. A flag would gate *reaching*
+that dialog, which is backwards.
+
+**The application's own UI is unreachable.** Printing renders an explicit
+`html` string or `pdfPath` file in a hidden view that is never attached to a
+visible window. There is no call that prints the current window, so there is
+nothing a compromised page could turn into silent exfiltration to paper.
+
+What *is* still scoped is the file: `pdfPath` goes through
+`permissions.filesystem` read scope like any other read, because printing
+reads the file into the renderer.
+
 ## What this does not protect against
 
 The permission layer bounds what the _application_ can reach. It is not a

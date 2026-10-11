@@ -14,6 +14,7 @@ import {
   menu,
   notification,
   os,
+  print,
   process,
   sharedState,
   shell,
@@ -897,6 +898,60 @@ await notification.show({ title: "Export", body: "Finished", icon: "..." });
 On macOS notifications are delivered through the bundle identifier, so an
 unbundled `vantail dev` run reports `UNSUPPORTED`. Try `vantail package`.
 
+## print
+
+```ts
+import { print } from "@vantail/api";
+
+// Application-generated HTML, rendered in a hidden view and printed.
+await print.document({
+  html: invoiceHtml,
+});
+
+// Or an existing PDF file on disk.
+await print.document({
+  pdfPath: "/path/to/invoice.pdf",
+});
+```
+
+Prints through the platform-native print dialog: the system dialog on
+Windows, a print panel on macOS, the GTK dialog on Linux. The user chooses
+the printer, the copies and the page range, or cancels - and the promise
+resolves once the dialog has closed, with `{ printed }` saying whether they
+went through with it.
+
+| Function                 | Notes                                        |
+| ------------------------ | -------------------------------------------- |
+| `document({ html })`     | Render the HTML string in a hidden view      |
+| `document({ pdfPath })`  | Print an existing PDF file                   |
+
+`html` and `pdfPath` are mutually exclusive: passing both or neither
+rejects with `INVALID_ARGUMENT`. There is deliberately no argument-less
+`print()` and no `print.currentWindow()` - the content source is always
+explicit, which is the core safety property.
+
+**The main UI can never be printed through this API.** The given content
+renders in a hidden view that is never attached to any visible window; the
+application's window is never involved. Make the HTML self-contained -
+inline styles or a scoped stylesheet injected into the string - so the
+printed page does not depend on the app's own CSS.
+
+`pdfPath` goes through `permissions.filesystem` read scope like any other
+read, and a file the user picked in a dialog prints because the dialog
+granted it.
+
+`{ printed }` semantics differ by platform: macOS and Linux report whether
+the user actually printed (`false` when they cancelled). On Windows the
+dialog reports only that it was shown, so `printed` is `true` there however
+the dialog closed.
+
+There is no `permissions.print` flag: the native dialog is the
+authorisation. See [permissions](permissions.md#printing-has-no-permission).
+
+On macOS, HTML is normalised through a vector PDF internally before
+printing, so content overflowing to the right is kept - WKWebView prints
+only its visible frame. This is invisible at the API layer.
+
 ## menu
 
 Needs `permissions.menu`. The menu the config installs at startup is the
@@ -1733,6 +1788,7 @@ try {
 | `NO_RUNTIME`        | The page is not inside a Vantail window                |
 | `UNKNOWN_METHOD`    | No such method - usually an SDK newer than the runtime |
 | `INVALID_PARAMS`    | The native side rejected the arguments                 |
+| `INVALID_ARGUMENT`  | Exactly one of two mutually exclusive arguments was not given |
 | `PERMISSION_DENIED` | Not allowed by `vantail.config.ts`                     |
 | `NOT_FOUND`         | No such file or directory                              |
 | `ALREADY_EXISTS`    |                                                        |
