@@ -71,6 +71,11 @@ export {
 } from "./network.js";
 export { notification, type NotificationOptions } from "./notification.js";
 export { os, type OsInfo, type Platform } from "./os.js";
+export {
+  print,
+  type PrintDocumentOptions,
+  type PrintResult,
+} from "./print.js";
 export { path, type PathApi } from "./path.js";
 export {
   process,
