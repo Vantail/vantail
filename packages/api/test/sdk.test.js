@@ -66,6 +66,7 @@ const {
   process: childProcess,
   runtimeVersion,
   secrets,
+  sharedState,
   shell,
   tray,
   updater,
@@ -740,4 +741,83 @@ test("a second launch reports what it was asked to do", () => {
   });
   assert.deepEqual(seen, [{ args: ["vantail", "myapp://x"], cwd: "/home/me" }]);
   stop();
+});
+
+// ---------------------------------------------------------------------------
+// Shared state
+// ---------------------------------------------------------------------------
+
+test("sharedState.get sends the key, and the default only when given", async () => {
+  const bare = await callAndCapture(() => sharedState.get("demo.counter"), () => ({ result: 3 }));
+  assert.equal(bare.request.method, "sharedState.get");
+  assert.deepEqual(bare.request.params, { key: "demo.counter" });
+  assert.equal(bare.value, 3);
+
+  // A default is passed through, not written: the runtime answers with it
+  // when the key is unset.
+  const withDefault = await callAndCapture(
+    () => sharedState.get("demo.missing", 42),
+    (message) => ({ result: message.params.default ?? null }),
+  );
+  assert.deepEqual(withDefault.request.params, { key: "demo.missing", default: 42 });
+  assert.equal(withDefault.value, 42);
+});
+
+test("sharedState.set sends the key and value", async () => {
+  const { request } = await callAndCapture(() => sharedState.set("demo.counter", 4));
+  assert.equal(request.method, "sharedState.set");
+  assert.deepEqual(request.params, { key: "demo.counter", value: 4 });
+});
+
+test("a value that cannot cross as JSON is refused before anything is sent", async () => {
+  for (const value of [
+    undefined,
+    () => {},
+    Symbol("x"),
+    10n,
+    (() => {
+      const circular = {};
+      circular.self = circular;
+      return circular;
+    })(),
+  ]) {
+    posted.length = 0;
+    await assert.rejects(sharedState.set("demo.key", value), (error) => {
+      assert.ok(VantailError.is(error, "SHARED_STATE_NOT_SERIALIZABLE"));
+      return true;
+    });
+    assert.equal(posted.length, 0, "nothing may reach the runtime");
+  }
+});
+
+test("a denied key arrives as SHARED_STATE_KEY_DENIED", async () => {
+  respond = () => ({
+    error: { code: "SHARED_STATE_KEY_DENIED", message: "nope" },
+  });
+  await assert.rejects(sharedState.set("other.key", 1), (error) => {
+    assert.ok(VantailError.is(error, "SHARED_STATE_KEY_DENIED"));
+    return true;
+  });
+});
+
+test("sharedState.subscribe delivers the current value, then changes", async () => {
+  respond = (message) =>
+    message.method === "sharedState.subscribe" ? { result: "dark" } : { result: null };
+
+  const seen = [];
+  const stop = sharedState.subscribe("demo.theme", (value) => seen.push(value));
+
+  // The current value arrives on the next tick, from the subscribe call.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(seen, ["dark"]);
+
+  dispatch({ event: "sharedState.changed", payload: { key: "demo.theme", value: "light" } });
+  // Another key's change is not ours.
+  dispatch({ event: "sharedState.changed", payload: { key: "demo.other", value: 1 } });
+  assert.deepEqual(seen, ["dark", "light"]);
+
+  stop();
+  stop(); // idempotent: unsubscribing twice is not an error
+  dispatch({ event: "sharedState.changed", payload: { key: "demo.theme", value: "dark" } });
+  assert.deepEqual(seen, ["dark", "light"]);
 });
