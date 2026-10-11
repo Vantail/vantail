@@ -3944,7 +3944,7 @@ dependencies = [
 
 [[package]]
 name = "vantail-runtime"
-version = "0.1.23"
+version = "0.1.24"
 dependencies = [
  "arboard",
  "base64 0.23.1",
