@@ -14,7 +14,7 @@ import "./style.css";
 import { isVantail, runtimeVersion } from "@vantail/api";
 import { mountTitleBar } from "./titlebar.js";
 
-import { appPanel } from "./panels/app.js";
+import { appPanel, sharedStatePanel } from "./panels/app.js";
 import { clipboardPanel } from "./panels/clipboard.js";
 import { deepLinkPanel, dropPanel, updaterPanel } from "./panels/updater.js";
 import { dialogPanel } from "./panels/dialog.js";
@@ -60,6 +60,7 @@ function build() {
 
   const panels: Panel[] = [
     appPanel(),
+    sharedStatePanel(),
     windowPanel(),
     screenPanel(),
     osPanel(),

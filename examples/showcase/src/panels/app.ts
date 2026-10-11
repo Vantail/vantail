@@ -1,4 +1,4 @@
-import { app } from "@vantail/api";
+import { app, sharedState } from "@vantail/api";
 import { panel, type Panel } from "../ui.js";
 
 /** Identity, lifecycle, and the app's own event bus. */
@@ -38,4 +38,57 @@ export function appPanel(): Panel {
   );
 
   return p;
+}
+
+/** Keyed state every window reads and writes, owned by the runtime. */
+export function sharedStatePanel(): Panel {
+  const p = panel(
+    "sharedState",
+    "sharedState",
+    "One store for every window: the runtime owns the values, and a write reaches all of them.",
+  );
+
+  const key = p.input("key", "showcase.counter");
+  const value = p.input("value", "1");
+  p.row(
+    key,
+    p.button("get()", () => sharedState.get(key.value)),
+    value,
+    p.button("set()", () => sharedState.set(key.value, parse(value.value))),
+  );
+
+  // Watching the key this panel named when the button was pressed.
+  let stop: (() => void) | undefined;
+  p.row(
+    p.button("watch", () => {
+      stop?.();
+      const watched = key.value;
+      stop = sharedState.subscribe(watched, (current) =>
+        p.log(`${watched} is now ${JSON.stringify(current)}`),
+      );
+      return `watching ${watched}`;
+    }),
+    p.button("unwatch", () => {
+      stop?.();
+      stop = undefined;
+      return "stopped watching";
+    }),
+  );
+
+  p.note(
+    "The last write wins, and every window hears - including the one that wrote. " +
+      "Open this page in a second window and set a key here to watch it arrive there. " +
+      "The config grants `showcase.**`; anything else is SHARED_STATE_KEY_DENIED.",
+  );
+
+  return p;
+}
+
+/** What the value box means: JSON when it parses, a string otherwise. */
+function parse(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
 }

@@ -70,6 +70,7 @@ export default defineConfig({
     dragDrop: true,
     updater: true,
     secrets: true,
+    sharedState: { read: true, write: ["showcase.**"], persist: false },
 
     // `true` means any service type. Naming the ones you want is the better
     // habit: "find me printers" is a smaller request than "watch the network".

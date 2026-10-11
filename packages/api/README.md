@@ -42,6 +42,7 @@ appWindow      size, position, state, fullscreen, always-on-top, devtools
                createWindow, getWindow, listWindows, currentWindow for more
                than one, and onWindowCreated / onWindowReady / onWindowClosed
                to hear about them
+sharedState    keyed state shared between every window - get, set, subscribe
 
 filesystem     read, write, copy, rename, watch - text and binary
 dialog         open, save, message, confirm - drawn by the OS

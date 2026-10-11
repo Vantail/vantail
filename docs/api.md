@@ -15,6 +15,7 @@ import {
   notification,
   os,
   process,
+  sharedState,
   shell,
   tray,
   updater,
@@ -549,6 +550,62 @@ the way, which is how you take over a region yourself - see
 `-webkit-app-region: drag` is a Chromium extension. It does nothing in a
 WKWebView, so a CSS property would work on two platforms out of three, which
 is worse than not having it - hence an attribute the runtime reads.
+
+## sharedState
+
+Keyed state shared between every window of the application.
+
+```ts
+import { sharedState } from "@vantail/api";
+
+await sharedState.set("demo.theme", "dark");
+
+// The current value arrives at once, then every change - in both windows.
+const stop = sharedState.subscribe<string>("demo.theme", (theme) => {
+  document.documentElement.dataset.theme = theme;
+});
+stop();
+```
+
+| Method                                  | Returns                                              |
+| --------------------------------------- | ---------------------------------------------------- |
+| `sharedState.get(key, default?)`        | The current value, `default` when unset, else `null` |
+| `sharedState.set(key, value)`           | `null` once every window has been told               |
+| `sharedState.subscribe(key, callback)`  | An idempotent unsubscribe function                   |
+
+The runtime owns the values; windows hold synchronised copies. A write goes
+renderer -> runtime -> all renderers, including the caller, so there is no
+"which window wins?" race - **the last write wins**, and every window hears
+about it. This complements `app.emit` / `app.listen` rather than replacing
+it: those stay the fire-and-forget message bus, while this is a keyed store
+with read-before-write semantics and change subscriptions.
+
+Four things to know:
+
+- **A default is not a write.** `get(key, default)` answers with `default`
+  when the key is unset, and the key stays unset until someone calls `set`.
+- **`subscribe` delivers the current value immediately**, then subsequent
+  changes - which is what makes wiring `useSyncExternalStore` (or a Vue
+  `ref`, or a Svelte store) trivial for consumers, with no shim. Those
+  framework adapters live in userland; a separate optional package may grow
+  them later.
+- **Values must be JSON-serialisable.** `undefined`, functions, symbols,
+  `BigInt` and circular structures are rejected with
+  `SHARED_STATE_NOT_SERIALIZABLE` rather than silently mangled. The check
+  runs in the SDK before anything is sent, and again in the runtime.
+- **The store is per-application-instance.** Nothing here crosses to another
+  application, and there is no conflict resolution beyond last-write-wins.
+
+Errors:
+
+| Code                              | Meaning                                                     |
+| --------------------------------- | ------------------------------------------------------------ |
+| `SHARED_STATE_KEY_DENIED`         | `set` for a key no `write` pattern covers                    |
+| `SHARED_STATE_NOT_SERIALIZABLE`   | The value cannot be represented as JSON                      |
+| `SHARED_STATE_PERSIST_FAILED`     | The store under `$APPDATA` could not be read or written      |
+| `PERMISSION_DENIED`               | Reads are off (`get` and `subscribe` need `read: true`)      |
+
+Needs `permissions.sharedState` - see [permissions.md](permissions.md).
 
 ## appWindow and window handles
 
@@ -1682,6 +1739,9 @@ try {
 | `UNSUPPORTED`       | Not available on this platform or in this build        |
 | `CANCELLED`         | The call was abandoned - see `network`'s `signal`      |
 | `INTERNAL`          | A bug in Vantail                                       |
+| `SHARED_STATE_KEY_DENIED` | A `sharedState.set` for a key no `write` pattern covers |
+| `SHARED_STATE_NOT_SERIALIZABLE` | A `sharedState.set` value that is not JSON |
+| `SHARED_STATE_PERSIST_FAILED` | The shared-state file could not be read or written |
 
 ## Escape hatches
 

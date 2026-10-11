@@ -44,6 +44,11 @@ permissions: {
   },
   secrets: boolean,             // default false
   database: boolean,            // default false
+  sharedState: {                // default: no reads, no writes, no persistence
+    read: boolean,              // default false
+    write: string[],            // glob patterns per key; default: nothing
+    persist: boolean,           // default false; needs write to be non-empty
+  },
   mdns: boolean | string[],     // default: nothing
   hid: boolean | HidRule[],     // default: nothing
   os: boolean,                  // default true
@@ -425,6 +430,66 @@ The database is not encrypted. `secrets` will hold a key perfectly well, but
 there is nothing here to give it to, so an application that needs encryption at
 rest needs something Vantail does not yet have. Say so in your interface rather
 than showing a padlock that means nothing.
+
+## Shared state
+
+```ts
+permissions: {
+  sharedState: { read: true, write: ["demo.*"], persist: false },
+}
+```
+
+One store per application instance, owned by the runtime: `sharedState.set`
+writes a key and every window hears about it, `sharedState.get` reads it back,
+and `sharedState.subscribe` delivers the current value at once and every
+change after. Reads are gated by `read` - with `read: false`, `get` and
+`subscribe` reject with `PERMISSION_DENIED`. Writes are gated by `write`: a
+key must match at least one pattern or `set` rejects with
+`SHARED_STATE_KEY_DENIED`.
+
+### Key globs
+
+Keys are dotted paths (`demo.counter`), and the patterns match them the way
+the filesystem scopes match paths - with one deliberate difference: **the
+separator is `.` rather than `/`**.
+
+- `*` matches within one segment and stops at a `.` boundary. `user.*`
+  matches `user.name` but not `user.name.first` - the same way `docs/*`
+  matches `docs/notes.txt` but not `docs/archive/notes.txt`.
+- `**` crosses segment boundaries. `user.**` matches `user.name` and
+  `user.name.first`.
+- A `*` inside a segment matches any run within it: `demo.c*` matches
+  `demo.counter` but not `demo.theme`.
+
+The choice follows the existing filesystem semantics rather than inventing
+new ones, because scopes should mean what they look like they mean wherever
+they appear. What differs is only what they separate: `/` was never going to
+occur in a key, so `.` takes its place, and `**` keeps its job of crossing
+it. Document the patterns next to the keys they cover - `write: ["demo.*"]`
+reads as exactly what it is.
+
+### Persistence
+
+```ts
+permissions: {
+  sharedState: { read: true, write: ["demo.*"], persist: true },
+}
+```
+
+The store is written through to a JSON file under `$APPDATA` on every write
+- atomically, through a temporary file and a rename - and hydrated when the
+application launches. A corrupt file starts empty with a note on stderr
+rather than refusing the launch over a cache.
+
+`persist: true` needs `write` to be non-empty, since persisted state must be
+writable to be useful. Both the config validation and the runtime refuse the
+combination: the first names it before anything runs, the second before any
+window opens.
+
+Two properties worth keeping in mind: the store is
+per-application-instance only - nothing here crosses to another application -
+and concurrent writes resolve by last-write-wins. There is no conflict
+resolution, by design: this is a synchronised copy, not a database.
 
 ## Devices
 
