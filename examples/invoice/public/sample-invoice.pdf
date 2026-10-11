@@ -1,0 +1,41 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 608 >>
+stream
+BT /F1 20 Tf 72 750 Td (Invoice INV-2049) Tj ET
+BT /F1 12 Tf 72 722 Td (Paper Planes Co. - 14 Cloud Lane, Portsburg) Tj ET
+BT /F1 12 Tf 72 704 Td (Bill to: Harbour Books Ltd., 9 Quay Street) Tj ET
+BT /F1 12 Tf 72 686 Td () Tj ET
+BT /F1 12 Tf 72 668 Td (Glider, folding x120 @ $1.20 ......... $144.00) Tj ET
+BT /F1 12 Tf 72 650 Td (Glider, deluxe x25 @ $4.90 ........... $122.50) Tj ET
+BT /F1 12 Tf 72 632 Td (Custom print run x1 @ $85.00 .......... $85.00) Tj ET
+BT /F1 12 Tf 72 614 Td () Tj ET
+BT /F1 12 Tf 72 596 Td (Subtotal $351.50   Tax \(19%\) $66.79) Tj ET
+BT /F1 14 Tf 72 574 Td (Total $418.29) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000900 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+970
+%%EOF
