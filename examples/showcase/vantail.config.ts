@@ -12,7 +12,7 @@ export default defineConfig({
   app: {
     name: "Vantail Showcase",
     identifier: "dev.vantail.showcase",
-    version: "0.1.22",
+    version: "0.1.24",
     icon: "icon.png",
   },
 
