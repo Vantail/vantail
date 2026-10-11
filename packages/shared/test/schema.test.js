@@ -278,3 +278,30 @@ test("a typo in the shared state permissions is not silently ignored", () => {
   });
   assert.equal(result.ok, false);
 });
+
+test("an empty sharedState object is valid and means nothing granted", () => {
+  const result = parseConfig({ ...valid, permissions: { sharedState: {} } });
+  assert.equal(result.ok, true);
+});
+
+test("writes without reads are valid - the gates are independent", () => {
+  const result = parseConfig({
+    ...valid,
+    permissions: { sharedState: { write: ["demo.*"] } },
+  });
+  assert.equal(result.ok, true);
+});
+
+test("sharedState shapes are checked, not coerced", () => {
+  for (const sharedState of [
+    { read: "yes" },
+    { read: 1 },
+    { write: "demo.*" },
+    { write: [42] },
+    { persist: 1 },
+    { persist: "false" },
+  ]) {
+    const result = parseConfig({ ...valid, permissions: { sharedState } });
+    assert.equal(result.ok, false, `accepted ${JSON.stringify(sharedState)}`);
+  }
+});

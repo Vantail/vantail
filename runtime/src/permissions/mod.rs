@@ -1705,6 +1705,27 @@ mod shared_state_tests {
         assert!(shared_key_matches("user.**", "user.name"));
         assert!(shared_key_matches("user.**", "user.name.first"));
         assert!(shared_key_matches("**", "anything.at.all"));
+        assert!(shared_key_matches("**", "single"));
+    }
+
+    #[test]
+    fn a_double_star_in_the_middle_takes_zero_or_more_segments() {
+        assert!(shared_key_matches("a.**.c", "a.c"));
+        assert!(shared_key_matches("a.**.c", "a.b.c"));
+        assert!(shared_key_matches("a.**.c", "a.b.b.c"));
+        assert!(!shared_key_matches("a.**.c", "a.b.d"));
+        assert!(!shared_key_matches("a.**.c", "a.b.c.d"));
+    }
+
+    #[test]
+    fn matching_is_case_sensitive() {
+        assert!(!shared_key_matches("Demo.*", "demo.counter"));
+        assert!(shared_key_matches("Demo.*", "Demo.counter"));
+    }
+
+    #[test]
+    fn an_empty_pattern_matches_nothing_with_a_name() {
+        assert!(!shared_key_matches("", "demo.counter"));
     }
 
     #[test]
@@ -1750,6 +1771,21 @@ mod shared_state_tests {
             crate::error::code::INVALID_PARAMS
         );
         assert!(Permissions::check_shared_key("demo.counter").is_ok());
+    }
+
+    #[test]
+    fn key_length_has_a_boundary() {
+        assert!(Permissions::check_shared_key(&"k".repeat(512)).is_ok());
+        assert_eq!(
+            Permissions::check_shared_key(&"k".repeat(513)).unwrap_err().code,
+            crate::error::code::INVALID_PARAMS
+        );
+    }
+
+    #[test]
+    fn control_characters_are_rejected_but_unicode_is_fine() {
+        assert!(Permissions::check_shared_key("demo.\t").is_err());
+        assert!(Permissions::check_shared_key("demo.café.🎨").is_ok());
     }
 
     #[test]

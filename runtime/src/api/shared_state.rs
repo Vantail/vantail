@@ -22,6 +22,7 @@ use serde_json::{json, Value};
 
 use crate::error::{code, ApiError, ApiResult};
 use crate::ipc::{Event, Outgoing, Request};
+use crate::permissions::Permissions;
 use crate::state::MainCtx;
 
 /// The event a write broadcasts, delivered to every window.
@@ -52,29 +53,17 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
     match method {
         "sharedState.get" => {
             let GetParams { key, default } = Request::params(method, params)?;
-            crate::permissions::Permissions::check_shared_key(&key)?;
-            ctx.rt.permissions.check_shared_read(method)?;
-            Ok(ctx
-                .rt
-                .shared
-                .get(&key)
-                .or(default)
-                .unwrap_or(Value::Null))
+            resolve_get(&ctx.rt.permissions, &ctx.rt.shared, method, &key, default)
         }
 
         "sharedState.set" => {
             let SetParams { key, value } = Request::params(method, params)?;
-            crate::permissions::Permissions::check_shared_key(&key)?;
-            ctx.rt.permissions.check_shared_write(&key)?;
-            check_serializable(&value)?;
-            ctx.rt.shared.set(&key, value.clone())?;
-
+            let broadcast =
+                prepare_set(&ctx.rt.permissions, &ctx.rt.shared, &key, value)?;
             // To every window, including the caller: the caller's own copy
             // updates through the same path as everyone else's.
-            ctx.windows.deliver(
-                None,
-                &Outgoing::Event(Event::new(CHANGED_EVENT, json!({ "key": key, "value": value }))),
-            );
+            ctx.windows
+                .deliver(None, &Outgoing::Event(Event::new(CHANGED_EVENT, broadcast)));
             Ok(Value::Null)
         }
 
@@ -84,13 +73,53 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
         // subsequent changes as events.
         "sharedState.subscribe" => {
             let KeyParams { key } = Request::params(method, params)?;
-            crate::permissions::Permissions::check_shared_key(&key)?;
-            ctx.rt.permissions.check_shared_read(method)?;
-            Ok(ctx.rt.shared.get(&key).unwrap_or(Value::Null))
+            resolve_subscribe(&ctx.rt.permissions, &ctx.rt.shared, method, &key)
         }
 
         _ => Err(ApiError::unknown_method(method)),
     }
+}
+
+/// The `get` path without the windows: validate the key, check the read
+/// permission, then answer from the store.
+fn resolve_get(
+    permissions: &Permissions,
+    store: &Store,
+    method: &str,
+    key: &str,
+    default: Option<Value>,
+) -> ApiResult {
+    Permissions::check_shared_key(key)?;
+    permissions.check_shared_read(method)?;
+    Ok(store.get(key).or(default).unwrap_or(Value::Null))
+}
+
+/// The `set` path without the windows: validate the key, check the write
+/// permission, store, and hand back the broadcast payload for delivery.
+fn prepare_set(
+    permissions: &Permissions,
+    store: &Store,
+    key: &str,
+    value: Value,
+) -> ApiResult {
+    Permissions::check_shared_key(key)?;
+    permissions.check_shared_write(key)?;
+    check_serializable(&value)?;
+    store.set(key, value.clone())?;
+    Ok(json!({ "key": key, "value": value }))
+}
+
+/// The `subscribe` path without the windows: validate the key, check the
+/// read permission, then answer with the current value.
+fn resolve_subscribe(
+    permissions: &Permissions,
+    store: &Store,
+    method: &str,
+    key: &str,
+) -> ApiResult {
+    Permissions::check_shared_key(key)?;
+    permissions.check_shared_read(method)?;
+    Ok(store.get(key).unwrap_or(Value::Null))
 }
 
 /// Values cross as JSON, so anything that cannot be represented there must be
@@ -261,6 +290,7 @@ fn save(path: &PathBuf, snapshot: &Value) -> Result<(), ApiError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::permissions::{PermissionsConfig, SharedStateConfig, Vars};
 
     fn temp_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("vantail-shared-state-test-{name}.json"))
@@ -271,6 +301,22 @@ mod tests {
         let mut tmp = path.as_os_str().to_owned();
         tmp.push(".tmp");
         let _ = std::fs::remove_file(PathBuf::from(tmp));
+    }
+
+    fn permissions(read: bool, write: &[&str]) -> Permissions {
+        let vars = Vars::resolve("dev.vantail.test", std::path::Path::new("/tmp"));
+        Permissions::compile(
+            &PermissionsConfig {
+                shared_state: SharedStateConfig {
+                    read,
+                    write: write.iter().map(|s| s.to_string()).collect(),
+                    persist: false,
+                },
+                ..PermissionsConfig::default()
+            },
+            &vars,
+        )
+        .expect("permissions compile")
     }
 
     #[test]
@@ -331,5 +377,187 @@ mod tests {
         assert!(text.contains("demo.a"), "a write must be durable at once: {text}");
 
         clean(&path);
+    }
+
+    #[test]
+    fn a_corrupt_persist_file_starts_empty_instead_of_failing() {
+        let path = temp_path("corrupt");
+        clean(&path);
+        std::fs::write(&path, "{ not json at all").expect("fixture");
+
+        let store = Store::persistent(path.clone());
+        assert!(store.get("demo.counter").is_none());
+
+        clean(&path);
+    }
+
+    #[test]
+    fn a_persist_failure_is_a_stable_code_not_an_io_error() {
+        // A path whose parent is a file can never be created.
+        let anchor = temp_path("persist-fail-anchor");
+        clean(&anchor);
+        std::fs::write(&anchor, "in the way").expect("fixture");
+        let bad = anchor.join("shared-state.json");
+
+        let store = Store::persistent(bad);
+        let error = store.set("demo.counter", json!(1)).unwrap_err();
+        assert_eq!(error.code, code::SHARED_STATE_PERSIST_FAILED);
+
+        let _ = std::fs::remove_file(&anchor);
+    }
+
+    #[test]
+    fn concurrent_writes_do_not_panic_and_one_of_them_wins() {
+        use std::sync::Arc;
+
+        let store = Arc::new(Store::ephemeral());
+        let mut handles = Vec::new();
+        for writer in 0..8 {
+            let store = Arc::clone(&store);
+            handles.push(std::thread::spawn(move || {
+                for round in 0..50 {
+                    store
+                        .set("demo.race", json!({ "writer": writer, "round": round }))
+                        .expect("set");
+                    let _ = store.get("demo.race");
+                }
+            }));
+        }
+        for handle in handles {
+            handle.join().expect("no writer panics");
+        }
+        assert!(store.get("demo.race").is_some());
+    }
+
+    // -----------------------------------------------------------------------
+    // The dispatch paths, without any windows.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn a_default_answers_but_does_not_write() {
+        let allowed = permissions(true, &["demo.*"]);
+        let store = Store::ephemeral();
+
+        let answered =
+            resolve_get(&allowed, &store, "sharedState.get", "demo.missing", Some(json!(42)))
+                .expect("get");
+        assert_eq!(answered, json!(42));
+        // The key is still unset afterwards.
+        assert_eq!(
+            resolve_get(&allowed, &store, "sharedState.get", "demo.missing", None).expect("get"),
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn a_stored_value_beats_the_default() {
+        let allowed = permissions(true, &["demo.*"]);
+        let store = Store::ephemeral();
+        store.set("demo.counter", json!(3)).expect("set");
+
+        assert_eq!(
+            resolve_get(&allowed, &store, "sharedState.get", "demo.counter", Some(json!(99)))
+                .expect("get"),
+            json!(3)
+        );
+    }
+
+    #[test]
+    fn reads_without_the_read_flag_are_denied() {
+        let denied = permissions(false, &["demo.*"]);
+        let store = Store::ephemeral();
+
+        for method in ["sharedState.get", "sharedState.subscribe"] {
+            let error = if method == "sharedState.get" {
+                resolve_get(&denied, &store, method, "demo.counter", None).unwrap_err()
+            } else {
+                resolve_subscribe(&denied, &store, method, "demo.counter").unwrap_err()
+            };
+            assert_eq!(error.code, code::PERMISSION_DENIED, "{method}");
+        }
+    }
+
+    #[test]
+    fn writes_without_a_matching_pattern_are_denied_and_store_nothing() {
+        let allowed = permissions(true, &["demo.*"]);
+        let store = Store::ephemeral();
+
+        let error = prepare_set(&allowed, &store, "other.counter", json!(1)).unwrap_err();
+        assert_eq!(error.code, code::SHARED_STATE_KEY_DENIED);
+        assert!(store.get("other.counter").is_none());
+    }
+
+    #[test]
+    fn writes_do_not_need_the_read_flag() {
+        // The gates are independent: a window may write a value it may not read.
+        let write_only = permissions(false, &["demo.*"]);
+        let store = Store::ephemeral();
+        let broadcast = prepare_set(&write_only, &store, "demo.counter", json!(7)).expect("set");
+
+        assert_eq!(broadcast, json!({ "key": "demo.counter", "value": 7 }));
+        assert_eq!(store.get("demo.counter"), Some(json!(7)));
+    }
+
+    #[test]
+    fn a_bad_key_is_bad_input_even_where_nothing_is_allowed() {
+        // Validation runs before the permission check, so a malformed key is
+        // INVALID_PARAMS rather than whichever denial would have come second.
+        let denied = permissions(false, &[]);
+        let store = Store::ephemeral();
+
+        assert_eq!(
+            resolve_get(&denied, &store, "sharedState.get", "", None)
+                .unwrap_err()
+                .code,
+            code::INVALID_PARAMS
+        );
+        assert_eq!(
+            prepare_set(&denied, &store, "", json!(1)).unwrap_err().code,
+            code::INVALID_PARAMS
+        );
+        assert_eq!(
+            resolve_subscribe(&denied, &store, "sharedState.subscribe", "")
+                .unwrap_err()
+                .code,
+            code::INVALID_PARAMS
+        );
+    }
+
+    #[test]
+    fn control_characters_and_oversized_keys_are_rejected() {
+        let allowed = permissions(true, &["**"]);
+        let store = Store::ephemeral();
+
+        assert_eq!(
+            resolve_get(&allowed, &store, "sharedState.get", "demo.\n", None)
+                .unwrap_err()
+                .code,
+            code::INVALID_PARAMS
+        );
+        assert!(resolve_get(&allowed, &store, "sharedState.get", &"k".repeat(512), None).is_ok());
+        assert_eq!(
+            resolve_get(&allowed, &store, "sharedState.get", &"k".repeat(513), None)
+                .unwrap_err()
+                .code,
+            code::INVALID_PARAMS
+        );
+    }
+
+    #[test]
+    fn subscribe_answers_with_the_current_value_or_null() {
+        let allowed = permissions(true, &["demo.*"]);
+        let store = Store::ephemeral();
+
+        assert_eq!(
+            resolve_subscribe(&allowed, &store, "sharedState.subscribe", "demo.counter")
+                .expect("subscribe"),
+            Value::Null
+        );
+        store.set("demo.counter", json!("dark")).expect("set");
+        assert_eq!(
+            resolve_subscribe(&allowed, &store, "sharedState.subscribe", "demo.counter")
+                .expect("subscribe"),
+            json!("dark")
+        );
     }
 }
