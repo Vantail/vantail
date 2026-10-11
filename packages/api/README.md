@@ -58,6 +58,7 @@ power          notices when the machine suspends and resumes
 screen         the monitors attached, in logical pixels
 os             platform, architecture, and per-application directories
 path           joining and splitting paths, without a round trip
+print          the native print dialog, for generated documents - never the app UI
 
 process        run another program, stream its output
 shell          hand a URL or file to whatever owns it
