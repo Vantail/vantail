@@ -61,7 +61,11 @@ export const sharedState = {
     // Listening first, so a change that lands between the subscribe and the
     // read still reaches the callback through the event below.
     const stop = listen<ChangedPayload>("sharedState.changed", (event) => {
-      if (event.key === key) callback(event.value as T);
+      // The runtime always sends `{ key, value }`; anything else is ignored
+      // rather than delivered as a corrupt `undefined`.
+      if (event !== null && typeof event === "object" && event.key === key && "value" in event) {
+        callback(event.value as T);
+      }
     });
 
     let stopped = false;
@@ -87,30 +91,46 @@ export const sharedState = {
 };
 
 /**
- * Whether a value can cross to the runtime as JSON.
+ * Whether a value can cross to the runtime as JSON, without losing anything
+ * on the way.
  *
- * `undefined`, functions and symbols vanish in `JSON.stringify` rather than
- * failing - which would store `null` for something the caller never meant -
- * and `BigInt` and circular structures throw. Refuse all of them up front
- * with the same code the runtime answers with.
+ * `JSON.stringify` is lossy rather than strict: `undefined` and functions
+ * vanish from objects, become `null` in arrays, and `NaN` and `Infinity`
+ * become `null` everywhere - which would store something the caller never
+ * meant. Only `BigInt` and circular structures actually throw. So walk the
+ * value and refuse every unrepresentable shape up front, at any depth, with
+ * the same code the runtime answers with.
+ *
+ * Shared (non-circular) references are fine - they serialise as duplicates -
+ * as is anything with `toJSON`, like a `Date`.
  */
-function assertSerializable(value: unknown): void {
-  if (value === undefined || typeof value === "function" || typeof value === "symbol") {
+function assertSerializable(value: unknown, seen: Set<object> = new Set()): void {
+  if (
+    value === undefined ||
+    typeof value === "function" ||
+    typeof value === "symbol" ||
+    typeof value === "bigint" ||
+    (typeof value === "number" && !Number.isFinite(value))
+  ) {
     throw new VantailError(
       ErrorCode.SHARED_STATE_NOT_SERIALIZABLE,
       "This value cannot be shared between windows: it is not JSON-serialisable",
     );
   }
-  try {
-    // `JSON.stringify` returns `undefined` (rather than throwing) for the
-    // shapes above; anything else unrepresentable throws here.
-    if (JSON.stringify(value) === undefined) {
-      throw new Error("not JSON-serialisable");
+  if (value !== null && typeof value === "object") {
+    if (seen.has(value)) {
+      throw new VantailError(
+        ErrorCode.SHARED_STATE_NOT_SERIALIZABLE,
+        "This value cannot be shared between windows: it is circular",
+      );
     }
-  } catch {
-    throw new VantailError(
-      ErrorCode.SHARED_STATE_NOT_SERIALIZABLE,
-      "This value cannot be shared between windows: it is not JSON-serialisable",
-    );
+    seen.add(value);
+    try {
+      for (const nested of Object.values(value)) assertSerializable(nested, seen);
+    } finally {
+      // Removed so a value referenced twice (but not circularly) passes:
+      // that serialises as a harmless duplicate.
+      seen.delete(value);
+    }
   }
 }

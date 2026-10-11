@@ -590,9 +590,11 @@ Four things to know:
   framework adapters live in userland; a separate optional package may grow
   them later.
 - **Values must be JSON-serialisable.** `undefined`, functions, symbols,
-  `BigInt` and circular structures are rejected with
-  `SHARED_STATE_NOT_SERIALIZABLE` rather than silently mangled. The check
-  runs in the SDK before anything is sent, and again in the runtime.
+  `BigInt`, non-finite numbers and circular structures are rejected with
+  `SHARED_STATE_NOT_SERIALIZABLE` rather than silently mangled - at any depth,
+  since `JSON.stringify` drops nested `undefined` and coerces `NaN` to `null`
+  instead of failing. The check runs in the SDK before anything is sent, and
+  again in the runtime.
 - **The store is per-application-instance.** Nothing here crosses to another
   application, and there is no conflict resolution beyond last-write-wins.
 
