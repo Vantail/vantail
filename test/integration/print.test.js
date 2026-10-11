@@ -157,6 +157,31 @@ describe(
     it("reports a missing PDF file", () => {
       assert.equal(results.missingCode, "NOT_FOUND");
     });
+
+    it("rejects a call with no argument at all", () => {
+      // Must reject with INVALID_ARGUMENT, not throw a TypeError.
+      assert.equal(results.noArgCode, "INVALID_ARGUMENT");
+    });
+
+    it("rejects empty strings on the native side", () => {
+      // The SDK filters these first, so raw calls prove the runtime does too.
+      assert.equal(results.rawEmptyCode, "INVALID_ARGUMENT");
+      assert.equal(results.rawBothEmptyCode, "INVALID_ARGUMENT");
+    });
+
+    it("rejects a mistyped source as a shape error, not a choice error", () => {
+      // `{ html: 123 }` never reaches validation: deserialization fails with
+      // INVALID_PARAMS. The two codes answer different questions.
+      assert.equal(results.rawWrongTypeCode, "INVALID_PARAMS");
+    });
+
+    it("ignores unknown fields beside a valid source", () => {
+      assert.deepEqual(results.rawExtraFieldPrinted, { printed: false });
+    });
+
+    it("treats whitespace-only html as content", () => {
+      assert.deepEqual(results.blankPrinted, { printed: false });
+    });
   },
 );
 
@@ -207,6 +232,12 @@ const codeOf = async (promise) => {
 results.neitherCode = await codeOf(print.document({}));
 results.rawNeitherCode = await codeOf(invoke("print.document", {}));
 results.bothCode = await codeOf(print.document({ html: "<h1>hi</h1>", pdfPath: ${JSON.stringify(printable)} }));
+results.noArgCode = await codeOf(print.document());
+results.rawEmptyCode = await codeOf(invoke("print.document", { html: "" }));
+results.rawBothEmptyCode = await codeOf(invoke("print.document", { html: "", pdfPath: "" }));
+results.rawWrongTypeCode = await codeOf(invoke("print.document", { html: 123 }));
+results.rawExtraFieldPrinted = await invoke("print.document", { html: "<p>extra fields are fine</p>", copies: 2 });
+results.blankPrinted = await print.document({ html: "   " });
 results.htmlPrinted = await print.document({ html: "<h1>Invoice INV-2049</h1><p>$60.50</p>" });
 results.pdfPrinted = await print.document({ pdfPath: ${JSON.stringify(printable)} });
 results.outsideCode = await codeOf(print.document({ pdfPath: "/etc/hostname" }));

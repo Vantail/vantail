@@ -63,11 +63,37 @@ const JOB_TIMEOUT: Duration = Duration::from_secs(60);
 /// dialog captures the page. The print dialog blocks the event loop anyway.
 const PAINT_GRACE: Duration = Duration::from_millis(250);
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Debug)]
 #[serde(rename_all = "camelCase", default)]
 struct DocumentParams {
     html: Option<String>,
     pdf_path: Option<String>,
+}
+
+/// Which explicit source a validated call prints.
+#[derive(Debug, PartialEq, Eq)]
+enum Source {
+    Html(String),
+    PdfPath(String),
+}
+
+/// The core safety property, checked on both sides of the IPC boundary: the
+/// content source is always explicit, so the app UI is never printable.
+///
+/// An empty string counts as absent - it names no content - so exactly one
+/// non-empty source must be present.
+fn split_source(params: &DocumentParams) -> Result<Source, ApiError> {
+    let html = params.html.as_deref().filter(|s| !s.is_empty());
+    let pdf = params.pdf_path.as_deref().filter(|s| !s.is_empty());
+    match (html, pdf) {
+        (Some(html), None) => Ok(Source::Html(html.to_string())),
+        (None, Some(pdf)) => Ok(Source::PdfPath(pdf.to_string())),
+        _ => Err(ApiError::new(
+            code::INVALID_ARGUMENT,
+            "Pass exactly one of `html` or `pdfPath`: \
+             `print.document({ html })` or `print.document({ pdfPath })`.",
+        )),
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -149,36 +175,25 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, id: &str, method: &str, params: Value) ->
 
 fn document(ctx: &mut MainCtx<'_>, id: &str, params: Value) -> Result<(), ApiError> {
     let params: DocumentParams = Request::params("print.document", params)?;
-    let has_html = params.html.as_deref().is_some_and(|s| !s.is_empty());
-    let has_pdf = params.pdf_path.as_deref().is_some_and(|s| !s.is_empty());
+    let source = split_source(&params)?;
 
-    // The core safety property, checked on both sides of the IPC boundary:
-    // the content source is always explicit, so the app UI is never printable.
-    if has_html == has_pdf {
-        return Err(ApiError::new(
-            code::INVALID_ARGUMENT,
-            "Pass exactly one of `html` or `pdfPath`: \
-             `print.document({ html })` or `print.document({ pdfPath })`.",
-        ));
-    }
-
-    let (phase, url) = if has_html {
-        (Phase::Html, html_data_url(&params.html.unwrap_or_default()))
-    } else {
-        // Printing reads the file into the renderer, so this is a read like
-        // any other: the standing scope applies, and dialog/drop grants apply.
-        let raw = params.pdf_path.unwrap_or_default();
-        let resolved = ctx
-            .rt
-            .permissions
-            .check_path(&RawPath::new(raw), Access::Read)?;
-        if !resolved.is_file() {
-            return Err(ApiError::new(
-                code::NOT_FOUND,
-                format!("No PDF file at {}", resolved.display()),
-            ));
+    let (phase, url) = match &source {
+        Source::Html(html) => (Phase::Html, html_data_url(html)),
+        Source::PdfPath(raw) => {
+            // Printing reads the file into the renderer, so this is a read like
+            // any other: the standing scope applies, and dialog/drop grants apply.
+            let resolved = ctx
+                .rt
+                .permissions
+                .check_path(&RawPath::new(raw.clone()), Access::Read)?;
+            if !resolved.is_file() {
+                return Err(ApiError::new(
+                    code::NOT_FOUND,
+                    format!("No PDF file at {}", resolved.display()),
+                ));
+            }
+            (Phase::Pdf, file_url(&resolved))
         }
-        (Phase::Pdf, file_url(&resolved))
     };
 
     let stub = std::env::var_os("VANTAIL_PRINT_STUB").is_some();
@@ -555,4 +570,130 @@ fn platform_print_linux(webview: &wry::WebView) -> Result<bool, ApiError> {
     let op = PrintOperation::new(&wk);
     let response = op.run_dialog(None::<&gtk::Window>);
     Ok(response == PrintOperationResponse::Print)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn params(html: Option<&str>, pdf_path: Option<&str>) -> DocumentParams {
+        DocumentParams {
+            html: html.map(str::to_string),
+            pdf_path: pdf_path.map(str::to_string),
+        }
+    }
+
+    fn code_of(result: Result<Source, ApiError>) -> String {
+        result.unwrap_err().code
+    }
+
+    fn ok_of(result: Result<Source, ApiError>) -> Source {
+        result.unwrap()
+    }
+
+    #[test]
+    fn one_source_is_required() {
+        assert_eq!(
+            ok_of(split_source(&params(Some("<h1>hi</h1>"), None))),
+            Source::Html("<h1>hi</h1>".to_string())
+        );
+        assert_eq!(
+            ok_of(split_source(&params(None, Some("/tmp/a.pdf")))),
+            Source::PdfPath("/tmp/a.pdf".to_string())
+        );
+    }
+
+    #[test]
+    fn neither_source_is_invalid_argument() {
+        assert_eq!(
+            code_of(split_source(&params(None, None))),
+            code::INVALID_ARGUMENT
+        );
+        // Deserialization fills missing keys with `None`, so `{}` lands here.
+        let empty: DocumentParams =
+            serde_json::from_value(serde_json::json!({})).expect("empty object parses");
+        assert_eq!(code_of(split_source(&empty)), code::INVALID_ARGUMENT);
+    }
+
+    #[test]
+    fn both_sources_are_invalid_argument() {
+        assert_eq!(
+            code_of(split_source(&params(Some("<p>x</p>"), Some("/tmp/x.pdf")))),
+            code::INVALID_ARGUMENT
+        );
+    }
+
+    #[test]
+    fn an_empty_string_names_no_content() {
+        // `{ html: "" }` is neither: the empty half does not count, so the
+        // call is missing a source rather than carrying two.
+        assert_eq!(
+            code_of(split_source(&params(Some(""), None))),
+            code::INVALID_ARGUMENT
+        );
+        assert_eq!(
+            code_of(split_source(&params(None, Some("")))),
+            code::INVALID_ARGUMENT
+        );
+        assert_eq!(
+            code_of(split_source(&params(Some(""), Some("")))),
+            code::INVALID_ARGUMENT
+        );
+        // An empty half beside a real source is ignored, not a conflict.
+        assert_eq!(
+            ok_of(split_source(&params(Some(""), Some("/tmp/a.pdf")))),
+            Source::PdfPath("/tmp/a.pdf".to_string())
+        );
+        assert_eq!(
+            ok_of(split_source(&params(Some("<p>x</p>"), Some("")))),
+            Source::Html("<p>x</p>".to_string())
+        );
+    }
+
+    #[test]
+    fn whitespace_is_content_not_absent() {
+        // Only emptiness is filtered: a blank page is still an explicit
+        // source (a separator page, say), and printing it is the caller's
+        // choice rather than a validation failure.
+        assert_eq!(
+            ok_of(split_source(&params(Some("   "), None))),
+            Source::Html("   ".to_string())
+        );
+    }
+
+    #[test]
+    fn a_wrong_type_fails_before_validation() {
+        // `Request::params` rejects a non-string source with INVALID_PARAMS,
+        // so `split_source` never sees it. Pinned here because the two codes
+        // answer different questions: shape versus choice.
+        let result: Result<DocumentParams, ApiError> =
+            Request::params("print.document", serde_json::json!({ "html": 123 }));
+        assert_eq!(result.unwrap_err().code, code::INVALID_PARAMS);
+    }
+
+    #[test]
+    fn html_travels_as_a_padded_data_url() {
+        let url = html_data_url("<h1>héllo & goodbye</h1>");
+        assert!(url.starts_with("data:text/html;charset=utf-8,"), "{url}");
+        // No raw markup survives: `<`, `>` and non-ASCII are all encoded.
+        assert!(!url.contains('<'), "{url}");
+        let encoded = url
+            .strip_prefix("data:text/html;charset=utf-8,")
+            .expect("prefix");
+        let decoded = percent_encoding::percent_decode_str(encoded)
+            .decode_utf8()
+            .expect("utf-8");
+        assert_eq!(decoded, "<h1>héllo & goodbye</h1>");
+    }
+
+    #[test]
+    fn file_urls_keep_the_absolute_path_and_encode_reserved_chars() {
+        let url = file_url(Path::new("/tmp/my invoice #1?.pdf"));
+        assert!(url.starts_with("file:///tmp/"), "{url}");
+        assert!(!url.contains(' '), "{url}");
+        assert!(url.contains("%20"), "{url}");
+        assert!(url.contains("%23"), "{url}");
+        assert!(url.contains("%3F"), "{url}");
+    }
 }
