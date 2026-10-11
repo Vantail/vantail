@@ -116,6 +116,9 @@ pub(crate) struct PrintJob {
     /// alive until the entry drops, which is the teardown.
     #[allow(dead_code)]
     window: tao::window::Window,
+    /// Only the macOS path reads this (HTML goes through a PDF-capture
+    /// step there); everywhere else the dialog prints whatever rendered.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     phase: Phase,
     request_id: String,
     source: String,
@@ -157,6 +160,7 @@ impl PrintState {
         self.inner.live.borrow_mut().remove(&job)
     }
 
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     fn phase(&self, job: u64) -> Option<Phase> {
         self.inner.live.borrow().get(&job).map(|entry| entry.phase)
     }
