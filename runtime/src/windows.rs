@@ -277,6 +277,10 @@ pub struct WindowManager {
     /// A `Vec` rather than a map: applications have a handful of windows, and
     /// creation order is the order `window.list()` should report.
     entries: Vec<WindowEntry>,
+    /// Hidden print jobs. Each owns a window that is never shown and never
+    /// listed - kept here rather than in `Runtime` because a job owns a
+    /// `WebView`, which may not leave the event loop thread.
+    pub print: crate::api::print::PrintState,
 }
 
 impl WindowManager {

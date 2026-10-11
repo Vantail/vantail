@@ -84,6 +84,13 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, request: Request) -> Option<Response> {
             .map(|result| Response::from_result(id, result));
     }
 
+    // Rendering a page and waiting on a print dialog takes as long as it
+    // takes, so it answers later too.
+    if namespace == "print" {
+        return api::print::dispatch(ctx, &id, &method, params)
+            .map(|result| Response::from_result(id, result));
+    }
+
     // Everything else is either cheap or needs the main thread anyway.
     let result = match namespace.as_str() {
         "app" => api::app::dispatch(ctx, &method, params),
@@ -92,7 +99,8 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, request: Request) -> Option<Response> {
         "clipboard" => api::clipboard::dispatch(ctx.rt, &method, params),
         "notification" => api::notification::dispatch(ctx.rt, &method, params),
         "os" => api::os::dispatch(ctx.rt, &method, params),
-        "deeplink" => api::deeplink::dispatch(ctx.rt, &method, params),        "shell" => api::shell::dispatch(ctx.rt, &method, params),
+        "deeplink" => api::deeplink::dispatch(ctx.rt, &method, params),
+        "shell" => api::shell::dispatch(ctx.rt, &method, params),
         "menu" => api::menu::dispatch(ctx, &method, params),
         "tray" => api::tray::dispatch(ctx, &method, params),
         "screen" => api::screen::dispatch(ctx, &method, params),

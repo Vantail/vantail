@@ -291,6 +291,14 @@ fn run() -> Result<(), String> {
                 let _ = answer.send(matches!(allowed, rfd::MessageDialogResult::Yes));
             }
 
+            Event::UserEvent(UserEvent::PrintTimeout { job }) => {
+                // A print job that is still rendering after its deadline
+                // fails rather than hanging the caller's promise. A job that
+                // already reached its dialog was taken before the dialog
+                // opened, so this only ever catches renders.
+                crate::api::print::timed_out(&rt, &windows.print, job);
+            }
+
             Event::UserEvent(UserEvent::Tray { event, payload }) => {
                 let left = event == "tray.click"
                     && payload.get("button").and_then(|b| b.as_str()) == Some("left");

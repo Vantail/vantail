@@ -123,8 +123,26 @@ objc2-app-kit = { version = "0.3", features = [
   # a taller title bar, rather than us moving them and losing the argument.
   "NSToolbar",
   "NSToolbarItem",
+  # The native print dialog for the hidden print view.
+  "NSPrintInfo",
+  "NSPrintOperation",
 ] }
-objc2-foundation = { version = "0.3", features = ["NSNotification", "NSString", "NSThread"] }
+objc2-foundation = { version = "0.3", features = [
+  "NSNotification",
+  "NSString",
+  "NSThread",
+  # Print staging: the page is normalised through a vector PDF first.
+  "NSData",
+  "NSError",
+] }
+# Vector-PDF capture and the print operation for the hidden WKWebView. Same
+# versions wry already resolves to, so this adds nothing to the tree.
+objc2-web-kit = { version = "0.3", features = [
+  "std",
+  "block2",
+  "WKWebView",
+  "WKPDFConfiguration",
+] }
 
 # Rounding a window's corners: Windows has no layer to give a radius to, so
 # the shape is a region and the platform's own rounding has to be turned off.
@@ -137,3 +155,12 @@ windows = { version = "0.62", features = [
   "Win32_Graphics_Gdi",
   "Win32_UI_WindowsAndMessaging",
 ] }
+# The system print dialog on the hidden WebView2. Same version wry already
+# resolves to, so this adds nothing to the tree.
+webview2-com = "0.39"
+
+# The GTK print dialog on the hidden WebKit view. Same versions wry already
+# resolves to, so this adds nothing to the tree.
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = { version = "2.0", features = ["v2_38"] }
+gtk = "0.18"
