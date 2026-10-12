@@ -898,6 +898,45 @@ await notification.show({ title: "Export", body: "Finished", icon: "..." });
 On macOS notifications are delivered through the bundle identifier, so an
 unbundled `vantail dev` run reports `UNSUPPORTED`. Try `vantail package`.
 
+## privacy
+
+macOS only. Needs no Vantail permission - this is the OS decision, not the
+[permission layer](permissions.md).
+
+```ts
+import { privacy } from "@vantail/api";
+
+const { status } = await privacy.status("microphone");
+// "not-determined" | "authorized" | "denied" | "restricted"
+
+if (status === "not-determined") {
+  const answer = await privacy.request("microphone");
+  // The system prompt appeared; the user answered.
+}
+
+if ((await privacy.status("microphone")).status === "denied") {
+  await privacy.openSettings(); // Privacy & Security, so the user can reverse it
+}
+```
+
+`microphone` and `camera` are the two kinds with a system prompt to show.
+The first `request` puts Apple's normal dialog in front of the user;
+afterwards both calls answer from the stored decision without prompting.
+Only the user, in System Settings, can reverse a denial - `restricted`
+(MDM, Screen Time) cannot be changed by anyone on the machine.
+
+Two things the packaged app needs, both covered in
+[macOS privacy](macos-privacy.md):
+
+- the matching `macos.*UsageDescription` in `vantail.config.ts`, or macOS
+  denies without ever prompting;
+- the packaged `.app` identity: grants belong to the running bundle, so
+  `vantail dev` and the installed app keep separate decisions.
+
+`navigator.mediaDevices.getUserMedia()` in the webview goes through the same
+TCC decision via WebKit, with no Vantail API involved. Off macOS, `status`
+answers `"unsupported"` and the rest reject with `UNSUPPORTED`.
+
 ## print
 
 ```ts
