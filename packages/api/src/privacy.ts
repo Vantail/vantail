@@ -1,7 +1,7 @@
 import { invoke } from "./transport.js";
 
 /** A protected resource with a requestable system prompt. macOS only. */
-export type PrivacyKind = "microphone" | "camera";
+export type PrivacyKind = "microphone" | "camera" | "screen";
 
 /**
  * What the OS currently thinks. `not-determined` means no prompt has ever
@@ -31,9 +31,13 @@ export type PrivacyStatus =
  * ```
  *
  * First call shows the normal system prompt (attributed to the running app,
- * which needs the matching `macos.*UsageDescription` in its `Info.plist` -
- * see `docs/macos-privacy.md`). Later calls return the stored decision.
- * Only the user, in System Settings, can reverse a denial.
+ * which for microphone and camera needs the matching `macos.*UsageDescription`
+ * in its `Info.plist` - see `docs/macos-privacy.md`). Later calls return the
+ * stored decision. Only the user, in System Settings, can reverse a denial.
+ *
+ * Screen recording differs in one way: the OS cannot tell "never asked" from
+ * "denied", so a first-ever `status("screen")` reads as `denied` until the
+ * prompt has been answered. It needs no `Info.plist` key.
  */
 export const privacy = {
   /** The current decision, without prompting. */

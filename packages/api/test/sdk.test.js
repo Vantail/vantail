@@ -1019,3 +1019,12 @@ test("privacy.openSettings sends no params", async () => {
   const { request } = await callAndCapture(() => privacy.openSettings(), () => ({ result: null }));
   assert.equal(request.method, "privacy.openSettings");
 });
+
+test("privacy.request also carries the screen kind", async () => {
+  const { request, value } = await callAndCapture(() => privacy.request("screen"), () => ({
+    result: { status: "denied" },
+  }));
+  assert.equal(request.method, "privacy.request");
+  assert.deepEqual(request.params, { kind: "screen" });
+  assert.deepEqual(value, { status: "denied" });
+});
