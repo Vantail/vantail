@@ -68,7 +68,7 @@ export function privacyPanel(): Panel {
   p.note(
     "Grants belong to the running app's identity, so `vantail dev` and the packaged " +
       ".app keep separate decisions - test the packaged build before concluding " +
-      "anything. Off macOS every call answers UNSUPPORTED_PLATFORM or unsupported.",
+      "anything. Off macOS every call answers UNSUPPORTED or unsupported.",
   );
 
   return p;

@@ -31,7 +31,7 @@ How Vantail relates to macOS Transparency, Consent, and Control (TCC).
   States: `not-determined` / `authorized` / `denied` / `restricted`. Screen recording
   cannot report `not-determined` - the OS offers no such state, so a first-ever
   status reads as `denied` until the prompt has been answered. On other platforms
-  `status` answers `unsupported` and the rest fail with `UNSUPPORTED_PLATFORM`.
+  `status` answers `unsupported` and the rest fail with `UNSUPPORTED`.
 - `privacy.openSettings()` opens the Privacy & Security settings pane on macOS so a user
   can reverse a denial; unsupported elsewhere.
 - `macos.microphoneUsageDescription` / `macos.cameraUsageDescription` config keys,
