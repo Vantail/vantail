@@ -223,7 +223,10 @@ mod tests {
         // to run anywhere, including CI.
         let state = status("microphone");
         assert!(
-            matches!(state, "not-determined" | "authorized" | "denied" | "restricted" | "unsupported"),
+            matches!(
+                state,
+                "not-determined" | "authorized" | "denied" | "restricted" | "unsupported"
+            ),
             "unexpected status `{state}`"
         );
     }
