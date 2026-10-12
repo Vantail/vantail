@@ -7,10 +7,10 @@
 //! that could reach the microphone through the runtime still faces the system
 //! prompt, and no config flag can answer that prompt on the user's behalf.
 //!
-//! Only `microphone` and `camera` are wrapped: they are the kinds with a
-//! request API that shows the normal system prompt. Everything else with a TCC
-//! decision - screen recording, accessibility, location, contacts - either has
-//! no request call or needs a delegate the runtime has no business owning, so
+//! Only `microphone`, `camera` and `screen` are wrapped: they are the kinds
+//! with a request API that shows the normal system prompt. Everything else
+//! with a TCC decision - accessibility, location, contacts - either has no
+//! request call or needs a delegate the runtime has no business owning, so
 //! those are documented in `docs/macos-privacy.md` rather than wrapped.
 
 use serde::Deserialize;
@@ -28,9 +28,9 @@ struct KindParams {
 fn kind(params: Value, method: &str) -> Result<String, ApiError> {
     let KindParams { kind } = Request::params(method, params)?;
     match kind.as_str() {
-        "microphone" | "camera" => Ok(kind),
+        "microphone" | "camera" | "screen" => Ok(kind),
         _ => Err(ApiError::invalid_params(format!(
-            "`{method}` needs `kind` to be \"microphone\" or \"camera\", not \"{kind}\""
+            "`{method}` needs `kind` to be \"microphone\", \"camera\" or \"screen\", not \"{kind}\""
         ))),
     }
 }
@@ -136,6 +136,9 @@ mod imp {
     }
 
     pub fn authorization_status(kind: &str) -> Status {
+        if kind == "screen" {
+            return screen_status();
+        }
         // SAFETY: `+authorizationStatusForMediaType:` is a thread-safe class
         // method that touches no Vantail state.
         let raw = unsafe { AVCaptureDevice::authorizationStatusForMediaType(media_type(kind)) };
@@ -143,6 +146,9 @@ mod imp {
     }
 
     pub fn request_access(kind: &str) -> Status {
+        if kind == "screen" {
+            return request_screen();
+        }
         // Already decided: answer without prompting. Asking again would be
         // free, the OS just would not show anything - but saying so makes the
         // showcase honest about when the prompt appears.
@@ -186,6 +192,31 @@ mod imp {
             Status::NotDetermined
         }
     }
+
+    /// Screen recording, via CoreGraphics rather than AVFoundation.
+    ///
+    /// The preflight call only knows granted or not - unlike AVFoundation
+    /// there is no `not-determined` to report, so a first-ever `status` reads
+    /// as `denied` until the prompt has been answered. `request` is what shows
+    /// the prompt; afterwards both agree. No `Info.plist` key is required.
+    fn screen_status() -> Status {
+        if objc2_core_graphics::CGPreflightScreenCaptureAccess() {
+            Status::Authorized
+        } else {
+            Status::Denied
+        }
+    }
+
+    fn request_screen() -> Status {
+        if objc2_core_graphics::CGPreflightScreenCaptureAccess() {
+            return Status::Authorized;
+        }
+        if objc2_core_graphics::CGRequestScreenCaptureAccess() {
+            Status::Authorized
+        } else {
+            Status::Denied
+        }
+    }
 }
 
 #[cfg(test)]
@@ -206,28 +237,38 @@ mod tests {
     }
 
     #[test]
-    fn both_kinds_are_accepted() {
-        assert_eq!(
-            kind(json!({ "kind": "microphone" }), "privacy.status").unwrap(),
-            "microphone"
-        );
-        assert_eq!(
-            kind(json!({ "kind": "camera" }), "privacy.status").unwrap(),
-            "camera"
-        );
+    fn all_kinds_are_accepted() {
+        for kind_name in ["microphone", "camera", "screen"] {
+            assert_eq!(
+                kind(json!({ "kind": kind_name }), "privacy.status").unwrap(),
+                kind_name
+            );
+        }
     }
 
     #[test]
     fn status_reports_a_known_state_without_prompting() {
-        // `authorizationStatusForMediaType:` never shows UI, so this is safe
-        // to run anywhere, including CI.
-        let state = status("microphone");
-        assert!(
-            matches!(
-                state,
-                "not-determined" | "authorized" | "denied" | "restricted" | "unsupported"
-            ),
-            "unexpected status `{state}`"
-        );
+        // Neither `authorizationStatusForMediaType:` nor the screen-recording
+        // preflight shows UI, so this is safe to run anywhere, including CI.
+        for kind_name in ["microphone", "camera", "screen"] {
+            let state = status(kind_name);
+            let expected = if kind_name == "screen" {
+                // CoreGraphics cannot tell "never asked" from "denied", and
+                // off macOS there is no TCC at all.
+                vec!["authorized", "denied", "unsupported"]
+            } else {
+                vec![
+                    "not-determined",
+                    "authorized",
+                    "denied",
+                    "restricted",
+                    "unsupported",
+                ]
+            };
+            assert!(
+                expected.contains(&state),
+                "unexpected status `{state}` for `{kind_name}`"
+            );
+        }
     }
 }

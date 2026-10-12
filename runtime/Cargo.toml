@@ -114,6 +114,9 @@ objc2-av-foundation = { version = "0.3", features = [
   "AVCaptureDevice",
   "AVMediaFormat",
 ] }
+# Screen-recording consent: the preflight and request calls. Same version wry
+# already resolves to, so this adds nothing to the tree.
+objc2-core-graphics = { version = "0.3", features = ["std", "CGWindow"] }
 objc2 = "0.6"
 block2 = "0.6"
 objc2-app-kit = { version = "0.3", features = [
