@@ -66,3 +66,29 @@ How Vantail relates to macOS Transparency, Consent, and Control (TCC).
 - **Code signing**: TCC decisions stick to the bundle identifier *and* signing identity.
   Ad-hoc signatures (`vantail package` default) work on the build machine; changing the
   identity later (e.g. ad-hoc → Developer ID) resets prior grants.
+
+## Verification (2026-10-12, Apple Silicon, macOS)
+
+Mechanically verified on this machine:
+
+- The real `AVCaptureDevice authorizationStatusForMediaType:` call returns a valid
+  state (`runtime/src/api/privacy.rs` unit test, run on-device).
+- `vantail package` emits both `NSMicrophoneUsageDescription` and
+  `NSCameraUsageDescription` into the showcase bundle's `Info.plist`, with
+  `CFBundleIdentifier` `dev.vantail.showcase` (checked in the built `.app`).
+- The packaged binary is the fresh release build containing `privacy.*` dispatch.
+- `codesign -dv` reports `Identifier=dev.vantail.showcase, Signature=adhoc` - the
+  identity TCC attributes grants to.
+- The packaged showcase launches with zero errors/faults in the unified log and
+  quits cleanly.
+
+Not automated (no GUI automation is available in this environment), to verify by
+hand in the showcase `privacy` panel on a test machine:
+
+1. Fresh state: `status()` → `not-determined`, no prompt shown.
+2. `request()` → system prompt appears; Allow → `authorized`, and the microphone
+   works (also via the `getUserMedia` button).
+3. Revoke in System Settings → Privacy & Security → Microphone; `status()` →
+   `denied`; `request()` no longer prompts; `openSettings()` deep-links back.
+4. Repeat 1-3 with the packaged `.app`, not just `vantail dev` - the two are
+   different TCC identities with independent grants.
