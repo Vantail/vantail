@@ -25,9 +25,13 @@ How Vantail relates to macOS Transparency, Consent, and Control (TCC).
 ## What was implemented
 
 - `privacy.status(kind)` / `privacy.request(kind)` for `microphone` and `camera`
-  (`runtime/src/api/privacy.rs`, macOS via `AVCaptureDevice`, `objc2-av-foundation`).
-  States: `not-determined` / `authorized` / `denied` / `restricted`. On other platforms
-  both calls fail with `UNSUPPORTED_PLATFORM`.
+  (`runtime/src/api/privacy.rs`, macOS via `AVCaptureDevice`, `objc2-av-foundation`)
+  plus `screen` (screen recording via `CGPreflight/RequestScreenCaptureAccess`,
+  `objc2-core-graphics`).
+  States: `not-determined` / `authorized` / `denied` / `restricted`. Screen recording
+  cannot report `not-determined` - the OS offers no such state, so a first-ever
+  status reads as `denied` until the prompt has been answered. On other platforms
+  `status` answers `unsupported` and the rest fail with `UNSUPPORTED_PLATFORM`.
 - `privacy.openSettings()` opens the Privacy & Security settings pane on macOS so a user
   can reverse a denial; unsupported elsewhere.
 - `macos.microphoneUsageDescription` / `macos.cameraUsageDescription` config keys,
@@ -54,9 +58,13 @@ How Vantail relates to macOS Transparency, Consent, and Control (TCC).
 - **Missing usage description**: if the `Info.plist` lacks the matching
   `NS*UsageDescription`, macOS denies capture without prompting (and logs to Console).
   `vantail doctor` / packaging docs remind you to set `macos.*UsageDescription`.
-- **Screen recording / accessibility**: no request API exists; the app can only detect
-  the state indirectly (capture returns blank / events never arrive) and direct the user
-  to System Settings. Not wrapped — document and deep-link instead.
+- **Screen recording**: requestable via `privacy.request("screen")`, and it needs
+  no `Info.plist` key. The preflight check cannot distinguish "never asked" from
+  "denied", so treat a first `denied` as "ask to find out". A denied decision can
+  only be reversed in System Settings, like the rest.
+- **Accessibility**: no request API exists that grants anything - the AX prompt only
+  redirects to System Settings, which `privacy.openSettings()` already does. Not
+  wrapped; direct the user to Settings instead.
 - **Location**: requestable only via CoreLocation (`CLLocationManager`), which needs a
   usage description plus a run-loop delegate; not wrapped in this iteration. Web
   geolocation in the webview follows the same WebKit path as media.
@@ -92,3 +100,6 @@ hand in the showcase `privacy` panel on a test machine:
    `denied`; `request()` no longer prompts; `openSettings()` deep-links back.
 4. Repeat 1-3 with the packaged `.app`, not just `vantail dev` - the two are
    different TCC identities with independent grants.
+5. Camera: same flow as 1-4 through the camera row and the browser-video button.
+6. Screen recording: first `status("screen")` reads `denied` (never-asked is
+   indistinguishable); `request("screen")` shows the prompt; Allow → `authorized`.

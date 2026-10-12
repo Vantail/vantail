@@ -919,11 +919,18 @@ if ((await privacy.status("microphone")).status === "denied") {
 }
 ```
 
-`microphone` and `camera` are the two kinds with a system prompt to show.
-The first `request` puts Apple's normal dialog in front of the user;
+`microphone`, `camera` and `screen` are the three kinds with a system prompt
+to show - everything else TCC guards (accessibility, location, contacts) has
+no prompt API for the runtime to call, so `openSettings()` is the whole flow
+there. The first `request` puts Apple's normal dialog in front of the user;
 afterwards both calls answer from the stored decision without prompting.
 Only the user, in System Settings, can reverse a denial - `restricted`
 (MDM, Screen Time) cannot be changed by anyone on the machine.
+
+Screen recording differs in one way: the OS cannot tell "never asked" from
+"denied", so a first-ever `status("screen")` reads as `denied` until the
+prompt has been answered. It needs no `Info.plist` key; microphone and
+camera need their `macos.*UsageDescription` (below).
 
 Two things the packaged app needs, both covered in
 [macOS privacy](macos-privacy.md):
