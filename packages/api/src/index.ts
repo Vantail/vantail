@@ -78,6 +78,11 @@ export {
 } from "./print.js";
 export { path, type PathApi } from "./path.js";
 export {
+  privacy,
+  type PrivacyKind,
+  type PrivacyStatus,
+} from "./privacy.js";
+export {
   process,
   type Child,
   type ExecuteOptions,
