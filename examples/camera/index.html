@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Camera</title>
+  </head>
+  <body>
+    <main>
+      <h1 id="title">Camera</h1>
+      <p class="meta">
+        The OS camera decision, via <code>privacy.*</code> - plus a live preview
+        through the webview's own <code>getUserMedia</code>. Nothing is recorded.
+      </p>
+
+      <section class="status-row" aria-live="polite">
+        <span id="badge" class="badge unknown">unknown</span>
+        <span id="message" class="meta">Checking the camera decision…</span>
+      </section>
+
+      <section class="row">
+        <button id="check">Check status</button>
+        <button id="ask">Ask for access</button>
+        <button id="settings">Open Settings</button>
+      </section>
+
+      <section class="preview-wrap">
+        <video id="preview" muted playsinline></video>
+        <p id="hint" class="meta">Preview is off.</p>
+      </section>
+
+      <section class="row">
+        <button id="start">Start preview</button>
+        <button id="stop" disabled>Stop</button>
+      </section>
+
+      <p class="error" id="error" hidden></p>
+
+      <p class="meta">
+        Denied means System Settings: Privacy &amp; Security - only you can reverse
+        it there. Grants belong to the running app, so <code>vantail dev</code> and
+        the packaged <code>.app</code> keep separate decisions. Off macOS this reports
+        <code>unsupported</code>.
+      </p>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
