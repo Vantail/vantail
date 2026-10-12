@@ -103,7 +103,6 @@ fn map_status(status: imp::Status) -> &'static str {
         imp::Status::Authorized => "authorized",
     }
 }
-
 #[cfg(target_os = "macos")]
 mod imp {
     //! The AVFoundation calls, kept behind one door so the mapping above is
@@ -186,5 +185,46 @@ mod imp {
         } else {
             Status::NotDetermined
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    // `dispatch` takes a `&Runtime` it deliberately never reads (TCC - not
+    // Vantail permissions - is the gate), and a `Runtime` needs an event loop
+    // to build. So these exercise everything below that boundary: the `kind`
+    // validation every call passes through, and - on macOS - the real status
+    // query, which never prompts.
+    #[test]
+    fn an_unknown_kind_is_rejected_before_touching_the_os() {
+        let error = kind(json!({ "kind": "location" }), "privacy.status").unwrap_err();
+        assert_eq!(error.code, crate::error::code::INVALID_PARAMS);
+    }
+
+    #[test]
+    fn both_kinds_are_accepted() {
+        assert_eq!(
+            kind(json!({ "kind": "microphone" }), "privacy.status").unwrap(),
+            "microphone"
+        );
+        assert_eq!(
+            kind(json!({ "kind": "camera" }), "privacy.status").unwrap(),
+            "camera"
+        );
+    }
+
+    #[test]
+    fn status_reports_a_known_state_without_prompting() {
+        // `authorizationStatusForMediaType:` never shows UI, so this is safe
+        // to run anywhere, including CI.
+        let state = status("microphone");
+        assert!(
+            matches!(state, "not-determined" | "authorized" | "denied" | "restricted" | "unsupported"),
+            "unexpected status `{state}`"
+        );
     }
 }

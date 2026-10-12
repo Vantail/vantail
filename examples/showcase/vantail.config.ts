@@ -33,6 +33,15 @@ export default defineConfig({
   // from an installed build rather than from `vantail dev`.
   protocols: ["vantail-showcase"],
 
+  // The strings behind the macOS privacy prompts. Without the matching one,
+  // the OS denies capture without ever asking - see docs/macos-privacy.md.
+  macos: {
+    microphoneUsageDescription:
+      "The privacy panel demonstrates the microphone permission prompt. Nothing is recorded.",
+    cameraUsageDescription:
+      "The privacy panel demonstrates the camera permission prompt. Nothing is captured.",
+  },
+
   menu: [
     {
       type: "submenu",
