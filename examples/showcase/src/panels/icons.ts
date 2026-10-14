@@ -2,9 +2,9 @@
  * Vantail Icons: the first-party Lucide icon library.
  *
  * Vanilla API against the same nodes React apps get from
- * `@vantail/icons/react`, so both draw identically. Representative set —
- * not the whole catalogue — with size, stroke, color, a11y, dynamic
- * lookup, and unknown-name handling each on its own row.
+ * `@vantail/icons/react`, so both draw identically. Full catalogue —
+ * every file-backed Lucide icon — with size, stroke, color, a11y, dynamic
+ * lookup, a searchable gallery, and unknown-name handling each on its own row.
  */
 
 import { createIconElement, getIconSvg, iconNames, isIconName } from "@vantail/icons";
@@ -121,26 +121,34 @@ export function iconsPanel(): Panel {
   );
   p.note("A label adds role=\"img\" + aria-label; without one the SVG is aria-hidden.");
 
-  // 7. Dynamic selection by name.
-  const select = document.createElement("select");
-  for (const name of iconNames) {
-    const option = document.createElement("option");
-    option.value = name;
-    option.textContent = name;
-    if (name === "house") option.selected = true;
-    select.append(option);
+  // 7. Searchable gallery over the full catalogue (capped so the page stays light).
+  const search = p.input("search icons…", "rocket");
+  const count = document.createElement("small");
+  count.style.alignSelf = "center";
+  const grid = document.createElement("div");
+  grid.style.display = "flex";
+  grid.style.flexWrap = "wrap";
+  grid.style.gap = "2px";
+  grid.style.maxHeight = "220px";
+  grid.style.overflowY = "auto";
+  const MAX_SHOWN = 60;
+  function renderGallery(): void {
+    const query = search.value.trim().toLowerCase();
+    const matches =
+      query === "" ? [...iconNames] : iconNames.filter((name) => name.includes(query));
+    grid.replaceChildren(...matches.slice(0, MAX_SHOWN).map((name) => demo(name, { size: 24 })));
+    count.textContent =
+      `${matches.length} of ${iconNames.length}` +
+      (matches.length > MAX_SHOWN ? ` (first ${MAX_SHOWN} shown)` : "");
   }
-  const preview = document.createElement("span");
-  preview.style.display = "inline-flex";
-  preview.style.minWidth = "40px";
-  preview.style.justifyContent = "center";
-  const renderSelected = () => {
-    preview.replaceChildren(createIconElement(select.value, { size: 28 }));
-  };
-  select.addEventListener("change", renderSelected);
-  renderSelected();
-  p.row(select, preview, p.button("isIconName?", () => String(isIconName(select.value))));
-  p.note("Dynamic lookup over the curated set — no network, works offline once bundled.");
+  search.addEventListener("input", renderGallery);
+  renderGallery();
+  p.row(search, count, p.button("isIconName?", () => String(isIconName(search.value.trim()))));
+  p.row(grid);
+  p.note(
+    "Dynamic lookup spans the full catalogue — try rocket, funnel, satellite, a-arrow-down. " +
+      "No network, works offline once bundled; the grid caps at 60 so the page stays light.",
+  );
 
   // 8. Unknown icon-name handling.
   const input = p.input("icon name…", "not-an-icon");
