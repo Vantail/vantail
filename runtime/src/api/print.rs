@@ -561,9 +561,14 @@ fn on_pdf_captured(
 
 /// Linux: a `WebKitPrintOperation` on the hidden view.
 ///
-/// `webkit_print_operation_run_dialog()` shows the GTK print dialog and starts
-/// printing. There is no visible parent - the job owns a hidden window - so
-/// the dialog is unparented, which GTK still presents modally.
+/// `webkit_print_operation_run_dialog()` shows the GTK print dialog and returns
+/// when it closes. `PRINT` only means the user pressed Print and the job
+/// started - the `finished` signal fires when spooling actually completes, and
+/// `failed` fires just before `finished` when it goes wrong. The dialog
+/// response alone therefore cannot answer `{ printed }`; the `failed` flag
+/// decides. Cancel never starts a job, so it answers `false` at once. There is
+/// no visible parent - the job owns a hidden window - so the dialog is
+/// unparented, which GTK still presents modally.
 #[cfg(target_os = "linux")]
 fn platform_print_linux(webview: &wry::WebView) -> Result<bool, ApiError> {
     use webkit2gtk::PrintOperationExt;
@@ -572,8 +577,32 @@ fn platform_print_linux(webview: &wry::WebView) -> Result<bool, ApiError> {
 
     let wk = webview.webview();
     let op = PrintOperation::new(&wk);
+
+    let failed = Rc::new(Cell::new(false));
+    let failed_flag = Rc::clone(&failed);
+    op.connect_failed(move |_, _| {
+        failed_flag.set(true);
+    });
+
+    let finished = Rc::new(Cell::new(false));
+    let finished_flag = Rc::clone(&finished);
+    op.connect_finished(move |_| {
+        finished_flag.set(true);
+    });
+
     let response = op.run_dialog(None::<&gtk::Window>);
-    Ok(response == PrintOperationResponse::Print)
+    if response != PrintOperationResponse::Print {
+        return Ok(false);
+    }
+    // The dialog has closed but the job is still spooling: pump the GTK loop
+    // until `finished` fires, then `failed` (always before `finished` on
+    // error) tells success from failure. Either signal may already have fired
+    // synchronously above, in which case this exits at once while `op` is
+    // still alive to deliver them.
+    while !finished.get() {
+        gtk::main_iteration_do(true);
+    }
+    Ok(!failed.get())
 }
 
 #[cfg(test)]
