@@ -8,7 +8,7 @@ import { test } from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { House, Icon, Settings } from "../dist/react.js";
+import { AArrowDown, House, Icon, Rocket, Settings } from "../dist/react.js";
 import { resetUnknownIconWarnings } from "../dist/shared.js";
 
 function render(element) {
@@ -91,4 +91,16 @@ test("className merges with the built-in class; extra props pass through", () =>
   );
   assert.match(html, /class="vantail-icon favorite"/);
   assert.match(html, /data-testid="icon-star"/);
+});
+
+test("React APIs work with icons outside the original subset", () => {
+  const dynamic = render(React.createElement(Icon, { name: "rocket" }));
+  assert.match(dynamic, /data-icon="rocket"/);
+  assert.doesNotMatch(dynamic, /data-unknown/);
+
+  const viaStatic = render(React.createElement(Rocket, { size: 20 }));
+  const viaDynamic = render(React.createElement(Icon, { name: "rocket", size: 20 }));
+  assert.equal(viaStatic, viaDynamic);
+
+  assert.match(render(React.createElement(AArrowDown)), /data-icon="a-arrow-down"/);
 });

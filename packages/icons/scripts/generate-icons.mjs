@@ -123,8 +123,7 @@ const statics =
       (entry) =>
         `export function ${entry.pascal}(props: BaseIconProps): ReactElement {\n` +
         `  return baseReactIcon(${nodeOf(entry.pascal)}, "${entry.kebab}", true, props);\n` +
-        `}\n` +
-        `${entry.pascal}.displayName = "${entry.pascal}Icon";`,
+        `}`,
     )
     .join("\n\n") +
   `\n`;
