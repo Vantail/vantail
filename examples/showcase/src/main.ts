@@ -21,6 +21,7 @@ import { dialogPanel } from "./panels/dialog.js";
 import { printPanel } from "./panels/print.js";
 import { filesystemPanel } from "./panels/filesystem.js";
 import { hidPanel, mdnsPanel, secretsPanel } from "./panels/devices.js";
+import { iconsPanel } from "./panels/icons.js";
 import { menuPanel } from "./panels/menu.js";
 import { databasePanel } from "./panels/database.js";
 import { networkPanel } from "./panels/network.js";
@@ -69,6 +70,7 @@ function build() {
     privacyPanel(),
     filesystemPanel(),
     dialogPanel(),
+    iconsPanel(),
     printPanel(),
     dropPanel(),
     clipboardPanel(),

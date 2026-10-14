@@ -11,7 +11,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@vantail/api": "workspace:^"
+    "@vantail/api": "workspace:^",
+    "@vantail/icons": "workspace:^"
   },
   "devDependencies": {
     "@vantail/cli": "workspace:^",

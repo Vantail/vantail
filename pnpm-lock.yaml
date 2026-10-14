@@ -184,6 +184,9 @@ importers:
       '@vantail/api':
         specifier: workspace:^
         version: link:../../packages/api
+      '@vantail/icons':
+        specifier: workspace:^
+        version: link:../../packages/icons
     devDependencies:
       '@vantail/cli':
         specifier: workspace:^
