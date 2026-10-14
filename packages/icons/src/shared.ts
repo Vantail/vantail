@@ -94,12 +94,15 @@ export interface SvgParts extends IconOptions {
 }
 
 /**
- * Render an icon to an SVG string. Pure function — no DOM needed, so it
- * works in tests, SSR, and the webview alike. Never throws for unknown
- * names; unknown names render the placeholder with `data-unknown="true"`.
+ * Render artwork to an SVG string. Pure function — no DOM needed, so it
+ * works in tests, SSR, and the webview alike.
  */
-export function getIconSvg(name: string, options: SvgParts = {}): string {
-  const { node, known, key } = resolveIcon(name);
+export function svgStringFromNode(
+  node: IconNode,
+  iconKey: string,
+  known: boolean,
+  options: SvgParts = {},
+): string {
   const size = normalizeSize(options.size);
   const strokeWidth = normalizeStrokeWidth(options.strokeWidth);
   const color = normalizeColor(options.color);
@@ -115,7 +118,7 @@ export function getIconSvg(name: string, options: SvgParts = {}): string {
     ` fill="none" stroke="${escapeHtml(color)}" stroke-width="${strokeWidth}"` +
     ` stroke-linecap="round" stroke-linejoin="round"` +
     ` class="${escapeHtml(classes.join(" "))}"` +
-    ` data-icon="${escapeHtml(key)}"`;
+    ` data-icon="${escapeHtml(iconKey)}"`;
 
   if (!known) attrs += ` data-unknown="true"`;
   if (label !== "") {
@@ -134,6 +137,16 @@ export function getIconSvg(name: string, options: SvgParts = {}): string {
     }
   }
   return `<svg ${attrs}>${renderChildren(node)}</svg>`;
+}
+
+/**
+ * Render an icon to an SVG string by canonical name.
+ * Never throws for unknown names; unknown names render the placeholder
+ * with `data-unknown="true"`.
+ */
+export function getIconSvg(name: string, options: SvgParts = {}): string {
+  const { node, known, key } = resolveIcon(name);
+  return svgStringFromNode(node, key, known, options);
 }
 
 /** For tests: reset the once-per-name unknown-icon warning cache. */

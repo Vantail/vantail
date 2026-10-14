@@ -15,71 +15,12 @@ import type { IconNode as LucideIconNode } from "lucide";
 export type IconNode = LucideIconNode;
 
 /**
- * Canonical icon names shipped in this release.
- *
- * A curated, tree-shakeable subset of Lucide — every name is a real Lucide
- * name, so anything learned in Lucide's docs transfers. The full Lucide
- * catalogue is intentionally not bundled: a name-based `Icon` over all of
- * Lucide would put every icon in every app.
+ * Canonical icon names: every file-backed icon in the installed `lucide`
+ * package. Generated — see `./icons.generated.js` (written by
+ * `scripts/generate-icons.mjs`). No alternative spellings are accepted:
+ * `house` works, `Home` and `HOUSE` do not.
  */
-export type IconName =
-  | "archive"
-  | "arrow-left"
-  | "arrow-right"
-  | "bell"
-  | "bookmark"
-  | "calendar"
-  | "camera"
-  | "check"
-  | "chevron-down"
-  | "chevron-left"
-  | "chevron-right"
-  | "circle-check"
-  | "circle-x"
-  | "clock"
-  | "copy"
-  | "download"
-  | "external-link"
-  | "eye"
-  | "eye-off"
-  | "file-text"
-  | "folder"
-  | "folder-open"
-  | "globe"
-  | "heart"
-  | "house"
-  | "image"
-  | "inbox"
-  | "info"
-  | "loader-circle"
-  | "lock"
-  | "log-out"
-  | "mail"
-  | "menu"
-  | "message-square"
-  | "mic"
-  | "pause"
-  | "pencil"
-  | "phone"
-  | "play"
-  | "plus"
-  | "refresh-cw"
-  | "save"
-  | "search"
-  | "send"
-  | "settings"
-  | "share-2"
-  | "sliders-horizontal"
-  | "star"
-  | "triangle-alert"
-  | "upload"
-  | "user"
-  | "users"
-  | "video"
-  | "volume-2"
-  | "wifi"
-  | "x"
-  | "zap";
+export type { IconName } from "./icons.generated.js";
 
 /** Presentation options shared by the vanilla and React APIs. */
 export interface IconOptions {
