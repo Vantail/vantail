@@ -299,6 +299,11 @@ fn run() -> Result<(), String> {
                 crate::api::print::timed_out(&rt, &windows.print, job);
             }
 
+            #[cfg(target_os = "windows")]
+            Event::UserEvent(UserEvent::PrintClosed { job }) => {
+                crate::api::print::closed(&rt, &windows.print, job);
+            }
+
             Event::UserEvent(UserEvent::Tray { event, payload }) => {
                 let left = event == "tray.click"
                     && payload.get("button").and_then(|b| b.as_str()) == Some("left");
@@ -312,6 +317,11 @@ fn run() -> Result<(), String> {
                 // A window we have already dropped can still deliver a final
                 // event; there is nothing left to tell anyone about it.
                 let Some(label) = windows.by_id(window_id).map(|entry| entry.label.clone()) else {
+                    // A print window is never listed; closing it ends its job.
+                    #[cfg(target_os = "windows")]
+                    if matches!(event, WindowEvent::CloseRequested) {
+                        crate::api::print::close_requested(&rt, &windows.print, window_id);
+                    }
                     return;
                 };
 

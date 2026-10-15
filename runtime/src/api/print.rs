@@ -8,8 +8,8 @@
 //!    application cannot click through. A config flag would gate *reaching*
 //!    that dialog, which is backwards: the dialog is the gate.
 //! 2. **The application's own UI is unreachable.** Printing always renders an
-//!    explicit `html` string or `pdfPath` file into a hidden webview that is
-//!    never attached to any user-visible window. There is no argument-less
+//!    explicit `html` string or `pdfPath` file into a webview of its own,
+//!    never one of the application's windows. There is no argument-less
 //!    `print()`, no `print.currentWindow()`, and the main webview is never
 //!    even referenced here - so there is nothing a compromised page could aim
 //!    at the user's printer that the user did not just approve.
@@ -22,14 +22,16 @@
 //!    Printing *reads* the file into the renderer, so it is a read like any
 //!    other: an app scoped to `$APPDATA/**` cannot print `/etc/passwd`, while
 //!    a file the user picked in a dialog prints because the dialog granted it.
-//! 3. Create a hidden window and a webview inside it. It is never shown and
-//!    never added to [`WindowManager`](crate::windows::WindowManager)'s
-//!    window list, so it cannot be listed, focused or scripted from
-//!    JavaScript.
+//! 3. Create a hidden window and a webview inside it. It is never added to
+//!    [`WindowManager`](crate::windows::WindowManager)'s window list, so it
+//!    cannot be listed, focused or scripted from JavaScript.
 //! 4. Load the content (`html` as a data URL, `pdfPath` as a file URL) and
 //!    wait for `PageLoadEvent::Finished` - never print a half-rendered page.
-//! 5. Invoke the platform-native print UI on that hidden webview.
+//! 5. Invoke the platform-native print UI on that webview. On Windows that
+//!    is Edge's print preview, which draws inside the webview, so the window
+//!    is shown for it - see `open_preview`.
 //! 6. Tear the window down and answer `{ printed }` once the dialog closes.
+//!    Windows cannot tell printing from cancelling, so there it is `null`.
 //!
 //! Jobs live in [`PrintState`], which hangs off the `WindowManager` rather
 //! than `Runtime`: a job owns a `tao::Window` and a `wry::WebView`, neither
@@ -106,6 +108,10 @@ enum Phase {
     /// macOS only: `createPDF` is in flight; its completion block drives on.
     #[cfg(target_os = "macos")]
     Capturing,
+    /// Windows only: the print window is on screen with Edge's preview open.
+    /// The watchdog leaves it alone - a person gets as long as they need.
+    #[cfg(target_os = "windows")]
+    Previewing,
 }
 
 pub(crate) struct PrintJob {
@@ -118,7 +124,7 @@ pub(crate) struct PrintJob {
     window: tao::window::Window,
     /// Only the macOS path reads this (HTML goes through a PDF-capture
     /// step there); everywhere else the dialog prints whatever rendered.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     phase: Phase,
     request_id: String,
     source: String,
@@ -160,7 +166,7 @@ impl PrintState {
         self.inner.live.borrow_mut().remove(&job)
     }
 
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     fn phase(&self, job: u64) -> Option<Phase> {
         self.inner.live.borrow().get(&job).map(|entry| entry.phase)
     }
@@ -204,7 +210,11 @@ fn document(ctx: &mut MainCtx<'_>, id: &str, params: Value) -> Result<(), ApiErr
 
     let window = tao::window::WindowBuilder::new()
         .with_visible(false)
-        .with_title("Vantail Print")
+        .with_title("Print");
+    // Windows previews in this window, so it is set up to be shown later.
+    #[cfg(target_os = "windows")]
+    let window = preview_window(window, ctx.windows.get(ctx.source));
+    let window = window
         .build(ctx.target)
         .map_err(|e| ApiError::internal(format!("Could not create the print window: {e}")))?;
 
@@ -289,6 +299,13 @@ fn on_ready(rt: &Arc<Runtime>, state: &PrintState, job: u64) {
         Some(Phase::Capturing) | None => return,
     }
 
+    // Windows: Edge's print preview, in the job's own window, instead of a
+    // dialog over a hidden view. The job lives until that window closes.
+    #[cfg(target_os = "windows")]
+    if open_preview(rt, state, job) {
+        return;
+    }
+
     // Let the first paint land so the dialog captures the page, not a blank.
     std::thread::sleep(PAINT_GRACE);
 
@@ -297,13 +314,15 @@ fn on_ready(rt: &Arc<Runtime>, state: &PrintState, job: u64) {
     let Some(entry) = state.take(job) else {
         return;
     };
-    if entry.stub {
-        // Rendered, dialog skipped: the render path above still ran.
-        answer(rt, entry, Ok(json!({ "printed": false })));
+    // Windows only gets here under the stub: it previewed above.
+    #[cfg(not(target_os = "windows"))]
+    if !entry.stub {
+        let result = platform_print(&entry.webview).map(|printed| json!({ "printed": printed }));
+        answer(rt, entry, result);
         return;
     }
-    let result = platform_print(&entry.webview).map(|printed| json!({ "printed": printed }));
-    answer(rt, entry, result);
+    // Rendered, dialog skipped: the render path above still ran.
+    answer(rt, entry, Ok(json!({ "printed": false })));
 }
 
 /// Answer the caller's promise and tear the hidden view down.
@@ -320,6 +339,10 @@ pub fn answer(rt: &Arc<Runtime>, entry: PrintJob, result: ApiResult) {
 
 /// The watchdog's deadline passed while the job was still rendering.
 pub fn timed_out(rt: &Arc<Runtime>, state: &PrintState, job: u64) {
+    #[cfg(target_os = "windows")]
+    if matches!(state.phase(job), Some(Phase::Previewing)) {
+        return;
+    }
     if let Some(entry) = state.take(job) {
         answer(
             rt,
@@ -359,15 +382,6 @@ fn file_url(path: &std::path::Path) -> String {
 ///
 /// Runs on the event loop thread; every platform's dialog is modal, which is
 /// what resolves the promise on close rather than on print.
-#[cfg(target_os = "windows")]
-fn platform_print(webview: &wry::WebView) -> Result<bool, ApiError> {
-    platform_print_windows(webview)
-}
-
-/// Show the platform-native print UI for the hidden webview.
-///
-/// Runs on the event loop thread; every platform's dialog is modal, which is
-/// what resolves the promise on close rather than on print.
 #[cfg(target_os = "macos")]
 fn platform_print(webview: &wry::WebView) -> Result<bool, ApiError> {
     platform_print_macos(webview)
@@ -394,35 +408,132 @@ fn platform_print(webview: &wry::WebView) -> Result<bool, ApiError> {
     ))
 }
 
-/// Windows: the system print dialog on the hidden WebView2.
-///
-/// `ShowPrintUI` needs `ICoreWebView2_16`, i.e. WebView2 Runtime
-/// >= 1.0.1518.46. When the cast fails the runtime is older and the call
-/// answers `UNSUPPORTED` rather than printing through a lesser dialog.
+/// Logical size of the print window on Windows: room for Edge's preview.
 #[cfg(target_os = "windows")]
-fn platform_print_windows(webview: &wry::WebView) -> Result<bool, ApiError> {
-    use webview2_com::Microsoft::Web::WebView2::Win32::{
-        ICoreWebView2_16, COREWEBVIEW2_PRINT_DIALOG_KIND_SYSTEM,
-    };
-    use windows::core::Interface;
-    use wry::WebViewExtWindows;
+const PREVIEW_SIZE: (f64, f64) = (960.0, 760.0);
 
-    let core = webview.webview();
-    let print: ICoreWebView2_16 = core.cast().map_err(|_| {
-        ApiError::unsupported(
-            "Printing needs WebView2 Runtime >= 1.0.1518.46 - update the runtime and try again.",
-        )
-    })?;
-    // Safety: `core` is the live WebView2 of the hidden view, and this runs
-    // on the thread that owns it.
-    unsafe {
-        print
-            .ShowPrintUI(COREWEBVIEW2_PRINT_DIALOG_KIND_SYSTEM)
-            .map_err(|e| ApiError::internal(format!("The print dialog failed: {e}")))?;
+/// How long a PDF gets to come up in Edge's viewer before its preview opens.
+/// The viewer starts after the page reports loaded, and printing before it is
+/// ready does nothing.
+#[cfg(target_os = "windows")]
+const PDF_VIEWER_GRACE_MS: u32 = 1500;
+
+/// Windows: the job's window is where the preview appears, so it is sized
+/// for one, kept off the taskbar, owned by the calling window (above it, and
+/// gone with it) and centred on it.
+#[cfg(target_os = "windows")]
+fn preview_window(
+    builder: tao::window::WindowBuilder,
+    owner: Option<&crate::windows::WindowEntry>,
+) -> tao::window::WindowBuilder {
+    use tao::dpi::{LogicalSize, PhysicalPosition};
+    use tao::platform::windows::{WindowBuilderExtWindows, WindowExtWindows};
+
+    let builder = builder
+        .with_skip_taskbar(true)
+        .with_inner_size(LogicalSize::new(PREVIEW_SIZE.0, PREVIEW_SIZE.1));
+    let Some(owner) = owner else {
+        return builder;
+    };
+    let builder = builder.with_owner_window(owner.window.hwnd());
+    let Ok(origin) = owner.window.outer_position() else {
+        return builder;
+    };
+    let size = owner.window.outer_size();
+    let scale = owner.window.scale_factor();
+    let x = origin.x + size.width as i32 / 2 - (PREVIEW_SIZE.0 * scale) as i32 / 2;
+    let y = origin.y + size.height as i32 / 2 - (PREVIEW_SIZE.1 * scale) as i32 / 2;
+    builder.with_position(PhysicalPosition::new(x.max(0), y.max(0)))
+}
+
+/// Windows: show the job's window and open Edge's print preview in it.
+///
+/// WebView2's `ShowPrintUI` cannot be used: it returns as soon as the dialog
+/// opens and never says when it closed, and its system dialog has no
+/// preview. Edge's own preview draws inside the webview, so the window is
+/// shown, and `window.print()` opens it.
+///
+/// - HTML: `window.print()` returns when the preview closes, whether the
+///   person printed or cancelled, so the script's completion closes the job.
+/// - PDF: Edge's viewer returns from `print()` at once, so there is no such
+///   signal. The PDF stays on screen and the job ends when the person closes
+///   the window.
+///
+/// Either way the job ends with the window, and Edge does not say whether
+/// anything printed, so the answer is `{ printed: null }`.
+///
+/// Returns `false` when the job should take the ordinary path (the stub).
+#[cfg(target_os = "windows")]
+fn open_preview(rt: &Arc<Runtime>, state: &PrintState, job: u64) -> bool {
+    let result = {
+        let mut live = state.inner.live.borrow_mut();
+        let Some(entry) = live.get_mut(&job) else {
+            return true;
+        };
+        if entry.stub {
+            return false;
+        }
+        // A later load event for the same job: the preview is already up.
+        if matches!(entry.phase, Phase::Previewing) {
+            return true;
+        }
+        let pdf = matches!(entry.phase, Phase::Pdf);
+        entry.phase = Phase::Previewing;
+        entry.window.set_visible(true);
+        entry.window.set_focus();
+
+        if pdf {
+            entry.webview.evaluate_script(&format!(
+                "setTimeout(() => window.print(), {PDF_VIEWER_GRACE_MS})"
+            ))
+        } else {
+            // Without a <title>, Edge prints the data URL in the page header.
+            let title = serde_json::to_string(&rt.config.app.name).unwrap_or_default();
+            let proxy = rt.proxy();
+            entry.webview.evaluate_script_with_callback(
+                &format!("if (!document.title) document.title = {title}; window.print();"),
+                move |_| {
+                    let _ = proxy.send_event(UserEvent::PrintClosed { job });
+                },
+            )
+        }
+    };
+    if let Err(e) = result {
+        if let Some(entry) = state.take(job) {
+            answer(
+                rt,
+                entry,
+                Err(ApiError::internal(format!(
+                    "Could not open the print preview: {e}"
+                ))),
+            );
+        }
     }
-    // `ShowPrintUI` reports only that the dialog was shown, not what the user
-    // chose, so there is no cancel state to report cleanly.
-    Ok(true)
+    true
+}
+
+/// Windows: a job's preview or window closed. Edge does not say whether the
+/// person printed or cancelled, so `printed` is `null` rather than a guess.
+#[cfg(target_os = "windows")]
+pub fn closed(rt: &Arc<Runtime>, state: &PrintState, job: u64) {
+    if let Some(entry) = state.take(job) {
+        answer(rt, entry, Ok(json!({ "printed": null })));
+    }
+}
+
+/// Windows: a print window's close button was pressed.
+#[cfg(target_os = "windows")]
+pub fn close_requested(rt: &Arc<Runtime>, state: &PrintState, window: tao::window::WindowId) {
+    let job = state
+        .inner
+        .live
+        .borrow()
+        .iter()
+        .find(|(_, entry)| entry.window.id() == window)
+        .map(|(job, _)| *job);
+    if let Some(job) = job {
+        closed(rt, state, job);
+    }
 }
 
 /// macOS: print the hidden WKWebView.

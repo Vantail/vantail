@@ -4112,7 +4112,6 @@ dependencies = [
  "tungstenite",
  "ureq",
  "webkit2gtk",
- "webview2-com",
  "windows",
  "wry",
 ]
