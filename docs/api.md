@@ -960,7 +960,7 @@ answers `"unsupported"` and the rest reject with `UNSUPPORTED`.
 ```ts
 import { print } from "@vantail/api";
 
-// Application-generated HTML, rendered in a hidden view and printed.
+// Application-generated HTML, rendered in a view of its own and printed.
 await print.document({
   html: invoiceHtml,
 });
@@ -971,7 +971,7 @@ await print.document({
 });
 ```
 
-Prints through the platform-native print dialog: the system dialog on
+Prints through the platform-native print dialog: Edge's print preview on
 Windows, a print panel on macOS, the GTK dialog on Linux. The user chooses
 the printer, the copies and the page range, or cancels - and the promise
 resolves once the dialog has closed, with `{ printed }` saying whether they
@@ -979,7 +979,7 @@ went through with it.
 
 | Function                 | Notes                                        |
 | ------------------------ | -------------------------------------------- |
-| `document({ html })`     | Render the HTML string in a hidden view      |
+| `document({ html })`     | Render the HTML string in a view of its own  |
 | `document({ pdfPath })`  | Print an existing PDF file                   |
 
 `html` and `pdfPath` are mutually exclusive: passing both or neither
@@ -988,7 +988,7 @@ rejects with `INVALID_ARGUMENT`. There is deliberately no argument-less
 explicit, which is the core safety property.
 
 **The main UI can never be printed through this API.** The given content
-renders in a hidden view that is never attached to any visible window; the
+renders in a view of its own, never one of the application's windows; the
 application's window is never involved. Make the HTML self-contained -
 inline styles or a scoped stylesheet injected into the string - so the
 printed page does not depend on the app's own CSS.
@@ -997,10 +997,14 @@ printed page does not depend on the app's own CSS.
 read, and a file the user picked in a dialog prints because the dialog
 granted it.
 
+On Windows the preview opens in a print window over the calling window,
+because Edge draws it inside a webview. For `html` the window closes itself
+after Print or Cancel. For `pdfPath` it stays open showing the PDF, and the
+promise resolves when the user closes it.
+
 `{ printed }` semantics differ by platform: macOS and Linux report whether
-the user actually printed (`false` when they cancelled). On Windows the
-dialog reports only that it was shown, so `printed` is `true` there however
-the dialog closed.
+the user actually printed (`false` when they cancelled). Edge's preview does
+not say, so `printed` is `null` on Windows.
 
 There is no `permissions.print` flag: the native dialog is the
 authorisation. See [permissions](permissions.md#printing-has-no-permission).

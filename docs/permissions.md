@@ -562,8 +562,8 @@ dialog is granted without a scope covering it. A flag would gate *reaching*
 that dialog, which is backwards.
 
 **The application's own UI is unreachable.** Printing renders an explicit
-`html` string or `pdfPath` file in a hidden view that is never attached to a
-visible window. There is no call that prints the current window, so there is
+`html` string or `pdfPath` file in a view of its own, never one of the
+application's windows. There is no call that prints the current window, so there is
 nothing a compromised page could turn into silent exfiltration to paper.
 
 What *is* still scoped is the file: `pdfPath` goes through

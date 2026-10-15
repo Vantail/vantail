@@ -2,15 +2,18 @@ import { VantailError } from "./error.js";
 import { invoke } from "./transport.js";
 
 export interface PrintDocumentOptions {
-  /** Self-contained HTML to render in a hidden view and print. Mutually exclusive with `pdfPath`. */
+  /** Self-contained HTML to render in a view of its own and print. Mutually exclusive with `pdfPath`. */
   html?: string;
   /** Absolute path to an existing PDF file to print. Mutually exclusive with `html`. */
   pdfPath?: string;
 }
 
 export interface PrintResult {
-  /** Whether the user went through with printing (`false` when cancelled). */
-  printed: boolean;
+  /**
+   * Whether the user went through with printing (`false` when cancelled).
+   * `null` on Windows, where the print preview does not say.
+   */
+  printed: boolean | null;
 }
 
 function invalid(message: string): VantailError {
@@ -22,8 +25,8 @@ function invalid(message: string): VantailError {
  *
  * The content source is always explicit - there is deliberately no
  * argument-less `print()` and no `print.currentWindow()`. Only the given
- * `html` or `pdfPath` is rendered, in a hidden view that is never attached
- * to any user-visible window, so the application's own UI can never be
+ * `html` or `pdfPath` is rendered, in a view of its own that is never one
+ * of the application's windows, so the application's own UI can never be
  * printed through this API.
  *
  * The native dialog is the authorisation: the user picks the printer, copies

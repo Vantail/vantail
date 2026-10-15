@@ -164,9 +164,6 @@ windows = { version = "0.62", features = [
   "Win32_Graphics_Gdi",
   "Win32_UI_WindowsAndMessaging",
 ] }
-# The system print dialog on the hidden WebView2. Same version wry already
-# resolves to, so this adds nothing to the tree.
-webview2-com = "0.39"
 
 # The GTK print dialog on the hidden WebKit view. Same versions wry already
 # resolves to, so this adds nothing to the tree.
