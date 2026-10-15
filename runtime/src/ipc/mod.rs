@@ -42,4 +42,7 @@ pub enum UserEvent {
     /// A print job's render deadline passed. Handled on the event loop
     /// because the job owns a webview, which lives there.
     PrintTimeout { job: u64 },
+    /// Windows: a job's print preview closed.
+    #[cfg(target_os = "windows")]
+    PrintClosed { job: u64 },
 }

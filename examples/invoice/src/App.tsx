@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { os, path, print } from "@vantail/api";
+import { os, path, print, type PrintResult } from "@vantail/api";
 import { buildInvoiceHtml, demoInvoice, totals, type LineItem } from "./invoice.js";
 
 const money = (n: number): string => `$${n.toFixed(2)}`;
@@ -20,12 +20,18 @@ export function App() {
   const add = () =>
     setItems([...items, { description: "New item", qty: 1, unitPrice: 0 }]);
 
-  async function run(label: string, work: () => Promise<{ printed: boolean }>) {
+  async function run(label: string, work: () => Promise<PrintResult>) {
     setBusy(true);
     setStatus(`${label}\u2026`);
     try {
       const { printed } = await work();
-      setStatus(printed ? "Sent to the printer." : "Dialog closed - nothing printed.");
+      setStatus(
+        printed === null
+          ? "Print window closed."
+          : printed
+            ? "Sent to the printer."
+            : "Dialog closed - nothing printed.",
+      );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
