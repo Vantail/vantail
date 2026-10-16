@@ -7,7 +7,7 @@ export default defineConfig({
   app: {
     name: "Tabs",
     identifier: "dev.vantail.example.tabs",
-    version: "0.1.25",
+    version: "0.1.26",
     icon: "icon.png",
   },
 

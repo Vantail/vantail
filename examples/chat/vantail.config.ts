@@ -4,7 +4,7 @@ export default defineConfig({
   app: {
     name: "Assistant",
     identifier: "dev.vantail.example.chat",
-    version: "0.1.25",
+    version: "0.1.26",
     icon: "icon.png",
   },
 

@@ -7,7 +7,7 @@ export default defineConfig({
   app: {
     name: "Player",
     identifier: "dev.vantail.example.player",
-    version: "0.1.25",
+    version: "0.1.26",
     icon: "icon.png",
   },
 

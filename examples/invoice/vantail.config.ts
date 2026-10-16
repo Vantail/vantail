@@ -4,7 +4,7 @@ export default defineConfig({
   app: {
     name: "Invoice Printer",
     identifier: "dev.vantail.invoice",
-    version: "0.1.25",
+    version: "0.1.26",
     icon: "icon.png",
   },
 
