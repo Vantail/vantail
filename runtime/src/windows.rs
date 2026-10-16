@@ -1154,6 +1154,11 @@ fn has_decorations(config: &crate::config::WindowConfig) -> bool {
 /// GTK container tao puts inside it: building from the window uses the X11
 /// handle, which does not exist under Wayland - where it fails with "the
 /// underlying handle is not available" and no window ever appears.
+///
+/// The container is picked by [`crate::linux_webview::build`], which prefers
+/// tao's default box but falls back to whatever container the window actually
+/// holds (and finally the GTK window itself), so a tao change to the default
+/// box degrades rather than breaking every window.
 #[cfg(not(target_os = "linux"))]
 fn attach(builder: WebViewBuilder<'_>, window: &Window) -> Result<WebView, String> {
     builder
@@ -1163,17 +1168,7 @@ fn attach(builder: WebViewBuilder<'_>, window: &Window) -> Result<WebView, Strin
 
 #[cfg(target_os = "linux")]
 fn attach(builder: WebViewBuilder<'_>, window: &Window) -> Result<WebView, String> {
-    use tao::platform::unix::WindowExtUnix;
-    use wry::WebViewBuilderExtUnix;
-
-    // tao puts a vertical box in every window it makes; this is that box.
-    let container = window
-        .default_vbox()
-        .ok_or("The window has no GTK container to put a webview in")?;
-
-    builder
-        .build_gtk(container)
-        .map_err(|e| format!("Could not create the webview: {e}"))
+    crate::linux_webview::build(window, builder)
 }
 
 /// Report a drag onto a window, and make what it carries openable.
