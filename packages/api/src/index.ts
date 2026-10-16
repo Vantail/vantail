@@ -142,4 +142,6 @@ export type {
   VantailIncoming,
   VantailRequest,
   VantailResponse,
+  WindowControlSide,
+  WindowControlsLayout,
 } from "./protocol.js";

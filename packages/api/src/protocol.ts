@@ -96,6 +96,37 @@ export interface TitleBarMetrics {
   buttonTop: number;
   /** How tall those buttons are. */
   buttonHeight: number;
+  /**
+   * Which window controls the desktop draws itself, per edge - Linux only,
+   * and only while hidden.
+   *
+   * Read from GNOME's `button-layout`, so an application drawing its own
+   * controls matches the user's other windows: Ubuntu's
+   * `close,minimize,maximize:` puts them on the leading edge, upstream's
+   * `:minimize,maximize,close` on the trailing one, and either side may show
+   * a subset. Absent everywhere else - Windows and macOS place theirs by
+   * convention - and wherever the bar is not hidden.
+   */
+  controls?: WindowControlsLayout;
+}
+
+/** Which of minimise, maximise and close one edge of the bar shows. */
+export interface WindowControlSide {
+  minimize: boolean;
+  maximize: boolean;
+  close: boolean;
+}
+
+/**
+ * The desktop's own window controls, per edge.
+ *
+ * Both sides are modelled because `button-layout` allows both -
+ * `close:minimize,maximize` is unusual but valid. Off GNOME this is the
+ * trailing three, so a window never loses its close button.
+ */
+export interface WindowControlsLayout {
+  leading: WindowControlSide;
+  trailing: WindowControlSide;
 }
 
 export interface VantailBridge {
