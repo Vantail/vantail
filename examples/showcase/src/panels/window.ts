@@ -44,7 +44,9 @@ export function windowPanel(): Panel {
   p.note(
     "Watch the top of this window. Hiding the bar makes this app draw its own - " +
       "the strip with the arrows - sized entirely from the CSS variables the runtime sets, " +
-      "so it matches the bar it replaced without hardcoding anything.",
+      "so it matches the bar it replaced without hardcoding anything. Where the platform " +
+      "drew no buttons either (Windows and Linux lose them with the bar), the strip draws " +
+      "working minimise, maximise and close controls in the platform's own shape.",
   );
 
   p.row(
