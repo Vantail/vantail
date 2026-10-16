@@ -22,6 +22,7 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const lucidePkg = require.resolve("lucide/package.json");
@@ -128,7 +129,7 @@ const statics =
     .join("\n\n") +
   `\n`;
 
-const outDir = join(dirname(new URL(import.meta.url).pathname), "..", "src");
+const outDir = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
 const targets = [
   ["icons.generated.ts", registry],
   ["react.generated.ts", statics],

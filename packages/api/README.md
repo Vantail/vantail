@@ -52,6 +52,7 @@ clipboard      text and images
 menu           the application menu, and context menus
 tray           an icon in the menu bar or system tray
 notification   a notification from the OS
+privacy        macOS privacy status and request - microphone, camera, screen
 shortcut       key combinations claimed system-wide
 autostart      starting when the user logs in
 power          notices when the machine suspends and resumes
