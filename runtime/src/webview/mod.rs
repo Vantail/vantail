@@ -266,9 +266,34 @@ fn assemble_init_script(
 
   // On the bubble rather than the capture phase, so an application's own
   // handler runs first and can call `preventDefault()` to be left alone.
+  //
+  // While a press that moves the window is down, the page must not start a
+  // competing gesture with it. The move reaches the platform a round trip
+  // after the press, and whatever that travel selects (or drags) in the
+  // meantime stays selected once the window starts moving - sometimes the
+  // whole gesture, where the move never starts at all. So `selectstart` and
+  // `dragstart` are vetoed for exactly that press; anything else - keyboard
+  // selections, scripted ones - never sees the flag.
+  //
+  // The flag is recomputed on every press, which is what clears it: a press
+  // always precedes the `selectstart` of its own gesture, so the veto is
+  // never stale, even when the release never reaches the page because the
+  // window manager grabbed the pointer first.
+  var movingWindow = false;
   document.addEventListener('pointerdown', function (event) {{
-    if (movesTheWindow(event)) ask('window.startDragging');
+    movingWindow = movesTheWindow(event);
+    if (movingWindow) ask('window.startDragging');
   }});
+  function windowSettled() {{ movingWindow = false; }}
+  document.addEventListener('pointerup', windowSettled);
+  document.addEventListener('pointercancel', windowSettled);
+  window.addEventListener('blur', windowSettled);
+  document.addEventListener('selectstart', function (event) {{
+    if (movingWindow) event.preventDefault();
+  }}, true);
+  document.addEventListener('dragstart', function (event) {{
+    if (movingWindow) event.preventDefault();
+  }}, true);
 
   // What a real title bar does on a double click, and the platform will not do
   // it for a bar that is not there.
@@ -443,6 +468,25 @@ mod tests {
         // into `__VANTAIL__.titleBar`, which is what the band above reads.
         let script = title_bar_script(crate::chrome::titlebar::Metrics::none());
         assert!(script.contains("window.__VANTAIL__.titleBar"));
+    }
+
+    #[test]
+    fn a_window_move_vetoes_the_page_gesture_under_it() {
+        // The move reaches the platform a round trip after the press, so the
+        // page must not spend that travel selecting text or dragging content:
+        // whatever it starts stays started once the window moves, and is the
+        // whole gesture where the move never starts at all.
+        let script = bridge(crate::chrome::titlebar::Metrics::none());
+        assert!(
+            script.contains("movingWindow = movesTheWindow(event)"),
+            "every press recomputes the flag, which is also what clears it"
+        );
+        for vetoed in ["selectstart", "dragstart"] {
+            assert!(
+                script.contains(&format!("document.addEventListener('{vetoed}'")),
+                "a press that moves the window must veto {vetoed}"
+            );
+        }
     }
 
     /// A scratch directory of this test's own.
