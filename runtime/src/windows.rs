@@ -428,6 +428,10 @@ impl WindowManager {
             TitleBarStyle::Hidden => titlebar::metrics_for(native, height, !buttons_hidden),
             TitleBarStyle::Default => titlebar::Metrics::none(),
         };
+        // Resolved once so Linux warns once per window rather than once per
+        // use: the entry below remembers the same answer the webview is built
+        // with.
+        let corners = window_corners(label, config);
         let webview = build_webview(
             rt,
             &window,
@@ -441,7 +445,7 @@ impl WindowManager {
                     .as_deref()
                     .and_then(crate::config::parse_color),
                 scroll: config.scroll,
-                corners: corner_radii(config),
+                corners,
             },
         )?;
         // Again, now the webview is attached. Putting the content view in
@@ -479,7 +483,7 @@ impl WindowManager {
             title_bar_watch,
             decorations: config.decorations,
             animate_zoom: config.animate_zoom,
-            corner_radii: corner_radii(config),
+            corner_radii: corners,
             restore_frame: None,
             focused: false,
             size,
@@ -768,8 +772,9 @@ fn build_webview(
 /// nothing at all per corner.
 ///
 /// The page is clipped either way, so content cannot spill past a corner.
-/// Linux is still to come; the radii are read on every platform so they are
-/// not dead code where nothing acts on them.
+/// Linux has no clipping yet: the radii are still parsed everywhere so the
+/// config means the same thing on every platform, but on Linux they are
+/// ignored with a warning (see `window_corners`) rather than silently.
 fn round_corners(
     window: &Window,
     webview: &WebView,
@@ -846,7 +851,12 @@ fn round_corners(
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let _ = (window, webview, radii, background);
+    {
+        // Linux has no clipping yet. The ignore is explicit here rather than
+        // silent: `window_corners` already warned once when the window was
+        // created, so a reshape reaching this point stays quiet.
+        let _ = (window, webview, radii, background);
+    }
 }
 
 /// Clip a window to a rounded rectangle of four independent radii.
@@ -1099,6 +1109,30 @@ fn corner_radii(config: &crate::config::WindowConfig) -> Option<crate::config::R
         .and_then(crate::config::BorderRadius::radii)
 }
 
+/// The corners this window will actually get.
+///
+/// On Linux there is no clipping yet, so a radius that would round anywhere
+/// else is ignored here - with a warning, so it is never a silent no-op.
+/// Kept separate from `corner_radii` so that helper stays a pure function of
+/// the config and the platform gate stays in one place.
+fn window_corners(label: &str, config: &crate::config::WindowConfig) -> Option<crate::config::Radii> {
+    let corners = corner_radii(config);
+    #[cfg(target_os = "linux")]
+    {
+        if corners.is_some() {
+            eprintln!(
+                "vantail: window `{label}` sets `borderRadius`, which is not supported on Linux yet \
+                and will be ignored - the window keeps the platform's square corners. \
+                Rounded corners work on macOS and Windows."
+            );
+            return None;
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = label;
+    corners
+}
+
 /// Whether the window keeps a frame of its own.
 ///
 /// A hidden title bar has no bar to decorate. On macOS the decorations stay
@@ -1245,5 +1279,22 @@ mod tests {
         );
         assert!(limit(None, Some(300.0)).is_none());
         assert!(limit(None, None).is_none());
+    }
+
+    #[test]
+    fn rounded_corners_are_ignored_on_linux() {
+        let config = window(serde_json::json!({
+            "decorations": false,
+            "borderRadius": 12,
+        }));
+
+        // The config still parses everywhere - it has to, a config written on
+        // macOS is packaged on Linux - but the window keeps square corners
+        // there. The warning goes to stderr, so this only asserts the ignore.
+        assert_eq!(
+            window_corners("main", &config).is_some(),
+            !cfg!(target_os = "linux"),
+            "borderRadius rounds on macOS and Windows, and is ignored on Linux"
+        );
     }
 }
