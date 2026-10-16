@@ -220,15 +220,15 @@ impl WindowEntry {
     /// buttons are somewhere else afterwards.
     /// Shape the title bar to the height in force, and measure what resulted.
     ///
-    /// Only while the platform is still drawing the buttons. With them hidden
-    /// there is no container worth growing - the application draws the bar and
-    /// everything in it - and the height it asked for is simply the answer.
+    /// The height in force is whatever the application asked for while hidden,
+    /// or the platform's own otherwise. `titleBarButtons: "hidden"` changes
+    /// nothing about which height wins: with the buttons hidden the
+    /// application draws the bar and everything in it, and the height it asked
+    /// for is simply the answer - which is also what makes `hidden` off macOS
+    /// (a fully undecorated window, no buttons anywhere) report a custom
+    /// height instead of silently falling back to the platform's.
     fn refit(&mut self) -> f64 {
-        let wanted = if self.title_bar_style == TitleBarStyle::Hidden && !self.buttons_hidden {
-            self.title_bar_height
-        } else {
-            None
-        };
+        let wanted = wanted_height(self.title_bar_style, self.title_bar_height);
         let height = titlebar::fit(
             &self.window,
             wanted,
@@ -414,11 +414,7 @@ impl WindowManager {
         let title_bar_watch = titlebar::keep(&window, &title_bar_shape);
         let height = titlebar::fit(
             &window,
-            if config.title_bar_style == TitleBarStyle::Hidden && !buttons_hidden {
-                config.title_bar_height
-            } else {
-                None
-            },
+            wanted_height(config.title_bar_style, config.title_bar_height),
             platform_bar,
             config.traffic_light_position.map(|i| (i.x, i.y)),
             &title_bar_shape,
@@ -454,11 +450,7 @@ impl WindowManager {
         // holds. Electron builds its buttons proxy at the same point.
         titlebar::fit(
             &window,
-            if config.title_bar_style == TitleBarStyle::Hidden && !buttons_hidden {
-                config.title_bar_height
-            } else {
-                None
-            },
+            wanted_height(config.title_bar_style, config.title_bar_height),
             platform_bar,
             config.traffic_light_position.map(|i| (i.x, i.y)),
             &title_bar_shape,
@@ -1138,13 +1130,30 @@ fn window_corners(label: &str, config: &crate::config::WindowConfig) -> Option<c
 /// A hidden title bar has no bar to decorate. On macOS the decorations stay
 /// on - that is what keeps the traffic lights, and the bar itself is removed
 /// by the platform-specific calls elsewhere. Everywhere else the only way to
-/// lose the bar is to lose the frame with it.
+/// lose the bar is to lose the frame with it: `hidden` is a fully undecorated
+/// window, with no traffic-light band to keep and no system buttons anywhere.
 fn has_decorations(config: &crate::config::WindowConfig) -> bool {
     let hidden = config.title_bar_style == TitleBarStyle::Hidden;
     if hidden && !cfg!(target_os = "macos") {
         false
     } else {
         config.decorations
+    }
+}
+
+/// The height a hidden title bar asks for, or `None` for the platform's own.
+///
+/// One place rather than three copies of the same condition: the height is
+/// honoured whenever the bar is hidden, whatever `titleBarButtons` says. With
+/// the buttons hidden the application draws everything and the number is
+/// simply reported - the documented `{ titleBarHeight: 60, titleBarButtons:
+/// "hidden" }` reporting `60` - and off macOS there are no system buttons
+/// anyway, so the flag must not decide which height wins there either.
+fn wanted_height(style: TitleBarStyle, height: Option<f64>) -> Option<f64> {
+    if style == TitleBarStyle::Hidden {
+        height
+    } else {
+        None
     }
 }
 
@@ -1274,6 +1283,25 @@ mod tests {
         );
         assert!(limit(None, Some(300.0)).is_none());
         assert!(limit(None, None).is_none());
+    }
+
+    #[test]
+    fn a_hidden_bar_keeps_the_height_it_was_asked_for() {
+        // Whatever `titleBarButtons` says - including `hidden`, where the
+        // application draws everything and the number is simply reported.
+        // Before, the height was dropped whenever the buttons were hidden, so
+        // the documented `{ titleBarHeight: 60, titleBarButtons: "hidden" }`
+        // came back as the platform's height instead of 60.
+        assert_eq!(
+            wanted_height(TitleBarStyle::Hidden, Some(60.0)),
+            Some(60.0)
+        );
+        assert_eq!(wanted_height(TitleBarStyle::Hidden, None), None);
+        assert_eq!(
+            wanted_height(TitleBarStyle::Default, Some(60.0)),
+            None,
+            "an ordinary title bar is the platform's, whatever was asked for"
+        );
     }
 
     #[test]
