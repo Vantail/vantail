@@ -39,6 +39,74 @@ pub struct Metrics {
     pub button_top: f64,
     /// How tall those buttons are.
     pub button_height: f64,
+    /// Which window controls the desktop shows, and on which edge - Linux
+    /// only, and only while hidden.
+    ///
+    /// Read from GNOME's `button-layout`, so an application drawing its own
+    /// controls matches the user's other windows: Ubuntu's
+    /// `close,minimize,maximize:` puts them on the leading edge, upstream's
+    /// `:minimize,maximize,close` on the trailing one, and either side may
+    /// show a subset. Absent everywhere else - Windows and macOS place theirs
+    /// by convention - and wherever the bar is not hidden.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub controls: Option<Controls>,
+}
+
+/// Which of minimise, maximise and close a side of the bar shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Side {
+    pub minimize: bool,
+    pub maximize: bool,
+    pub close: bool,
+}
+
+/// Which window controls the desktop draws itself, per edge.
+///
+/// Linux only. Both sides are modelled because `button-layout` allows both -
+/// `close:minimize,maximize` is unusual but valid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Controls {
+    pub leading: Side,
+    pub trailing: Side,
+}
+
+impl Default for Controls {
+    /// Upstream GNOME's trailing three, which is also the fallback wherever
+    /// there is nothing to read: no `gsettings`, no GNOME schema, or an
+    /// answer with no recognisable button in it. Falling back matters more
+    /// than being exact here - a window with no close button strands the user.
+    fn default() -> Self {
+        let all = Side {
+            minimize: true,
+            maximize: true,
+            close: true,
+        };
+        Self {
+            leading: Side {
+                minimize: false,
+                maximize: false,
+                close: false,
+            },
+            trailing: all,
+        }
+    }
+}
+
+impl Side {
+    fn count(self) -> u32 {
+        [self.minimize, self.maximize, self.close]
+            .into_iter()
+            .filter(|show| *show)
+            .count() as u32
+    }
+}
+
+impl Controls {
+    fn count(self) -> u32 {
+        self.leading.count() + self.trailing.count()
+    }
 }
 
 impl Metrics {
@@ -51,8 +119,78 @@ impl Metrics {
             inset_right: 0.0,
             button_top: 0.0,
             button_height: 0.0,
+            controls: None,
         }
     }
+}
+
+/// Which window controls the desktop draws, and on which edge.
+///
+/// GNOME's `button-layout` (`org.gnome.desktop.wm.preferences`), read through
+/// `gsettings`. Anything that is not GNOME - no binary, no schema, anything
+/// unparsable - falls back to upstream's trailing three (see `Default`).
+#[cfg(target_os = "linux")]
+pub fn controls() -> Controls {
+    read_button_layout().unwrap_or_default()
+}
+
+#[cfg(target_os = "linux")]
+fn read_button_layout() -> Option<Controls> {
+    let output = std::process::Command::new("gsettings")
+        .args([
+            "get",
+            "org.gnome.desktop.wm.preferences",
+            "button-layout",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    parse_button_layout(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// Parse a `button-layout` value such as `'close,minimize,maximize:'`.
+///
+/// The quotes are `gsettings` talking, the colon splits the leading edge from
+/// the trailing one, and anything that is not minimise, maximise or close -
+/// `menu`, `appmenu`, `spacer` - is not a window control and is ignored. `None`
+/// when no recognisable button survives, so the caller falls back instead of
+/// stranding a window with nothing to close it with.
+///
+/// Kept platform-independent so the parsing is unit-tested everywhere, not
+/// only where `gsettings` exists.
+fn parse_button_layout(raw: &str) -> Option<Controls> {
+    let value = raw.trim().trim_matches(|c| c == '\'' || c == '"').trim();
+    let (left, right) = match value.split_once(':') {
+        Some((left, right)) => (left, right),
+        // Not a layout GNOME would write; treat it as the trailing edge
+        // rather than refusing it outright.
+        None => ("", value),
+    };
+
+    let side = |part: &str| {
+        let mut side = Side {
+            minimize: false,
+            maximize: false,
+            close: false,
+        };
+        for button in part.split(',') {
+            match button.trim() {
+                "minimize" => side.minimize = true,
+                "maximize" => side.maximize = true,
+                "close" => side.close = true,
+                _ => {}
+            }
+        }
+        side
+    };
+
+    let controls = Controls {
+        leading: side(left),
+        trailing: side(right),
+    };
+    (controls.count() > 0).then_some(controls)
 }
 
 /// What the title bar should look like.
@@ -390,6 +528,12 @@ pub fn metrics_for(native: Native, height: f64, system_buttons: bool) -> Metrics
             inset_right: 0.0,
             button_top: 0.0,
             button_height: 0.0,
+            // Only Linux carries this: Windows places its controls by
+            // convention, and there is nothing to configure.
+            #[cfg(target_os = "linux")]
+            controls: Some(controls()),
+            #[cfg(not(target_os = "linux"))]
+            controls: None,
         };
     }
 
@@ -401,6 +545,7 @@ pub fn metrics_for(native: Native, height: f64, system_buttons: bool) -> Metrics
             inset_right: 0.0,
             button_top: 0.0,
             button_height: 0.0,
+            controls: None,
         };
     }
 
@@ -411,6 +556,7 @@ pub fn metrics_for(native: Native, height: f64, system_buttons: bool) -> Metrics
         inset_right: 0.0,
         button_top: native.button_top,
         button_height: native.button_height,
+        controls: None,
     }
 }
 
@@ -593,6 +739,7 @@ fn fallback() -> Metrics {
         // trustworthy to say about where the buttons are.
         button_top: 0.0,
         button_height: 0.0,
+        controls: None,
     }
 }
 
@@ -704,6 +851,7 @@ mod tests {
             inset_right: 0.0,
             button_top: 15.0,
             button_height: 14.0,
+            controls: None,
         })
         .unwrap();
         assert_eq!(json["height"], 44.0);
@@ -711,5 +859,72 @@ mod tests {
         assert_eq!(json["insetRight"], 0.0);
         assert_eq!(json["buttonTop"], 15.0);
         assert_eq!(json["buttonHeight"], 14.0);
+        assert!(json.get("controls").is_none());
+    }
+
+    #[test]
+    fn an_ordinary_bar_carries_no_controls_either() {
+        // `skip_serializing_if` keeps the key out entirely off Linux and
+        // wherever the bar is not hidden, so pages on other platforms see
+        // exactly what they saw before.
+        let json = serde_json::to_value(Metrics::none()).unwrap();
+        assert!(json.get("controls").is_none());
+    }
+
+    #[test]
+    fn button_layout_puts_each_side_where_the_colon_says() {
+        // Ubuntu's left-hand settle.
+        let ubuntu = parse_button_layout("'close,minimize,maximize:'").expect("a layout");
+        assert!(ubuntu.leading.close);
+        assert!(ubuntu.leading.minimize);
+        assert!(ubuntu.leading.maximize);
+        assert_eq!(ubuntu.trailing.count(), 0);
+
+        // Upstream's right-hand three.
+        let upstream = parse_button_layout("':minimize,maximize,close'").expect("a layout");
+        assert_eq!(upstream.leading.count(), 0);
+        assert!(upstream.trailing.minimize);
+        assert!(upstream.trailing.maximize);
+        assert!(upstream.trailing.close);
+
+        // Both sides is unusual but valid.
+        let both = parse_button_layout("'close:minimize,maximize'").expect("a layout");
+        assert!(both.leading.close);
+        assert!(!both.leading.minimize);
+        assert!(both.trailing.minimize);
+        assert!(both.trailing.maximize);
+        assert!(!both.trailing.close);
+    }
+
+    #[test]
+    fn button_layout_ignores_what_is_not_a_window_control() {
+        // `menu` and `appmenu` are the hamburger, not a control to draw - and
+        // modern GNOME ships `'appmenu:minimize,maximize,close'` by default.
+        let modern = parse_button_layout("'appmenu:minimize,maximize,close'").expect("a layout");
+        assert_eq!(modern.leading.count(), 0);
+        assert_eq!(modern.trailing.count(), 3);
+    }
+
+    #[test]
+    fn button_layout_with_nothing_recognisable_falls_back() {
+        assert_eq!(parse_button_layout("''"), None);
+        assert_eq!(parse_button_layout("'menu:appmenu'"), None);
+        // Not a layout GNOME would write; refused rather than guessed at.
+        assert_eq!(parse_button_layout("not a layout at all:"), None);
+    }
+
+    #[test]
+    fn button_layout_without_a_colon_goes_trailing() {
+        let trailing = parse_button_layout("'close'").expect("a layout");
+        assert!(trailing.trailing.close);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn controls_always_leave_a_way_to_close_the_window() {
+        // Whatever `gsettings` says - or does not say, off GNOME - at least
+        // one control survives: the fallback has all three, and parsing
+        // refuses an answer with none.
+        assert!(controls().count() > 0);
     }
 }
