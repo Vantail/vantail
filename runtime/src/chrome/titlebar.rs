@@ -341,8 +341,10 @@ pub struct Native {
 /// Show or hide the platform's own window buttons.
 ///
 /// Hiding them is how an application draws its own on macOS, which is the only
-/// platform that keeps them once the title bar is gone. Everywhere else there
-/// is nothing to hide and this does nothing.
+/// platform that keeps them once the title bar is gone. Everywhere else
+/// `hidden` is a fully undecorated window - there is no traffic-light band to
+/// keep, no container to grow and no buttons left to hide - so this does
+/// nothing and the application always draws its own controls.
 #[cfg(target_os = "macos")]
 pub fn set_buttons_hidden(window: &tao::window::Window, hidden: bool) {
     use objc2_app_kit::NSWindowButton;
@@ -362,7 +364,10 @@ pub fn set_buttons_hidden(window: &tao::window::Window, hidden: bool) {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn set_buttons_hidden(_window: &tao::window::Window, _hidden: bool) {}
+pub fn set_buttons_hidden(_window: &tao::window::Window, _hidden: bool) {
+    // Intentionally nothing: a hidden title bar off macOS is undecorated, so
+    // there are no system buttons left to show or hide.
+}
 
 /// The numbers to hand the page, for a bar of `height`.
 ///
@@ -370,7 +375,25 @@ pub fn set_buttons_hidden(_window: &tao::window::Window, _hidden: bool) {}
 /// loses them along with the title bar - means nothing is reserved and there
 /// is nothing to line up with, which is the signal an application uses to
 /// decide it has to draw its own.
+///
+/// Off macOS this always reports no reservation: `hidden` is undecorated, so
+/// there are never system buttons to leave room for, whatever
+/// `titleBarButtons` says. The flag is still accepted so the call reads the
+/// same on every platform, but it changes nothing there.
 pub fn metrics_for(native: Native, height: f64, system_buttons: bool) -> Metrics {
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (native.inset_left, system_buttons);
+        return Metrics {
+            height,
+            inset_left: 0.0,
+            inset_right: 0.0,
+            button_top: 0.0,
+            button_height: 0.0,
+        };
+    }
+
+    #[cfg(target_os = "macos")]
     if !system_buttons {
         return Metrics {
             height,
@@ -381,18 +404,13 @@ pub fn metrics_for(native: Native, height: f64, system_buttons: bool) -> Metrics
         };
     }
 
+    #[cfg(target_os = "macos")]
     Metrics {
         height,
         inset_left: native.inset_left,
         inset_right: 0.0,
-        #[cfg(target_os = "macos")]
         button_top: native.button_top,
-        #[cfg(target_os = "macos")]
         button_height: native.button_height,
-        #[cfg(not(target_os = "macos"))]
-        button_top: 0.0,
-        #[cfg(not(target_os = "macos"))]
-        button_height: 0.0,
     }
 }
 
@@ -430,6 +448,12 @@ pub fn fit(
 
 /// No system buttons to move and no container to grow: the application draws
 /// the whole bar, and the number it asked for is the answer.
+///
+/// This is the whole of the Linux story: `hidden` there is a fully
+/// undecorated window with no traffic-light band to keep, so `requested` (or
+/// the platform fallback when nothing was asked for) is simply reported and
+/// the page draws its own controls. `lights` and `keeper` are accepted so the
+/// call reads the same on every platform, but they change nothing here.
 #[cfg(not(target_os = "macos"))]
 pub fn fit(
     _window: &tao::window::Window,
@@ -512,10 +536,16 @@ pub fn native(window: &tao::window::Window) -> Native {
 /// Windows and Linux have no title bar left to measure.
 ///
 /// `hidden` there is an undecorated window - there is no way to keep the
-/// system's buttons without the frame they live in - so the application draws
-/// its own controls and there is no inset to reserve. The height is still
-/// worth reporting: it is what the platform's own bar would have been, so a
-/// toolbar that uses it looks like it belongs.
+/// system's buttons without the frame they live in, and on Linux no
+/// traffic-light band to keep either - so the application draws its own
+/// controls and there is no inset to reserve. The height is still worth
+/// reporting: it is what the platform's own bar would have been, so a toolbar
+/// that uses it looks like it belongs.
+///
+/// On Windows that is the standard caption (`32.0`); on Linux it is an
+/// approximation of a GNOME header bar (`37.0`) and varies with the desktop
+/// environment and theme - which is why an application that cares should set
+/// `titleBarHeight` explicitly rather than relying on the fallback.
 #[cfg(not(target_os = "macos"))]
 pub fn native(_window: &tao::window::Window) -> Native {
     native_fallback()
@@ -534,16 +564,28 @@ fn native_fallback() -> Native {
     }
 }
 
+/// What the platform's own bar would have been, in logical pixels.
+///
+/// Named rather than inlined so the one Linux approximation lives in one
+/// place: it is a guess at a GNOME header bar, and KDE, Xfce or a custom
+/// theme will differ.
+const WINDOWS_CAPTION_HEIGHT: f64 = 32.0;
+const MACOS_TITLEBAR_HEIGHT: f64 = 28.0;
+const LINUX_HEADERBAR_FALLBACK: f64 = 37.0;
+
 fn fallback() -> Metrics {
     Metrics {
         // Logical pixels, so these do not change with the display's scale.
-        // macOS is only reached here if the measurement failed.
+        // macOS is only reached here if the measurement failed. Windows is the
+        // standard caption height. Linux is an approximation of a GNOME header
+        // bar and varies by desktop environment and theme - an application
+        // that cares should set `titleBarHeight` explicitly.
         height: if cfg!(target_os = "windows") {
-            32.0
+            WINDOWS_CAPTION_HEIGHT
         } else if cfg!(target_os = "macos") {
-            28.0
+            MACOS_TITLEBAR_HEIGHT
         } else {
-            37.0
+            LINUX_HEADERBAR_FALLBACK
         },
         inset_left: 0.0,
         inset_right: 0.0,
