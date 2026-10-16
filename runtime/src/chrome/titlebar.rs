@@ -642,16 +642,47 @@ mod tests {
     #[test]
     fn where_the_buttons_are_is_reported_alongside_the_room_they_take() {
         let metrics = metrics_for(measured(), 44.0, true);
-        assert_eq!(metrics.inset_left, 78.0);
         // Only macOS keeps window buttons once the title bar is gone, so only
-        // there is there anything to line up with.
+        // there is there anything to leave room for. Everywhere else `hidden`
+        // is a fully undecorated window - no buttons, no inset - whatever flag
+        // was passed.
         if cfg!(target_os = "macos") {
+            assert_eq!(metrics.inset_left, 78.0);
             assert_eq!(metrics.button_top, 9.0);
             assert_eq!(metrics.button_height, 14.0);
         } else {
+            assert_eq!(metrics.inset_left, 0.0);
             assert_eq!(metrics.button_top, 0.0);
             assert_eq!(metrics.button_height, 0.0);
         }
+    }
+
+    #[test]
+    fn no_platform_except_macos_reserves_room_for_buttons() {
+        // Even with `system_buttons` set: off macOS there are none once the
+        // bar is hidden, so the flag changes nothing there.
+        if cfg!(not(target_os = "macos")) {
+            let metrics = metrics_for(measured(), 44.0, true);
+            assert_eq!(metrics.height, 44.0);
+            assert_eq!(metrics.inset_left, 0.0);
+            assert_eq!(metrics.button_top, 0.0);
+            assert_eq!(metrics.button_height, 0.0);
+        }
+    }
+
+    #[test]
+    fn each_platform_falls_back_to_its_own_bar() {
+        // A toolbar sized from this has to look like it belongs: the Windows
+        // caption, the macOS title bar, or a GNOME header bar approximation on
+        // Linux (where the real height varies by desktop and theme).
+        let expected = if cfg!(target_os = "windows") {
+            32.0
+        } else if cfg!(target_os = "macos") {
+            28.0
+        } else {
+            37.0
+        };
+        assert_eq!(fallback().height, expected);
     }
 
     #[test]
