@@ -331,11 +331,20 @@ is the tell of a web page in a frame:
 
 | | macOS | Windows | GNOME |
 | --- | --- | --- | --- |
-| Edge | Leading | Trailing | Trailing |
+| Edge | Leading | Trailing | Trailing, unless configured otherwise |
 | Order | Close, minimise, zoom | Minimise, maximise, close | Minimise, maximise, close |
 | Shape | 12pt coloured circles | 46pt square, full bar height | 24pt circles on a grey fill |
 | Hover | Glyph appears in the dot | Grey, and red on close | The circle darkens |
 | Maximised | Unchanged | Restore glyph | Restore glyph |
+
+On GNOME the edge - and which of the three appear at all - is the user's
+own `button-layout` (`gsettings get org.gnome.desktop.wm.preferences
+button-layout`): Ubuntu's `close,minimize,maximize:` puts them on the leading
+edge, upstream's `:minimize,maximize,close` on the trailing one, and either
+side may show a subset. `titleBarMetrics().controls` reports it as
+`{ leading, trailing }` so the bar matches the user's other windows instead
+of hardcoding one arrangement; off GNOME it is the trailing three. Windows
+and macOS have no such setting and follow the table.
 
 None of those sizes scale with the title bar - each system keeps them where
 they are however tall the bar is - so a control sized as a fraction of the bar
