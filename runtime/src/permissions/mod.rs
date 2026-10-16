@@ -81,6 +81,94 @@ pub struct PermissionsConfig {
     /// USB HID devices the application may open. Default: none.
     #[serde(default)]
     pub hid: HidConfig,
+    /// Cross-window keyed state. Default: no reads, no writes, no persistence.
+    #[serde(default)]
+    pub shared_state: SharedStateConfig,
+}
+
+/// Keyed state shared between every window of the application.
+///
+/// Reads are one flag; writes are glob patterns per key, so a window that may
+/// show a value cannot necessarily change it.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SharedStateConfig {
+    /// Whether `sharedState.get` and `sharedState.subscribe` may read.
+    #[serde(default)]
+    pub read: bool,
+    /// Key patterns `sharedState.set` may write. `*` matches within one
+    /// `.`-separated segment, `**` crosses them: `user.*` covers `user.name`
+    /// but not `user.name.first`.
+    #[serde(default)]
+    pub write: Vec<String>,
+    /// Keep the store in a JSON file under `$APPDATA` across restarts.
+    #[serde(default)]
+    pub persist: bool,
+}
+
+/// Whether a shared-state key matches a `write` pattern.
+///
+/// Segments are split on `.`: `*` matches within one segment (including a
+/// partial segment like `demo.c*`), `**` matches any number of whole
+/// segments. Anything else must match literally. This mirrors the filesystem
+/// scopes, where a single `*` stops at the separator - except the separator
+/// here is `.` rather than `/`, because keys are dotted paths, not file
+/// paths. See `docs/permissions.md`.
+pub fn shared_key_matches(pattern: &str, key: &str) -> bool {
+    match_segments(&split_pattern(pattern), &key.split('.').collect::<Vec<_>>())
+}
+
+fn split_pattern(pattern: &str) -> Vec<&str> {
+    pattern.split('.').collect()
+}
+
+fn match_segments(pattern: &[&str], key: &[&str]) -> bool {
+    match pattern.split_first() {
+        None => key.is_empty(),
+        Some((&"**", rest)) => {
+            // `**` takes zero or more segments.
+            (0..=key.len()).any(|take| match_segments(rest, &key[take..]))
+        }
+        Some((head, rest)) => {
+            let Some((segment, tail)) = key.split_first() else {
+                return false;
+            };
+            if !match_segment(head, segment) {
+                return false;
+            }
+            match_segments(rest, tail)
+        }
+    }
+}
+
+/// One segment, where `*` matches any run of characters except the separator
+/// (which cannot appear inside a segment anyway).
+fn match_segment(pattern: &str, segment: &str) -> bool {
+    let (pattern, segment) = (pattern.as_bytes(), segment.as_bytes());
+    let (mut pi, mut si) = (0usize, 0usize);
+    let mut star: Option<usize> = None;
+    let mut mark = 0usize;
+
+    while si < segment.len() {
+        if pi < pattern.len() && pattern[pi] == segment[si] {
+            pi += 1;
+            si += 1;
+        } else if pi < pattern.len() && pattern[pi] == b'*' {
+            star = Some(pi);
+            mark = si;
+            pi += 1;
+        } else if let Some(star_at) = star {
+            pi = star_at + 1;
+            mark += 1;
+            si = mark;
+        } else {
+            return false;
+        }
+    }
+    while pi < pattern.len() && pattern[pi] == b'*' {
+        pi += 1;
+    }
+    pi == pattern.len()
 }
 
 /// `false` | `true` | a list of device rules.
@@ -150,6 +238,7 @@ impl Default for PermissionsConfig {
             database: DatabaseConfig::default(),
             mdns: TextScopeConfig::default(),
             hid: HidConfig::default(),
+            shared_state: SharedStateConfig::default(),
         }
     }
 }
@@ -560,6 +649,9 @@ pub struct Permissions {
     pub database: bool,
     mdns: TextScope,
     hid: HidConfig,
+    pub shared_state_read: bool,
+    shared_state_write: Vec<String>,
+    pub shared_state_persist: bool,
     granted: Mutex<Grants>,
 }
 
@@ -671,6 +763,16 @@ impl Permissions {
             );
         }
 
+        // Persisted state that can never be written is a config mistake, not
+        // a runtime state: fail the launch rather than the first restart.
+        if config.shared_state.persist && config.shared_state.write.is_empty() {
+            return Err(
+                "`permissions.sharedState.persist` needs at least one `permissions.sharedState.write` pattern: \
+                 persisted state must be writable to be useful."
+                    .to_string(),
+            );
+        }
+
         Ok(Self {
             fs_read: PathScope::compile(&config.filesystem.read, vars)?,
             fs_write: PathScope::compile(&config.filesystem.write, vars)?,
@@ -695,6 +797,9 @@ impl Permissions {
             database: config.database.allowed(),
             mdns: TextScope::compile(&config.mdns)?,
             hid: config.hid.clone(),
+            shared_state_read: config.shared_state.read,
+            shared_state_write: config.shared_state.write.clone(),
+            shared_state_persist: config.shared_state.persist,
             granted: Mutex::new(Grants::default()),
         })
     }
@@ -858,6 +963,59 @@ impl Permissions {
             "`shell.open` is not allowed for `{target}`. Allowed: {}",
             self.shell_open.describe()
         )))
+    }
+
+    /// Validate a shared-state key, before any permission is consulted.
+    ///
+    /// Keys are dotted paths (`demo.counter`): non-empty, no control
+    /// characters, and bounded, so they stay identifiers rather than blobs.
+    /// The permission check runs second and the store acts third.
+    pub fn check_shared_key(key: &str) -> Result<(), ApiError> {
+        if key.is_empty() {
+            return Err(ApiError::invalid_params(
+                "A shared-state key cannot be empty",
+            ));
+        }
+        if key.len() > 512 {
+            return Err(ApiError::invalid_params(format!(
+                "A shared-state key may be at most 512 bytes; this one is {}",
+                key.len()
+            )));
+        }
+        if key.chars().any(|c| c.is_control()) {
+            return Err(ApiError::invalid_params(
+                "A shared-state key cannot contain control characters",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Whether `sharedState.get` and `sharedState.subscribe` may read.
+    pub fn check_shared_read(&self, method: &str) -> Result<(), ApiError> {
+        self.require(self.shared_state_read, method)
+    }
+
+    /// Whether `sharedState.set` may write this key: the key must match at
+    /// least one `write` pattern.
+    pub fn check_shared_write(&self, key: &str) -> Result<(), ApiError> {
+        if self
+            .shared_state_write
+            .iter()
+            .any(|p| shared_key_matches(p, key))
+        {
+            return Ok(());
+        }
+        Err(ApiError::new(
+            crate::error::code::SHARED_STATE_KEY_DENIED,
+            format!(
+                "`sharedState.set` is not allowed for `{key}`. Allowed: {}",
+                if self.shared_state_write.is_empty() {
+                    "nothing".to_string()
+                } else {
+                    self.shared_state_write.join(", ")
+                }
+            ),
+        ))
     }
 
     /// Record a path the user chose in a native dialog.
@@ -1518,5 +1676,172 @@ mod drop_grant_tests {
         assert!(permissions
             .check_path(&sent("/tmp/dropped.txt"), Access::Read)
             .is_err());
+    }
+}
+
+#[cfg(test)]
+mod shared_state_tests {
+    use super::tests_support::*;
+    use super::*;
+
+    fn shared_state(read: bool, write: Vec<&str>, persist: bool) -> Permissions {
+        permissions_with(PermissionsConfig {
+            shared_state: SharedStateConfig {
+                read,
+                write: write.into_iter().map(str::to_string).collect(),
+                persist,
+            },
+            ..PermissionsConfig::default()
+        })
+    }
+
+    #[test]
+    fn a_single_star_stops_at_a_dot_boundary() {
+        assert!(shared_key_matches("user.*", "user.name"));
+        assert!(
+            !shared_key_matches("user.*", "user.name.first"),
+            "`*` must not cross `.`, the way it does not cross `/` for paths"
+        );
+        assert!(!shared_key_matches("user.*", "user"));
+        assert!(!shared_key_matches("other.*", "user.name"));
+    }
+
+    #[test]
+    fn a_double_star_crosses_dot_boundaries() {
+        assert!(shared_key_matches("user.**", "user.name"));
+        assert!(shared_key_matches("user.**", "user.name.first"));
+        assert!(shared_key_matches("**", "anything.at.all"));
+        assert!(shared_key_matches("**", "single"));
+    }
+
+    #[test]
+    fn a_double_star_in_the_middle_takes_zero_or_more_segments() {
+        assert!(shared_key_matches("a.**.c", "a.c"));
+        assert!(shared_key_matches("a.**.c", "a.b.c"));
+        assert!(shared_key_matches("a.**.c", "a.b.b.c"));
+        assert!(!shared_key_matches("a.**.c", "a.b.d"));
+        assert!(!shared_key_matches("a.**.c", "a.b.c.d"));
+    }
+
+    #[test]
+    fn matching_is_case_sensitive() {
+        assert!(!shared_key_matches("Demo.*", "demo.counter"));
+        assert!(shared_key_matches("Demo.*", "Demo.counter"));
+    }
+
+    #[test]
+    fn an_empty_pattern_matches_nothing_with_a_name() {
+        assert!(!shared_key_matches("", "demo.counter"));
+    }
+
+    #[test]
+    fn a_star_matches_partially_within_one_segment() {
+        assert!(shared_key_matches("demo.c*", "demo.counter"));
+        assert!(!shared_key_matches("demo.c*", "demo.theme"));
+        assert!(shared_key_matches("*", "counter"));
+        assert!(!shared_key_matches("*", "demo.counter"));
+    }
+
+    #[test]
+    fn reads_are_gated_by_the_read_flag() {
+        assert!(shared_state(true, vec![], false)
+            .check_shared_read("sharedState.get")
+            .is_ok());
+        let error = shared_state(false, vec![], false)
+            .check_shared_read("sharedState.get")
+            .unwrap_err();
+        assert_eq!(error.code, crate::error::code::PERMISSION_DENIED);
+    }
+
+    #[test]
+    fn writes_need_a_matching_pattern() {
+        let permissions = shared_state(true, vec!["demo.*"], false);
+        assert!(permissions.check_shared_write("demo.counter").is_ok());
+
+        let error = permissions.check_shared_write("other.counter").unwrap_err();
+        assert_eq!(error.code, crate::error::code::SHARED_STATE_KEY_DENIED);
+        assert!(error.message.contains("demo.*"));
+
+        // No patterns means no writes at all.
+        let error = shared_state(true, vec![], false)
+            .check_shared_write("demo.counter")
+            .unwrap_err();
+        assert_eq!(error.code, crate::error::code::SHARED_STATE_KEY_DENIED);
+    }
+
+    #[test]
+    fn an_empty_key_is_bad_input_not_a_denial() {
+        assert!(Permissions::check_shared_key("").is_err());
+        assert_eq!(
+            Permissions::check_shared_key("").unwrap_err().code,
+            crate::error::code::INVALID_PARAMS
+        );
+        assert!(Permissions::check_shared_key("demo.counter").is_ok());
+    }
+
+    #[test]
+    fn key_length_has_a_boundary() {
+        assert!(Permissions::check_shared_key(&"k".repeat(512)).is_ok());
+        assert_eq!(
+            Permissions::check_shared_key(&"k".repeat(513))
+                .unwrap_err()
+                .code,
+            crate::error::code::INVALID_PARAMS
+        );
+    }
+
+    #[test]
+    fn control_characters_are_rejected_but_unicode_is_fine() {
+        assert!(Permissions::check_shared_key("demo.\t").is_err());
+        assert!(Permissions::check_shared_key("demo.café.🎨").is_ok());
+    }
+
+    #[test]
+    fn persist_without_a_write_pattern_fails_validation() {
+        let vars = Vars::resolve("dev.vantail.test", Path::new("/tmp"));
+        let result = Permissions::compile(
+            &PermissionsConfig {
+                shared_state: SharedStateConfig {
+                    read: true,
+                    write: vec![],
+                    persist: true,
+                },
+                ..PermissionsConfig::default()
+            },
+            &vars,
+        );
+        let Err(error) = result else {
+            panic!("persist without write must not compile");
+        };
+        assert!(error.contains("persist"), "unexpected: {error}");
+    }
+
+    #[test]
+    fn nothing_shared_is_allowed_by_default() {
+        let permissions = permissions_with(PermissionsConfig::default());
+        assert!(!permissions.shared_state_read);
+        assert!(permissions.shared_state_write.is_empty());
+        assert!(!permissions.shared_state_persist);
+    }
+
+    #[test]
+    fn the_json_shape_the_cli_writes_deserialises() {
+        // `vantail.json` carries `permissions` verbatim from the validated
+        // config, so this is the exact shape that has to land.
+        let config: PermissionsConfig = serde_json::from_value(serde_json::json!({
+            "sharedState": { "read": true, "write": ["demo.*"], "persist": false },
+        }))
+        .expect("sharedState block should load");
+        assert!(config.shared_state.read);
+        assert_eq!(config.shared_state.write, vec!["demo.*"]);
+        assert!(!config.shared_state.persist);
+
+        // And an unknown key inside it is refused, not silently kept.
+        assert!(
+            serde_json::from_value::<PermissionsConfig>(serde_json::json!({
+                "sharedState": { "read": true, "writes": ["demo.*"] },
+            }))
+            .is_err()
+        );
     }
 }

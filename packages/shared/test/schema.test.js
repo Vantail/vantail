@@ -253,3 +253,55 @@ test("every option the config interface documents is one the schema accepts", as
     );
   }
 });
+
+test("shared state permissions are accepted", () => {
+  const result = parseConfig({
+    ...valid,
+    permissions: { sharedState: { read: true, write: ["demo.*"], persist: false } },
+  });
+  assert.equal(result.ok, true);
+});
+
+test("shared state persistence without a write pattern is a config error", () => {
+  const result = parseConfig({
+    ...valid,
+    permissions: { sharedState: { read: true, persist: true } },
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /sharedState.*write|write.*sharedState/s);
+});
+
+test("a typo in the shared state permissions is not silently ignored", () => {
+  const result = parseConfig({
+    ...valid,
+    permissions: { sharedState: { read: true, writes: ["demo.*"] } },
+  });
+  assert.equal(result.ok, false);
+});
+
+test("an empty sharedState object is valid and means nothing granted", () => {
+  const result = parseConfig({ ...valid, permissions: { sharedState: {} } });
+  assert.equal(result.ok, true);
+});
+
+test("writes without reads are valid - the gates are independent", () => {
+  const result = parseConfig({
+    ...valid,
+    permissions: { sharedState: { write: ["demo.*"] } },
+  });
+  assert.equal(result.ok, true);
+});
+
+test("sharedState shapes are checked, not coerced", () => {
+  for (const sharedState of [
+    { read: "yes" },
+    { read: 1 },
+    { write: "demo.*" },
+    { write: [42] },
+    { persist: 1 },
+    { persist: "false" },
+  ]) {
+    const result = parseConfig({ ...valid, permissions: { sharedState } });
+    assert.equal(result.ok, false, `accepted ${JSON.stringify(sharedState)}`);
+  }
+});

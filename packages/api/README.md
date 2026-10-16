@@ -42,6 +42,7 @@ appWindow      size, position, state, fullscreen, always-on-top, devtools
                createWindow, getWindow, listWindows, currentWindow for more
                than one, and onWindowCreated / onWindowReady / onWindowClosed
                to hear about them
+sharedState    keyed state shared between every window - get, set, subscribe
 
 filesystem     read, write, copy, rename, watch - text and binary
 dialog         open, save, message, confirm - drawn by the OS
@@ -57,6 +58,7 @@ power          notices when the machine suspends and resumes
 screen         the monitors attached, in logical pixels
 os             platform, architecture, and per-application directories
 path           joining and splitting paths, without a round trip
+print          the native print dialog, for generated documents - never the app UI
 
 process        run another program, stream its output
 shell          hand a URL or file to whatever owns it

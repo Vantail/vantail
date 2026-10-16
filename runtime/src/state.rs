@@ -39,6 +39,8 @@ pub struct Runtime {
     pub sockets: crate::api::websocket::Sockets,
     /// Open SQLite connections, each on its own thread.
     pub databases: crate::api::database::Databases,
+    /// Keyed values shared between every window of the application.
+    pub shared: crate::api::shared_state::Store,
     proxy: Mutex<EventLoopProxy<UserEvent>>,
 }
 
@@ -46,6 +48,10 @@ impl Runtime {
     pub fn new(loaded: LoadedConfig, proxy: EventLoopProxy<UserEvent>) -> Result<Self, String> {
         let vars = Vars::resolve(&loaded.config.app.identifier, &loaded.dist_dir);
         let permissions = Permissions::compile(&loaded.config.permissions, &vars)?;
+        let shared = crate::api::shared_state::Store::new(
+            &loaded.config.app.identifier,
+            permissions.shared_state_persist,
+        );
 
         Ok(Self {
             config: loaded.config,
@@ -60,6 +66,7 @@ impl Runtime {
             requests: crate::api::network::InFlight::default(),
             sockets: crate::api::websocket::Sockets::default(),
             databases: crate::api::database::Databases::default(),
+            shared,
             proxy: Mutex::new(proxy),
         })
     }

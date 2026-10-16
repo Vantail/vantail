@@ -4,6 +4,29 @@ Notable changes per release.
 
 ## Unreleased
 
+### Added
+
+- **`sharedState`: keyed state shared between every window.**
+  The runtime owns the values; windows hold synchronised copies. `get` reads,
+  `set` writes and broadcasts the change to every window (including the
+  caller) over the same transport `app.emit` rides on, and `subscribe`
+  delivers the current value at once and every change after - which makes
+  wiring `useSyncExternalStore` trivial with no shim. This complements
+  `app.emit` / `app.listen` rather than replacing it: those stay the
+  fire-and-forget message bus.
+
+  Reads need `permissions.sharedState.read`; writes need a matching
+  `permissions.sharedState.write` pattern, where `*` stops at a `.` boundary
+  (`demo.*` covers `demo.counter` but not `demo.counter.x`) and `**` crosses
+  it. `persist: true` writes the store through to JSON under `$APPDATA` and
+  hydrates it on launch, and needs `write` to be non-empty. Values must be
+  JSON-serialisable. New error codes: `SHARED_STATE_KEY_DENIED`,
+  `SHARED_STATE_NOT_SERIALIZABLE`, `SHARED_STATE_PERSIST_FAILED`. Last write
+  wins; the store is per-application-instance.
+
+  The React example gains an "Open sync window" demo proving it: a counter
+  set in either window is reflected in the other without a reload.
+
 ## 0.1.23
 
 ### Fixed

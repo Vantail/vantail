@@ -71,6 +71,11 @@ export {
 } from "./network.js";
 export { notification, type NotificationOptions } from "./notification.js";
 export { os, type OsInfo, type Platform } from "./os.js";
+export {
+  print,
+  type PrintDocumentOptions,
+  type PrintResult,
+} from "./print.js";
 export { path, type PathApi } from "./path.js";
 export {
   process,
@@ -83,6 +88,7 @@ export {
 export { screen, type Screen } from "./screen.js";
 export { power } from "./power.js";
 export { secrets } from "./secrets.js";
+export { sharedState } from "./sharedState.js";
 export { shell } from "./shell.js";
 export { shortcut, type RegisterOptions, type Shortcut } from "./shortcut.js";
 export { tray, type TrayClick, type TrayOptions } from "./tray.js";

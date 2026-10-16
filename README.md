@@ -90,6 +90,8 @@ appWindow      setTitle | title | setSize | size | setPosition | position
                createWindow | getWindow | listWindows | currentWindow
                onWindowCreated | onWindowReady | onWindowClosed
 
+sharedState    get | set | subscribe
+
 filesystem     readText | writeText | appendText | readBinary | writeBinary
                readDir | exists | stat | mkdir | remove | copy | rename
 
@@ -126,6 +128,8 @@ os             platform | arch | info | infoSync | homeDir | tempDir
                appDataDir | appConfigDir | resourceDir
 
 notification   show
+
+print          document
 ```
 
 Everything returns a promise. Failures reject with a `VantailError` carrying a
@@ -283,6 +287,23 @@ app.listen<{ from: string }>("hello", ({ from }) => console.log(from));
 Two windows are two webviews with nothing shared between them, so anything
 they need to tell each other goes out through the runtime and back in -
 `app.emit` and `app.listen` are that round trip.
+
+For state rather than messages, there is a keyed store on the same transport:
+
+```ts
+import { sharedState } from "@vantail/api";
+
+// in either window - the runtime owns the value, and every window hears
+await sharedState.set("demo.theme", "dark");
+
+// in both windows - the current value arrives at once, then every change
+sharedState.subscribe<string>("demo.theme", (theme) => applyTheme(theme));
+```
+
+The last write wins. Reads need `sharedState: { read: true }` in the config,
+writes need a matching `write` pattern (`write: ["demo.*"]`), and values must
+be JSON-serialisable. See [docs/api.md](docs/api.md) and
+[docs/permissions.md](docs/permissions.md).
 
 ## Menus, tray, and everything outside the window
 

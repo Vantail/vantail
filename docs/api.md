@@ -14,7 +14,9 @@ import {
   menu,
   notification,
   os,
+  print,
   process,
+  sharedState,
   shell,
   tray,
   updater,
@@ -550,6 +552,64 @@ the way, which is how you take over a region yourself - see
 WKWebView, so a CSS property would work on two platforms out of three, which
 is worse than not having it - hence an attribute the runtime reads.
 
+## sharedState
+
+Keyed state shared between every window of the application.
+
+```ts
+import { sharedState } from "@vantail/api";
+
+await sharedState.set("demo.theme", "dark");
+
+// The current value arrives at once, then every change - in both windows.
+const stop = sharedState.subscribe<string>("demo.theme", (theme) => {
+  document.documentElement.dataset.theme = theme;
+});
+stop();
+```
+
+| Method                                  | Returns                                              |
+| --------------------------------------- | ---------------------------------------------------- |
+| `sharedState.get(key, default?)`        | The current value, `default` when unset, else `null` |
+| `sharedState.set(key, value)`           | `null` once every window has been told               |
+| `sharedState.subscribe(key, callback)`  | An idempotent unsubscribe function                   |
+
+The runtime owns the values; windows hold synchronised copies. A write goes
+renderer -> runtime -> all renderers, including the caller, so there is no
+"which window wins?" race - **the last write wins**, and every window hears
+about it. This complements `app.emit` / `app.listen` rather than replacing
+it: those stay the fire-and-forget message bus, while this is a keyed store
+with read-before-write semantics and change subscriptions.
+
+Four things to know:
+
+- **A default is not a write.** `get(key, default)` answers with `default`
+  when the key is unset, and the key stays unset until someone calls `set`.
+- **`subscribe` delivers the current value immediately**, then subsequent
+  changes - which is what makes wiring `useSyncExternalStore` (or a Vue
+  `ref`, or a Svelte store) trivial for consumers, with no shim. Those
+  framework adapters live in userland; a separate optional package may grow
+  them later.
+- **Values must be JSON-serialisable.** `undefined`, functions, symbols,
+  `BigInt`, non-finite numbers and circular structures are rejected with
+  `SHARED_STATE_NOT_SERIALIZABLE` rather than silently mangled - at any depth,
+  since `JSON.stringify` drops nested `undefined` and coerces `NaN` to `null`
+  instead of failing. The check runs in the SDK before anything is sent, and
+  again in the runtime.
+- **The store is per-application-instance.** Nothing here crosses to another
+  application, and there is no conflict resolution beyond last-write-wins.
+
+Errors:
+
+| Code                              | Meaning                                                     |
+| --------------------------------- | ------------------------------------------------------------ |
+| `SHARED_STATE_KEY_DENIED`         | `set` for a key no `write` pattern covers                    |
+| `SHARED_STATE_NOT_SERIALIZABLE`   | The value cannot be represented as JSON                      |
+| `SHARED_STATE_PERSIST_FAILED`     | The store under `$APPDATA` could not be read or written      |
+| `PERMISSION_DENIED`               | Reads are off (`get` and `subscribe` need `read: true`)      |
+
+Needs `permissions.sharedState` - see [permissions.md](permissions.md).
+
 ## appWindow and window handles
 
 Sizes and positions are in **logical pixels**, so they mean the same thing on
@@ -837,6 +897,64 @@ await notification.show({ title: "Export", body: "Finished", icon: "..." });
 
 On macOS notifications are delivered through the bundle identifier, so an
 unbundled `vantail dev` run reports `UNSUPPORTED`. Try `vantail package`.
+
+## print
+
+```ts
+import { print } from "@vantail/api";
+
+// Application-generated HTML, rendered in a view of its own and printed.
+await print.document({
+  html: invoiceHtml,
+});
+
+// Or an existing PDF file on disk.
+await print.document({
+  pdfPath: "/path/to/invoice.pdf",
+});
+```
+
+Prints through the platform-native print dialog: Edge's print preview on
+Windows, a print panel on macOS, the GTK dialog on Linux. The user chooses
+the printer, the copies and the page range, or cancels - and the promise
+resolves once the dialog has closed, with `{ printed }` saying whether they
+went through with it.
+
+| Function                 | Notes                                        |
+| ------------------------ | -------------------------------------------- |
+| `document({ html })`     | Render the HTML string in a view of its own  |
+| `document({ pdfPath })`  | Print an existing PDF file                   |
+
+`html` and `pdfPath` are mutually exclusive: passing both or neither
+rejects with `INVALID_ARGUMENT`. There is deliberately no argument-less
+`print()` and no `print.currentWindow()` - the content source is always
+explicit, which is the core safety property.
+
+**The main UI can never be printed through this API.** The given content
+renders in a view of its own, never one of the application's windows; the
+application's window is never involved. Make the HTML self-contained -
+inline styles or a scoped stylesheet injected into the string - so the
+printed page does not depend on the app's own CSS.
+
+`pdfPath` goes through `permissions.filesystem` read scope like any other
+read, and a file the user picked in a dialog prints because the dialog
+granted it.
+
+On Windows the preview opens in a print window over the calling window,
+because Edge draws it inside a webview. For `html` the window closes itself
+after Print or Cancel. For `pdfPath` it stays open showing the PDF, and the
+promise resolves when the user closes it.
+
+`{ printed }` semantics differ by platform: macOS and Linux report whether
+the user actually printed (`false` when they cancelled). Edge's preview does
+not say, so `printed` is `null` on Windows.
+
+There is no `permissions.print` flag: the native dialog is the
+authorisation. See [permissions](permissions.md#printing-has-no-permission).
+
+On macOS, HTML is normalised through a vector PDF internally before
+printing, so content overflowing to the right is kept - WKWebView prints
+only its visible frame. This is invisible at the API layer.
 
 ## menu
 
@@ -1674,6 +1792,7 @@ try {
 | `NO_RUNTIME`        | The page is not inside a Vantail window                |
 | `UNKNOWN_METHOD`    | No such method - usually an SDK newer than the runtime |
 | `INVALID_PARAMS`    | The native side rejected the arguments                 |
+| `INVALID_ARGUMENT`  | Exactly one of two mutually exclusive arguments was not given |
 | `PERMISSION_DENIED` | Not allowed by `vantail.config.ts`                     |
 | `NOT_FOUND`         | No such file or directory                              |
 | `ALREADY_EXISTS`    |                                                        |
@@ -1682,6 +1801,9 @@ try {
 | `UNSUPPORTED`       | Not available on this platform or in this build        |
 | `CANCELLED`         | The call was abandoned - see `network`'s `signal`      |
 | `INTERNAL`          | A bug in Vantail                                       |
+| `SHARED_STATE_KEY_DENIED` | A `sharedState.set` for a key no `write` pattern covers |
+| `SHARED_STATE_NOT_SERIALIZABLE` | A `sharedState.set` value that is not JSON |
+| `SHARED_STATE_PERSIST_FAILED` | The shared-state file could not be read or written |
 
 ## Escape hatches
 

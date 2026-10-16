@@ -11,6 +11,8 @@ use serde_json::Value;
 pub mod code {
     pub const UNKNOWN_METHOD: &str = "UNKNOWN_METHOD";
     pub const INVALID_PARAMS: &str = "INVALID_PARAMS";
+    /// Exactly one of two mutually exclusive arguments was not given.
+    pub const INVALID_ARGUMENT: &str = "INVALID_ARGUMENT";
     pub const PERMISSION_DENIED: &str = "PERMISSION_DENIED";
     pub const NOT_FOUND: &str = "NOT_FOUND";
     pub const ALREADY_EXISTS: &str = "ALREADY_EXISTS";
@@ -20,6 +22,12 @@ pub mod code {
     pub const INTERNAL: &str = "INTERNAL";
     /// The caller abandoned the request before it answered.
     pub const CANCELLED: &str = "CANCELLED";
+    /// A `sharedState.set` value that cannot be represented as JSON.
+    pub const SHARED_STATE_NOT_SERIALIZABLE: &str = "SHARED_STATE_NOT_SERIALIZABLE";
+    /// A `sharedState.set` for a key no `write` pattern covers.
+    pub const SHARED_STATE_KEY_DENIED: &str = "SHARED_STATE_KEY_DENIED";
+    /// The shared-state file under `$APPDATA` could not be read or written.
+    pub const SHARED_STATE_PERSIST_FAILED: &str = "SHARED_STATE_PERSIST_FAILED";
 }
 
 #[derive(Debug, Clone, Serialize)]

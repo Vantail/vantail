@@ -14,10 +14,11 @@ import "./style.css";
 import { isVantail, runtimeVersion } from "@vantail/api";
 import { mountTitleBar } from "./titlebar.js";
 
-import { appPanel } from "./panels/app.js";
+import { appPanel, sharedStatePanel } from "./panels/app.js";
 import { clipboardPanel } from "./panels/clipboard.js";
 import { deepLinkPanel, dropPanel, updaterPanel } from "./panels/updater.js";
 import { dialogPanel } from "./panels/dialog.js";
+import { printPanel } from "./panels/print.js";
 import { filesystemPanel } from "./panels/filesystem.js";
 import { hidPanel, mdnsPanel, secretsPanel } from "./panels/devices.js";
 import { menuPanel } from "./panels/menu.js";
@@ -60,11 +61,13 @@ function build() {
 
   const panels: Panel[] = [
     appPanel(),
+    sharedStatePanel(),
     windowPanel(),
     screenPanel(),
     osPanel(),
     filesystemPanel(),
     dialogPanel(),
+    printPanel(),
     dropPanel(),
     clipboardPanel(),
     menuPanel(),
