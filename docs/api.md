@@ -490,7 +490,9 @@ the two shapes disagree, so the setting is ignored there. On macOS a hidden
 title bar is still a framed window - that is what keeps the traffic lights -
 so this applies to `decorations: false` only.
 
-macOS and Windows; ignored on Linux for now.
+macOS and Windows only. On Linux the setting is parsed but ignored - the
+runtime and the CLI both warn in the terminal, and the window keeps the
+platform's square corners.
 
 ### Maximising
 

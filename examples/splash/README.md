@@ -161,5 +161,6 @@ fact, which it does not.
   taken rejects - which would leave the splash on screen for good.
 - `borderRadius` applies to a window with no frame, on macOS and Windows.
   Windows draws the shape as a region, so its edges are hard where macOS
-  anti-aliases them, and the window has no drop shadow. On Linux the window is
-  square for now and everything else here still works.
+  anti-aliases them, and the window has no drop shadow. On Linux the setting
+  is ignored with a warning in the terminal, so the window is square there
+  and everything else here still works.
