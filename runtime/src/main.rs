@@ -20,6 +20,8 @@ mod deeplink;
 mod error;
 mod instance;
 mod ipc;
+#[cfg(target_os = "linux")]
+mod linux_webview;
 mod permissions;
 mod power;
 mod state;
