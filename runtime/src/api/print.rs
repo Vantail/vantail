@@ -227,18 +227,13 @@ fn document(ctx: &mut MainCtx<'_>, id: &str, params: Value) -> Result<(), ApiErr
         });
 
     // Linux builds the webview on tao's GTK container: from the window itself
-    // it takes the X11 handle, which does not exist under Wayland.
+    // it takes the X11 handle, which does not exist under Wayland. The
+    // container is picked by `linux_webview::build` with fallbacks, so the
+    // print view survives a tao change to the default box the same way a
+    // normal window does.
     #[cfg(target_os = "linux")]
-    let webview = {
-        use tao::platform::unix::WindowExtUnix;
-        use wry::WebViewBuilderExtUnix;
-        let container = window
-            .default_vbox()
-            .ok_or_else(|| ApiError::internal("The print window has no GTK container"))?;
-        builder
-            .build_gtk(container)
-            .map_err(|e| ApiError::internal(format!("Could not create the print view: {e}")))?
-    };
+    let webview = crate::linux_webview::build(&window, builder)
+        .map_err(|e| ApiError::internal(format!("Could not create the print view: {e}")))?;
     #[cfg(not(target_os = "linux"))]
     let webview = builder
         .build(&window)
