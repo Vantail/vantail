@@ -211,12 +211,130 @@ html[data-titlebar="hidden"] #titlebar {
   -webkit-user-select: none;
 }
 
-/* Where the platform reserved no room, it drew no buttons either. */
-html[data-own-controls="yes"] #titlebar::after {
-  content: "your app draws the window controls here";
-  margin-left: auto;
+/*
+ * The window controls, where the platform drew none of its own.
+ *
+ * One block per platform, because the three are not variations on a theme.
+ * The sizes are fixed rather than fractions of the bar: each system draws its
+ * buttons at one size whatever the title bar is, so scaling them with the bar
+ * is precisely what would look hand-drawn. `#titlebar` prefixes every rule so
+ * it beats the generic `#titlebar button` above.
+ */
+#titlebar .tb-controls {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+#titlebar .tb-controls:empty {
+  display: none;
+}
+
+/* macOS: round, coloured, leading edge. Only reached with
+ * `titleBarButtons: "hidden"` - otherwise the traffic lights are still there
+ * and there is nothing to draw. */
+#titlebar .tb-controls.mac {
+  gap: 8px;
+  padding: 0 10px 0 12px;
+}
+
+#titlebar .tb-controls.mac .dot {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+}
+
+#titlebar .dot.close {
+  background: #ff5f57;
+}
+#titlebar .dot.minimise {
+  background: #febc2e;
+}
+#titlebar .dot.zoom {
+  background: #28c840;
+}
+
+#titlebar.unfocused .dot {
+  background: var(--line);
+}
+
+/* Windows: square, full bar height, trailing edge, minimise-maximise-close.
+ * Hard into the corner with no margin: the close button's hit area runs to
+ * the last pixel of the window, and a button with a gap around it misses a
+ * pointer thrown at the corner every time. */
+#titlebar .tb-controls.win {
+  align-self: stretch;
+}
+
+#titlebar .tb-controls.win .cap {
+  width: 46px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+#titlebar .tb-controls.win .cap svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+
+#titlebar .tb-controls.win .cap:hover {
+  background: rgb(127 127 127 / 0.2);
+}
+
+#titlebar .tb-controls.win .cap.close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+
+#titlebar.unfocused .tb-controls.win .cap {
   color: var(--muted);
-  font-size: 11px;
+}
+
+/* GNOME: round grey buttons, trailing edge, the same order as Windows. */
+#titlebar .tb-controls.adw {
+  gap: 8px;
+  padding: 0 6px;
+}
+
+#titlebar .tb-controls.adw .cap {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(127 127 127 / 0.18);
+  color: var(--text);
+}
+
+#titlebar .tb-controls.adw .cap svg {
+  width: 9px;
+  height: 9px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#titlebar .tb-controls.adw .cap:hover {
+  background: rgb(127 127 127 / 0.32);
+}
+
+#titlebar.unfocused .tb-controls.adw .cap {
+  color: var(--muted);
 }
 
 #titlebar .tb-buttons {
