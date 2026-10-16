@@ -230,6 +230,13 @@ html[data-titlebar="hidden"] #titlebar {
   display: none;
 }
 
+/* The trailing edge belongs at the edge: the search field only grows to its
+ * maximum, so without this the controls sit wherever it stops rather than
+ * where the window stops. */
+#titlebar #tb-trailing {
+  margin-left: auto;
+}
+
 /* macOS: round, coloured, leading edge. Only reached with
  * `titleBarButtons: "hidden"` - otherwise the traffic lights are still there
  * and there is nothing to draw. */

@@ -1,4 +1,10 @@
-import { appWindow, os, titleBarMetrics, type TitleBarStyle } from "@vantail/api";
+import {
+  appWindow,
+  os,
+  titleBarMetrics,
+  type TitleBarStyle,
+  type WindowControlsLayout,
+} from "@vantail/api";
 
 /**
  * The title bar this app draws when the platform's is hidden.
@@ -43,7 +49,17 @@ function glyph(d: string): string {
  * this button is not the only thing that maximises a window: a double-click
  * on the bar does, so does a snap to the edge of the screen. */
 let maximized = false;
-let zoomButton: HTMLButtonElement | null = null;
+let zoomButtons: HTMLButtonElement[] = [];
+
+/** The desktop's layout, or upstream GNOME's trailing three when the runtime
+ * did not report one - so a window never loses its close button. */
+function controlsOf(): WindowControlsLayout {
+  const fallback: WindowControlsLayout = {
+    leading: { minimize: false, maximize: false, close: false },
+    trailing: { minimize: true, maximize: true, close: true },
+  };
+  return titleBarMetrics()?.controls ?? fallback;
+}
 
 export function mountTitleBar(): void {
   const bar = document.getElementById("titlebar");
@@ -125,69 +141,84 @@ function applyTitleBar(): void {
   paintControls(own);
 }
 
-/** Draw working window controls, or clear them when the platform has its own. */
+/** Draw working window controls, or clear them when the platform has its own.
+ *
+ * Each edge shows what the desktop shows there: Ubuntu's
+ * `close,minimize,maximize:` lands on the leading edge, upstream's
+ * `:minimize,maximize,close` on the trailing one, and a side with nothing
+ * configured stays empty.
+ */
 function paintControls(own: boolean): void {
   const leading = document.getElementById("tb-leading");
   const trailing = document.getElementById("tb-trailing");
-  zoomButton = null;
-  if (leading) {
-    leading.innerHTML = "";
-    leading.className = "tb-controls";
+  zoomButtons = [];
+  for (const slot of [leading, trailing]) {
+    if (slot) {
+      slot.innerHTML = "";
+      slot.className = "tb-controls";
+    }
   }
-  if (trailing) {
-    trailing.innerHTML = "";
-    trailing.className = "tb-controls";
-  }
-  if (!own) return;
+  if (!own || !leading || !trailing) return;
 
   const pf = platform();
-  // macOS keeps its buttons on the leading edge; Windows and GNOME put
-  // theirs on the trailing one, after whatever the app has up there.
-  const slot = pf === "mac" ? leading : trailing;
-  if (!slot) return;
+  const layout = controlsOf();
+  // Canonical orders: Ubuntu lists close first on the leading edge, upstream
+  // ends with it on the trailing one.
+  paintSide(leading, pf, layout.leading, ["close", "minimize", "maximize"]);
+  paintSide(trailing, pf, layout.trailing, ["minimize", "maximize", "close"]);
+  paintZoom();
+}
+
+function paintSide(
+  slot: HTMLElement,
+  pf: ReturnType<typeof platform>,
+  side: WindowControlsLayout["leading"],
+  order: ("close" | "minimize" | "maximize")[],
+): void {
+  const shown = order.filter((action) => side[action]);
+  if (shown.length === 0) return;
   slot.classList.add(pf);
-  slot.innerHTML = controlsHTML(pf);
+  slot.innerHTML = shown.map((action) => controlHTML(pf, action)).join("");
 
   for (const button of slot.querySelectorAll<HTMLButtonElement>("button[data-action]")) {
     const action = button.dataset.action;
     button.addEventListener("click", () => {
-      if (action === "minimise") void appWindow.minimize();
-      else if (action === "zoom") void appWindow.toggleMaximize();
+      if (action === "minimize") void appWindow.minimize();
+      else if (action === "maximize") void appWindow.toggleMaximize();
       else if (action === "close") void appWindow.close();
     });
-    if (action === "zoom") zoomButton = button;
+    if (action === "maximize") zoomButtons.push(button);
   }
-  paintZoom();
 }
 
-function controlsHTML(pf: Platform): string {
+function controlHTML(
+  pf: ReturnType<typeof platform>,
+  action: "close" | "minimize" | "maximize",
+): string {
+  const label = action === "close" ? "Close" : action === "minimize" ? "Minimise" : "Maximise";
   if (pf === "mac") {
-    return (
-      '<button type="button" class="dot close" title="Close" aria-label="Close" data-action="close"></button>' +
-      '<button type="button" class="dot minimise" title="Minimise" aria-label="Minimise" data-action="minimise"></button>' +
-      '<button type="button" class="dot zoom" title="Maximise" aria-label="Maximise" data-action="zoom"></button>'
-    );
+    const dot = action === "close" ? "close" : action === "minimize" ? "minimise" : "zoom";
+    return `<button type="button" class="dot ${dot}" title="${label}" aria-label="${label}" data-action="${action}"></button>`;
   }
+  const cls = action === "close" ? "close" : action === "minimize" ? "minimise" : "zoom";
+  // The maximise glyph is swapped for a restore one while maximised; the
+  // others never change.
+  const path = action === "maximize" ? GLYPHS.maximise : action === "minimize" ? GLYPHS.minimise : GLYPHS.close;
   return (
-    '<button type="button" class="cap minimise" title="Minimise" aria-label="Minimise" data-action="minimise">' +
-    glyph(GLYPHS.minimise) +
-    "</button>" +
-    '<button type="button" class="cap zoom" title="Maximise" aria-label="Maximise" data-action="zoom">' +
-    glyph(GLYPHS.maximise) +
-    "</button>" +
-    '<button type="button" class="cap close" title="Close" aria-label="Close" data-action="close">' +
-    glyph(GLYPHS.close) +
+    `<button type="button" class="cap ${cls}" title="${label}" aria-label="${label}" data-action="${action}">` +
+    glyph(path) +
     "</button>"
   );
 }
 
 /** Swap the maximise glyph for a restore one while maximised. */
 function paintZoom(): void {
-  if (!zoomButton) return;
   const label = maximized ? "Restore" : "Maximise";
-  zoomButton.title = label;
-  zoomButton.setAttribute("aria-label", label);
-  if (platform() !== "mac") {
-    zoomButton.innerHTML = glyph(maximized ? GLYPHS.restore : GLYPHS.maximise);
+  for (const button of zoomButtons) {
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    if (platform() !== "mac") {
+      button.innerHTML = glyph(maximized ? GLYPHS.restore : GLYPHS.maximise);
+    }
   }
 }
