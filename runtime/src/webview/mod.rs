@@ -94,6 +94,19 @@ pub fn init_script(
         "arch": std::env::consts::ARCH,
     });
 
+    assemble_init_script(app, label, title_bar, scroll)
+}
+
+/// The bridge template over plain data, rather than over the runtime.
+///
+/// Split out so the generated script is unit-testable without standing up an
+/// event loop: `Runtime::new` needs a live proxy, which unit tests do not have.
+fn assemble_init_script(
+    app: serde_json::Value,
+    label: &str,
+    title_bar: crate::chrome::titlebar::Metrics,
+    scroll: bool,
+) -> String {
     let title_bar = json!(title_bar);
 
     format!(
@@ -242,7 +255,13 @@ pub fn init_script(
     if (target.closest(KEEPS_THE_POINTER)) return false;
     if (target.closest('[data-vantail-drag]')) return true;
 
-    return metrics.height > 0 && event.clientY < metrics.height;
+    // Live from the bridge, not the copy taken at startup. Switching the
+    // title bar style at runtime replaces the metrics object - the updater
+    // writes `__VANTAIL__.titleBar` and the CSS variables - and a band
+    // measured from the stale copy stops dragging the window the moment the
+    // bar on screen is no longer the bar it started with.
+    var live = (window.__VANTAIL__ && window.__VANTAIL__.titleBar) || metrics;
+    return live.height > 0 && event.clientY < live.height;
   }}
 
   // On the bubble rather than the capture phase, so an application's own
@@ -383,6 +402,48 @@ fn status(code: StatusCode, message: &str) -> Response<Cow<'static, [u8]>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A bridge script over canned data, without standing up an event loop.
+    fn bridge(title_bar: crate::chrome::titlebar::Metrics) -> String {
+        assemble_init_script(
+            json!({
+                "name": "Test",
+                "version": "0.0.0",
+                "identifier": "dev.test",
+                "isDev": false,
+                "platform": std::env::consts::OS,
+                "arch": std::env::consts::ARCH,
+            }),
+            "main",
+            title_bar,
+            false,
+        )
+    }
+
+    #[test]
+    fn the_drag_band_follows_a_runtime_title_bar_switch() {
+        // The showcase starts with an ordinary bar (height zero) and hides it
+        // later: the band has to read the live bridge metrics, because the
+        // copy the startup script closed over still says zero afterwards -
+        // and a zero band drags nothing.
+        let script = bridge(crate::chrome::titlebar::Metrics::none());
+        let band = script
+            .split("function movesTheWindow")
+            .nth(1)
+            .expect("the bridge drags the window from movesTheWindow");
+        assert!(
+            band.contains("window.__VANTAIL__.titleBar"),
+            "the band must read the metrics the style switch publishes, not the startup copy"
+        );
+    }
+
+    #[test]
+    fn a_runtime_title_bar_switch_reaches_the_live_metrics() {
+        // The other half of the same contract: switching the style publishes
+        // into `__VANTAIL__.titleBar`, which is what the band above reads.
+        let script = title_bar_script(crate::chrome::titlebar::Metrics::none());
+        assert!(script.contains("window.__VANTAIL__.titleBar"));
+    }
 
     /// A scratch directory of this test's own.
     ///
