@@ -14,6 +14,7 @@ import { rm } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 
 import { resolveRuntimeBinary } from "@vantail/runtime";
+import { borderRadiusWarning } from "@vantail/shared";
 import { loadConfig } from "@vantail/shared/load";
 
 import { log, style } from "../log.js";
@@ -42,6 +43,12 @@ export async function dev(options: DevOptions): Promise<number> {
     root: loaded.root,
     configPath: loaded.path,
   };
+
+  // Rounded corners parse everywhere but clip only on macOS and Windows.
+  // Warn here so a Linux developer hears it from the CLI too, not only from
+  // the runtime once the window opens.
+  const unsupported = borderRadiusWarning(project.config.window);
+  if (unsupported) log.warn(unsupported);
 
   // Fail before starting Vite if there is no runtime to start.
   const runtime = resolveRuntimeBinary({
@@ -158,6 +165,8 @@ export async function dev(options: DevOptions): Promise<number> {
       const reloaded = await loadConfig({ cwd: project.root, path: project.configPath });
       project = { config: reloaded.config, root: reloaded.root, configPath: reloaded.path };
       log.info("config changed, reopening the window");
+      const reloadedWarning = borderRadiusWarning(project.config.window);
+      if (reloadedWarning) log.warn(reloadedWarning);
       await stopRuntime();
       await startRuntime();
     } catch (error) {

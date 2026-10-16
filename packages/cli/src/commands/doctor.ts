@@ -15,6 +15,7 @@ import {
   supportedPlatformNames,
   UnsupportedPlatformError,
 } from "@vantail/runtime";
+import { borderRadiusWarning } from "@vantail/shared";
 import { findConfigFile, loadConfig } from "@vantail/shared/load";
 
 import { log, style } from "../log.js";
@@ -94,6 +95,11 @@ async function configCheck(
       ok: true,
       detail: `${loaded.path} ${style.dim(`(${loaded.config.app.identifier})`)}`,
     });
+    // Not a failure - the same config rounds on macOS and Windows - but on
+    // Linux it does nothing, and that should not be discovered by staring at
+    // square corners.
+    const unsupported = borderRadiusWarning(loaded.config.window);
+    if (unsupported) log.warn(unsupported);
     return { root: loaded.root, variant: runtimeVariantFor(loaded.config) };
   } catch (error) {
     checks.push({

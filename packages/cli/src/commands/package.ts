@@ -10,7 +10,7 @@ import { stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { resolveRuntimeBinary } from "@vantail/runtime";
-import { DEFAULT_OUT_DIR } from "@vantail/shared";
+import { DEFAULT_OUT_DIR, borderRadiusWarning } from "@vantail/shared";
 import { loadConfig } from "@vantail/shared/load";
 
 import { tarGzip } from "../bundle/archive.js";
@@ -97,6 +97,12 @@ export async function packageApp(options: PackageOptions): Promise<number> {
   );
 
   const icons = await prepareIcons(project);
+
+  // A Linux bundle keeps square corners whatever the config names; the same
+  // config still rounds on macOS and Windows, so this warns rather than
+  // failing the package.
+  const unsupported = borderRadiusWarning(project.config.window);
+  if (unsupported) log.warn(unsupported);
 
   const result = await bundle({
     config: project.config,

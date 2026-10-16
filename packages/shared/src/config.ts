@@ -131,7 +131,9 @@ export interface WindowConfig {
    * The runtime clips the page to the shape, so content cannot spill past a
    * corner and no CSS is needed.
    *
-   * macOS and Windows; ignored on Linux for now. A shaped window on Windows
+   * macOS and Windows only. On Linux the setting is parsed but ignored - the
+   * runtime warns in the terminal and the window keeps the platform's square
+   * corners. A shaped window on Windows
    * is drawn as a window region, which has hard edges rather than the
    * anti-aliased ones macOS draws, gives up the shadow Windows puts behind a
    * frameless window, and squares its corners while maximised.
@@ -586,6 +588,72 @@ export interface RuntimeConfig extends Omit<VantailConfig, "outDir"> {
  */
 export function defineConfig(config: VantailConfig): VantailConfig {
   return config;
+}
+
+/**
+ * What `borderRadius` would round, if anything.
+ *
+ * Mirrors the runtime's `BorderRadius::radii`: a number rounds all four
+ * corners, an object rounds the corners it names, and anything zero or
+ * missing rounds nothing. `true` means at least one corner has a positive
+ * radius - which is when the setting does something anywhere, and so when it
+ * needs a warning where it does nothing.
+ */
+export function hasBorderRadius(
+  borderRadius: number | WindowCorners | undefined,
+): boolean {
+  if (borderRadius === undefined) return false;
+  if (typeof borderRadius === "number") return borderRadius > 0;
+  return (
+    (borderRadius.topLeft ?? 0) > 0 ||
+    (borderRadius.topRight ?? 0) > 0 ||
+    (borderRadius.bottomLeft ?? 0) > 0 ||
+    (borderRadius.bottomRight ?? 0) > 0
+  );
+}
+
+/**
+ * Whether the window would be frameless where `platform` runs.
+ *
+ * Mirrors the runtime's `has_decorations`: a hidden title bar is an
+ * undecorated window everywhere but macOS, where the frame stays to keep the
+ * traffic lights. Anything else keeps whatever `decorations` says, which
+ * defaults to a frame.
+ */
+export function isFramelessOn(
+  window: Pick<WindowConfig, "decorations" | "titleBarStyle"> | undefined,
+  platform: NodeJS.Platform,
+): boolean {
+  if (!window) return false;
+  if (window.titleBarStyle === "hidden" && platform !== "darwin") return true;
+  return window.decorations === false;
+}
+
+/**
+ * Why `window.borderRadius` will do nothing on this machine, if that is so.
+ *
+ * Returns a terminal-ready warning on Linux when the config names a radius
+ * for a frameless window - the combination the runtime ignores - and
+ * `undefined` everywhere else, including on Linux when there is nothing to
+ * ignore (`borderRadius` missing, zero, or on a framed window that keeps the
+ * platform's corners anyway).
+ *
+ * Deliberately a warning rather than an error: the same config runs on macOS
+ * and Windows where the radius applies, so refusing to start on Linux would
+ * break a cross-platform project for a cosmetic difference.
+ */
+export function borderRadiusWarning(
+  window: WindowConfig | undefined,
+  platform: NodeJS.Platform = process.platform,
+): string | undefined {
+  if (platform !== "linux") return undefined;
+  if (!window || !hasBorderRadius(window.borderRadius)) return undefined;
+  if (!isFramelessOn(window, platform)) return undefined;
+  return (
+    "`window.borderRadius` is not supported on Linux yet and will be ignored - " +
+    "the window keeps the platform's square corners. " +
+    "Rounded corners work on macOS and Windows."
+  );
 }
 
 /**
