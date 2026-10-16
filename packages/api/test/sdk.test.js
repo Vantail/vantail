@@ -63,6 +63,7 @@ const {
   network,
   notification,
   os,
+  privacy,
   process: childProcess,
   runtimeVersion,
   secrets,
@@ -990,4 +991,40 @@ test("a refused subscribe reports instead of rejecting unhandled", async () => {
     console.error = original;
     process.removeListener("unhandledRejection", onUnhandled);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Privacy (macOS TCC)
+// ---------------------------------------------------------------------------
+
+test("privacy.status asks about a kind without prompting for anything", async () => {
+  const { request, value } = await callAndCapture(() => privacy.status("microphone"), () => ({
+    result: { status: "not-determined" },
+  }));
+  assert.equal(request.method, "privacy.status");
+  assert.deepEqual(request.params, { kind: "microphone" });
+  assert.deepEqual(value, { status: "not-determined" });
+});
+
+test("privacy.request carries the kind and returns the decision", async () => {
+  const { request, value } = await callAndCapture(() => privacy.request("camera"), () => ({
+    result: { status: "authorized" },
+  }));
+  assert.equal(request.method, "privacy.request");
+  assert.deepEqual(request.params, { kind: "camera" });
+  assert.deepEqual(value, { status: "authorized" });
+});
+
+test("privacy.openSettings sends no params", async () => {
+  const { request } = await callAndCapture(() => privacy.openSettings(), () => ({ result: null }));
+  assert.equal(request.method, "privacy.openSettings");
+});
+
+test("privacy.request also carries the screen kind", async () => {
+  const { request, value } = await callAndCapture(() => privacy.request("screen"), () => ({
+    result: { status: "denied" },
+  }));
+  assert.equal(request.method, "privacy.request");
+  assert.deepEqual(request.params, { kind: "screen" });
+  assert.deepEqual(value, { status: "denied" });
 });

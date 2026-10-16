@@ -110,6 +110,12 @@ Notarisation is a separate step: run `xcrun notarytool` against the signed
 bundle before distributing it, or macOS will refuse to open it on a machine
 other than the one that built it.
 
+TCC decisions stick to the bundle identifier *and* the signing identity, so
+changing identities later (ad-hoc to Developer ID) resets prior grants.
+Test the permission flow in the packaged, signed build - `vantail dev` runs
+as a different identity with independent decisions. See
+[macOS privacy](macos-privacy.md).
+
 ## Two runtime builds
 
 The runtime is published twice for each platform:

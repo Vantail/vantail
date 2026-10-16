@@ -305,3 +305,17 @@ test("sharedState shapes are checked, not coerced", () => {
     assert.equal(result.ok, false, `accepted ${JSON.stringify(sharedState)}`);
   }
 });
+
+test("macos usage descriptions are accepted", () => {
+  const result = parseConfig({
+    ...valid,
+    macos: { microphoneUsageDescription: "Voice notes.", cameraUsageDescription: "Calls." },
+  });
+  assert.equal(result.ok, true);
+});
+
+test("a typo in the macos config is not silently ignored", () => {
+  const result = parseConfig({ ...valid, macos: { microfoneUsageDescription: "Voice notes." } });
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /macos/);
+});

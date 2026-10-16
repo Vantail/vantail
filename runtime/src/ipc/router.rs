@@ -21,7 +21,11 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, request: Request) -> Option<Response> {
     // Blocking work: hand it to the pool and answer later. A keychain read
     // belongs here too - on macOS it can put a prompt in front of the user,
     // and the event loop is what would have to draw it.
-    if namespace == "filesystem" || namespace == "secrets" || namespace == "hid" {
+    if namespace == "filesystem"
+        || namespace == "secrets"
+        || namespace == "hid"
+        || namespace == "privacy"
+    {
         let rt = ctx.rt.clone();
         let deferred_id = id.clone();
         // The response goes back to the window that asked, not to whichever
@@ -32,6 +36,9 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, request: Request) -> Option<Response> {
             let result = match namespace.as_str() {
                 "secrets" => api::secrets::dispatch(&rt, &method, params),
                 "hid" => api::hid::dispatch(&rt, &source, &method, params),
+                // A privacy request blocks until the user answers the system
+                // prompt, which must not wedge the event loop.
+                "privacy" => api::privacy::dispatch(&rt, &method, params),
                 _ if method == "filesystem.watch"
                     || method == "filesystem.unwatch"
                     || method == "filesystem.watches" =>

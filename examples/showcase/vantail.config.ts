@@ -12,7 +12,7 @@ export default defineConfig({
   app: {
     name: "Vantail Showcase",
     identifier: "dev.vantail.showcase",
-    version: "0.1.24",
+    version: "0.1.25",
     icon: "icon.png",
   },
 
@@ -32,6 +32,15 @@ export default defineConfig({
   // association is registered with the OS by `vantail package`, so it works
   // from an installed build rather than from `vantail dev`.
   protocols: ["vantail-showcase"],
+
+  // The strings behind the macOS privacy prompts. Without the matching one,
+  // the OS denies capture without ever asking - see docs/macos-privacy.md.
+  macos: {
+    microphoneUsageDescription:
+      "The privacy panel demonstrates the microphone permission prompt. Nothing is recorded.",
+    cameraUsageDescription:
+      "The privacy panel demonstrates the camera permission prompt. Nothing is captured.",
+  },
 
   menu: [
     {
