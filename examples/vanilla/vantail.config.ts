@@ -4,7 +4,7 @@ export default defineConfig({
   app: {
     name: "Vantail Vanilla",
     identifier: "dev.vantail.vanilla",
-    version: "0.1.0",
+    version: "0.1.25",
     // A square PNG. Every size each platform asks for is scaled down from it.
     icon: "icon.png",
   },

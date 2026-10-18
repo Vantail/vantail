@@ -376,6 +376,21 @@ export const updaterSchema = z
   })
   .strict();
 
+/**
+ * macOS-only bundle metadata.
+ *
+ * These strings become the `NS*UsageDescription` entries in the packaged
+ * `Info.plist`. macOS requires one to even show a TCC prompt: without the
+ * matching description, capture is denied without ever asking. They are not a
+ * Vantail permission - nothing here grants access, it only lets the OS ask.
+ */
+export const macosSchema = z
+  .object({
+    microphoneUsageDescription: z.string().min(1).optional(),
+    cameraUsageDescription: z.string().min(1).optional(),
+  })
+  .strict();
+
 export const permissionsSchema = z
   .object({
     filesystem: z
@@ -434,6 +449,7 @@ export const configSchema = z
     singleInstance: z.boolean().optional(),
     quitOnLastWindowClosed: z.boolean().optional(),
     showInDock: z.boolean().optional(),
+    macos: macosSchema.optional(),
     distDir: z.string().optional(),
     devtools: z.boolean().optional(),
     outDir: z.string().optional(),

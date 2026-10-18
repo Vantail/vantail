@@ -91,7 +91,7 @@ function infoPlist(input: BundleInput, executableName: string): string {
   <key>LSMinimumSystemVersion</key>
   <string>10.15</string>
   <key>NSHighResolutionCapable</key>
-  <true/>${
+  <true/>${privacyDescriptions(input)}${
     input.config.showInDock === false
       ? `
   <key>LSUIElement</key>
@@ -101,6 +101,28 @@ function infoPlist(input: BundleInput, executableName: string): string {
 </dict>
 </plist>
 `;
+}
+
+/**
+ * The TCC usage descriptions macOS requires before it will show a privacy
+ * prompt. Without the matching string, capture is denied without ever asking -
+ * so a configured description is emitted, and a missing one is simply absent.
+ * See `docs/macos-privacy.md`.
+ */
+function privacyDescriptions(input: BundleInput): string {
+  const macos = input.config.macos ?? {};
+  let out = "";
+  if (macos.microphoneUsageDescription) {
+    out += `
+  <key>NSMicrophoneUsageDescription</key>
+  <string>${escapeXml(macos.microphoneUsageDescription)}</string>`;
+  }
+  if (macos.cameraUsageDescription) {
+    out += `
+  <key>NSCameraUsageDescription</key>
+  <string>${escapeXml(macos.cameraUsageDescription)}</string>`;
+  }
+  return out;
 }
 
 /**

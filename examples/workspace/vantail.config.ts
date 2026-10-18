@@ -7,7 +7,7 @@ export default defineConfig({
   app: {
     name: "Workspace",
     identifier: "dev.vantail.example.workspace",
-    version: "0.1.0",
+    version: "0.1.25",
     icon: "icon.png",
   },
 

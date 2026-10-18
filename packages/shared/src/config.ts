@@ -408,6 +408,14 @@ export interface HidRule {
   usagePage?: number;
 }
 
+/** macOS-only bundle metadata. See `docs/macos-privacy.md`. */
+export interface MacosConfig {
+  /** Becomes `NSMicrophoneUsageDescription` in the packaged `Info.plist`. */
+  microphoneUsageDescription?: string;
+  /** Becomes `NSCameraUsageDescription` in the packaged `Info.plist`. */
+  cameraUsageDescription?: string;
+}
+
 /** A menu entry. `type` defaults to `normal` when omitted. */
 export type MenuItem =
   | {
@@ -542,6 +550,14 @@ export interface VantailConfig {
    * `quitOnLastWindowClosed: false`.
    */
   showInDock?: boolean;
+  /**
+   * macOS-only bundle metadata. Ignored on other platforms.
+   *
+   * The usage descriptions macOS requires before it will show a privacy
+   * prompt - without the matching string, capture is denied silently. These
+   * do not grant anything; they let the OS ask.
+   */
+  macos?: MacosConfig;
   /** Directory of built web assets, relative to the config file. Default `dist`. */
   distDir?: string;
   /** Force the webview inspector on or off. Defaults to on in `vantail dev`. */

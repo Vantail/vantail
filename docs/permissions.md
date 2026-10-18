@@ -63,6 +63,19 @@ not reaching outside itself. Everything else starts closed.
 Omitting the `permissions` block entirely gives you exactly these defaults -
 windows and machine facts, and nothing else.
 
+## macOS privacy (TCC) is not a permission
+
+`privacy.status` and `privacy.request` (microphone, camera) need no flag
+here, deliberately. Vantail permissions gate what the application may ask
+the runtime to do; TCC gates what the process may do with the OS. Neither
+implies the other: an app with every flag set still faces the system prompt,
+and answering that prompt is the user's, never the config's.
+
+What the config *does* carry is the strings macOS requires before it will
+prompt at all - see [`macos.*UsageDescription`](macos-privacy.md). Without
+the matching `NS*UsageDescription` in the packaged `Info.plist`, capture is
+denied silently.
+
 ## Path scopes
 
 A `PathScope` is one of four things:

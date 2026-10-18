@@ -597,6 +597,14 @@ example's own directory, which is the same thing.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Acknowledgements
+
+The icons behind [`@vantail/icons`](packages/icons) — and the Symbols and
+Tasks examples built on it — are [Lucide](https://lucide.dev) artwork, used
+under the ISC licence. Thanks to the Lucide contributors for making and
+maintaining the set; the full attribution lives in
+[packages/icons/LICENSE-THIRD-PARTY](packages/icons/LICENSE-THIRD-PARTY).
+
 ## License
 
 MIT

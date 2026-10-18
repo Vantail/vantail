@@ -18,4 +18,4 @@ dist-packages/
 # silently, so it is un-ignored here rather than left to each machine.
 !Cargo.lock
 
-tasks/
+/tasks/

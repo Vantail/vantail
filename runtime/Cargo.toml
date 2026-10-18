@@ -108,6 +108,15 @@ flate2 = { version = "1.1", optional = true }
 # cross-platform crate for them. Same versions tao and wry already resolve to,
 # so this adds nothing to the tree.
 [target.'cfg(target_os = "macos")'.dependencies]
+objc2-av-foundation = { version = "0.3", features = [
+  "std",
+  "block2",
+  "AVCaptureDevice",
+  "AVMediaFormat",
+] }
+# Screen-recording consent: the preflight and request calls. Same version wry
+# already resolves to, so this adds nothing to the tree.
+objc2-core-graphics = { version = "0.3", features = ["std", "CGWindow"] }
 objc2 = "0.6"
 block2 = "0.6"
 objc2-app-kit = { version = "0.3", features = [

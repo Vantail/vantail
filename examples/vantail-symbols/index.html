@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vantail Symbols</title>
+  </head>
+  <body>
+    <header id="topbar">
+      <div class="brand" aria-label="Vantail Symbols">
+        <span class="brand-mark" id="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">Vantail Symbols</span>
+      </div>
+      <div class="search-wrap">
+        <label class="visually-hidden" for="search">Search icons</label>
+        <input
+          id="search"
+          type="search"
+          placeholder="Search icons…  ( / )"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button id="search-clear" type="button" aria-label="Clear search" hidden>
+          ×
+        </button>
+      </div>
+      <p class="count" id="count" role="status"></p>
+    </header>
+    <div id="layout">
+      <nav id="sidebar" aria-label="Icon collections"></nav>
+      <main id="browser">
+        <div id="browser-bar">
+          <h1 id="view-title">All Icons</h1>
+          <button id="clear-recent" type="button" hidden>Clear recents</button>
+        </div>
+        <div id="grid" role="listbox" aria-label="Icons" tabindex="0"></div>
+        <div id="grid-end" aria-hidden="true"></div>
+        <p id="empty" hidden></p>
+      </main>
+      <aside id="inspector" aria-label="Icon inspector"></aside>
+    </div>
+    <div id="status" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
