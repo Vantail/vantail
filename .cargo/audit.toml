@@ -1,13 +1,16 @@
 # Advisories `cargo audit` and the weekly `audit.yml` run should not report.
 #
 # Each entry is here because nothing in this repository can act on it, not
-# because it does not matter. Both come from gtk-rs 0.18, which tao and wry
-# (through webkit2gtk `=2.0.2`) still require on Linux. gtk 0.19 exists and
-# moves to a glib with both fixes, but neither windowing crate has followed,
-# and muda and tray-icon only follow them. When `cargo tree -i glib@0.18.5
-# --target all` comes back empty, delete this file.
+# because it does not matter. Each group says when it can be deleted; when
+# every group is gone, delete this file.
 [advisories]
 ignore = [
+  # gtk-rs 0.18, which tao and wry (through webkit2gtk `=2.0.2`) still
+  # require on Linux. gtk 0.19 exists and moves to a glib with both fixes,
+  # but neither windowing crate has followed, and muda and tray-icon only
+  # follow them. Delete when `cargo tree -i glib@0.18.5 --target all` comes
+  # back empty.
+  #
   # glib 0.18: `VariantStrIter` is unsound. Nothing in the tree calls it -
   # the only references to `VariantStrIter` or `str_array_iter` across every
   # dependency are inside glib itself - and the runtime does not use glib
@@ -17,4 +20,20 @@ ignore = [
   # glib-macros, so it runs in the compiler and none of it ships in the
   # binary.
   "RUSTSEC-2024-0370",
+
+  # zbus 5, which notify-rust (notifications) and secret-service, through
+  # keyring's Secret Service store (`secrets`), require on Linux. zbus 6
+  # folded these crates into itself as modules, which is the whole of what
+  # "unmaintained" means here - there is no known defect. As of
+  # notify-rust 4.18.2, secret-service 5.2.0 and
+  # zbus-secret-service-keyring-store 1.0.1, all three still require
+  # zbus `^5`, and the runtime does not use zbus directly. Delete when
+  # `cargo tree -i zvariant --target all` comes back empty.
+  #
+  # zvariant is unmaintained; now `zbus::wire`.
+  "RUSTSEC-2026-0370",
+  # zbus_names is unmaintained; now `zbus::names`.
+  "RUSTSEC-2026-0371",
+  # zvariant_derive is unmaintained; a proc-macro, now provided by zbus.
+  "RUSTSEC-2026-0372",
 ]

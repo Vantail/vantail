@@ -4,6 +4,85 @@ Notable changes per release.
 
 ## Unreleased
 
+### Fixed
+
+- **Certificates chaining through the distrusted emSign intermediates are
+  rejected.** The private keys behind those intermediates are now public,
+  and the HTTP client, the updater and WebSockets verify servers against the
+  bundled `webpki-roots` store, which still allowed paths through them.
+  `rustls-webpki` 0.103.16 rejects those keys outright (RUSTSEC-2026-0382)
+  and `webpki-roots` 1.0.10 stops trusting them (RUSTSEC-2026-0381).
+  Lockfile-only.
+
+- **`rustls` 0.23.46, for four advisories published against 0.23.45.** None
+  of them reaches the runtime as it is built today, so this is precaution
+  rather than a fix anyone was exposed to - but the HTTP client, the updater
+  and WebSockets ship this code to every application, so it is taken now
+  instead of waiting for the monthly sweep. Lockfile-only.
+  - RUSTSEC-2026-0349, a forged ServerHello steering later connections to
+    the same host off the post-quantum key exchange: the record it poisons
+    lives in the client's session store, and every TLS connection the
+    runtime makes starts from a fresh one - one ureq agent per request, one
+    rustls config per WebSocket.
+  - RUSTSEC-2026-0348, Brotli certificate decompression: the `brotli`
+    feature is not enabled.
+  - RUSTSEC-2026-0347, application data after an ECH rejection: ECH is not
+    enabled.
+  - RUSTSEC-2026-0346, TLS secrets in `Debug` output of session values: only
+    reachable through a custom session store, and there is none.
+
+## 0.1.25
+
+### Added
+
+- **`privacy`: the macOS camera, microphone and screen recording prompts.**
+  `privacy.status(kind)` reads the system's stored decision
+  (`not-determined`, `authorized`, `denied`, `restricted`),
+  `privacy.request(kind)` shows Apple's own prompt the first time and
+  answers from the stored decision after that, and `privacy.openSettings()`
+  opens Privacy & Security so the user can reverse a denial - the only way
+  one can be reversed. The kinds are `microphone`, `camera` and `screen`;
+  the rest of what macOS guards (accessibility, location, contacts) has no
+  prompt for the runtime to call, so `openSettings()` is the whole flow
+  there. This is the OS's decision, not the permission layer's, so there is
+  no `permissions.privacy` flag. Off macOS, `status` answers `unsupported`
+  and the other calls reject with `UNSUPPORTED`.
+
+  Screen recording cannot tell "never asked" from "denied", so a first-ever
+  `status("screen")` reads `denied` until the prompt has been answered.
+
+- **`macos.microphoneUsageDescription` and `macos.cameraUsageDescription`**
+  in `vantail.config.ts`, written into the packaged `Info.plist` as
+  `NSMicrophoneUsageDescription` / `NSCameraUsageDescription`. Without the
+  matching string macOS denies capture without ever prompting. Grants belong
+  to the bundle that asked, so `vantail dev` and the installed `.app` keep
+  separate decisions. See [macOS privacy](docs/macos-privacy.md).
+
+- **`@vantail/icons`: the full Lucide catalogue as a first-party package.**
+  1890 icons by name, with a vanilla API (`getIconSvg`, `createIconElement`)
+  and a React one (`<Icon name>` plus a named component per icon) from
+  `@vantail/icons/react`. Size, stroke and color props, accessible markup
+  when given a `label`, and a placeholder rather than a throw for an unknown
+  name. Static imports tree-shake down to the icons used; `<Icon name>`
+  with a name only known at runtime pulls in the whole catalogue - measured
+  with Vite at 57.5 kB against 833.3 kB. No network fetch and no separate
+  Lucide install. See [icons](docs/icons.md).
+
+- **Examples**: `camera` walks the `privacy.*` camera flow,
+  `vantail-symbols` is a searchable browser over the icon catalogue, and
+  `tasks` is a small React app using both icon import styles. The showcase
+  gains privacy and icons panels.
+
+### Fixed
+
+- **`print.document` on Linux reports whether the job actually printed.**
+  `{ printed: true }` came from the GTK dialog's answer, which only means
+  the user pressed Print and the job started - a job that then failed still
+  reported success. It now waits for the job to finish and answers from
+  whether it failed. Thanks to geennoob for finding and fixing this.
+
+## 0.1.24
+
 ### Added
 
 - **`sharedState`: keyed state shared between every window.**
@@ -26,6 +105,26 @@ Notable changes per release.
 
   The React example gains an "Open sync window" demo proving it: a counter
   set in either window is reflected in the other without a reload.
+
+- **`print.document`: printing through the native print dialog.** Give it
+  an `html` string or a `pdfPath`, exactly one of the two, and the user
+  chooses the printer, copies and page range - or cancels - in Edge's print
+  preview on Windows, the print panel on macOS or the GTK dialog on Linux.
+  The promise resolves when the dialog closes, with `{ printed }` saying
+  whether they went through with it (`null` on Windows, where Edge's
+  preview does not say).
+
+  The content always renders in a view of its own, never one of the
+  application's windows, and there is deliberately no call that prints the
+  current window - so nothing a compromised page does can send the app's own
+  UI to paper. That, plus a dialog the application cannot click through, is
+  why there is no `permissions.print` flag. `pdfPath` still goes through
+  `permissions.filesystem` read scope. Passing both sources or neither
+  rejects with `INVALID_ARGUMENT`. See
+  [permissions](docs/permissions.md#printing-has-no-permission).
+
+  The `invoice` example prints both ways, and the showcase gains a print
+  panel showing the working call next to the refused ones.
 
 ## 0.1.23
 
