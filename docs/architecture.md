@@ -78,6 +78,13 @@ same `postMessage` with ids it recognises, and their replies are dropped rather
 than pushed into the backlog - a page that never loads the SDK would otherwise
 accumulate them for the life of the window.
 
+The same goes for a click on a link to another site: the bridge cancels it and
+asks for `bridge.openLink`, which hands the URL to the browser. That namespace
+is the bridge's own and not part of `@vantail/api`. It is a message rather than
+`window.open` because WebKit blocks a popup that no gesture opened, and the
+runtime refuses anything a link click could not have produced - the
+application's own origin, or a scheme other than http(s) and `mailto:`.
+
 The bridge is only for the application's own origin. The platform injects it
 into, and passes IPC on from, whatever a window loads, so both ends check: the
 script installs nothing on a page from another origin, and the IPC handler

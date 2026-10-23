@@ -575,20 +575,25 @@ reads the file into the renderer.
 Everything on this page is granted to the application's own pages - the ones
 served from `distDir`, or in development from the dev server - and to no
 other page, whatever it is shown in. A window can still end up on somebody
-else's site: a plain link followed, a redirect, a mistyped URL. That page gets
-no bridge, the runtime ignores any call it makes by hand, and nothing the
-runtime pushes - shared state, `app.emit` payloads, deep links - is delivered
-to it. Navigate back to the application and everything works again.
+else's site - by script setting `location`, a redirect, a form posted
+elsewhere. That page gets no bridge, the runtime ignores any call it makes by
+hand, and nothing the runtime pushes - shared state, `app.emit` payloads, deep
+links - is delivered to it. Navigate back to the application and everything
+works again.
 
 The check is by origin, so routing and query strings within the application
 are unaffected. An `<iframe>` of another site inside the application's page is
 another origin too, and gets nothing.
 
-A link with `target="_blank"`, or `window.open`, opens a web page or a
-`mailto:` link in the user's browser or mail client rather than in a window of
-the application's. Anything else is refused: a window of the application's
-own is `createWindow`, which gives it the bridge, a label and a place in
-`window.list()`.
+Links to other sites leave for the user's browser or mail client instead of
+taking the window with them: a web page or a `mailto:` link, whether it is a
+plain `<a href>`, has `target="_blank"`, or comes from `window.open`. Links
+within the application are followed as usual, and so is a click the
+application's own handler already called `preventDefault()` on - a router
+keeps its links. A link aimed at a named frame, or carrying `download`, is
+left to the webview. A popup for anything else is refused: a window of the
+application's own is `createWindow`, which gives it the bridge, a label and a
+place in `window.list()`.
 
 ## What this does not protect against
 

@@ -24,12 +24,37 @@ Notable changes per release.
 
 ### Changed
 
-- **`target="_blank"` links and `window.open` open in the user's browser.**
-  They used to get a bare window of the platform's making, with no bridge,
+- **Links to other sites open in the user's browser.** A plain
+  `<a href="https://...">` used to take the application's whole window to
+  that site, with nothing there leading back; `target="_blank"` and
+  `window.open` got a bare window of the platform's making, with no bridge,
   no title and nothing the application could manage. A web page or a
-  `mailto:` link now goes to the browser or mail client; anything else,
-  including one of the application's own pages, is refused - that is what
-  `createWindow` is for.
+  `mailto:` link now goes to the browser or mail client, however it was
+  opened. Links within the application are followed as before, and so is
+  any click the application's own handler called `preventDefault()` on, so
+  a router keeps its links. A popup for anything else, including one of the
+  application's own pages, is refused - that is what `createWindow` is for.
+  See [permissions](docs/permissions.md#only-the-applications-own-pages).
+
+- **pnpm reads its build-script allowlist again.** pnpm 10 stopped reading
+  the `"pnpm"` field in `package.json`, so `onlyBuiltDependencies` was
+  silently ignored and every pnpm command warned about it. The setting now
+  lives in `pnpm-workspace.yaml`, with `@parcel/watcher` (from the Tailwind
+  CLI in the `chat` example, which ships prebuilt binaries) listed as
+  deliberately not built. Contributors only; nothing that ships changes.
+
+- **The root README's API list is checked against the SDK.** It had fallen
+  nine modules behind - `autostart`, `database`, `deepLink`, `fileDrop`,
+  `path`, `power`, `privacy`, `screen` and `shortcut` - with nothing to
+  notice. A test now fails when a module has no row, or when a row names a
+  method `@vantail/api` does not have.
+
+- **The feature-combination CI job fails on warnings.** It exists to catch
+  code that uses an optional dependency without being gated, which usually
+  shows up as a warning, and `cargo check` passes with warnings - buried
+  under 10 to 40 dead-code warnings per build. Dead code is now judged in
+  the default build only, where every capability is in, and the stripped
+  builds run with `-D warnings`.
 
 ### Fixed
 

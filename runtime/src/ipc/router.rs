@@ -114,6 +114,7 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, request: Request) -> Option<Response> {
         "sharedState" => api::shared_state::dispatch(ctx, &method, params),
         "shortcut" => api::shortcut::dispatch(ctx, &method, params),
         "autostart" => api::autostart::dispatch(ctx.rt, &method, params),
+        "bridge" => crate::webview::dispatch(ctx.rt, &method, params),
         _ => Err(ApiError::unknown_method(&method)),
     };
 

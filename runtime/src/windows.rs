@@ -770,9 +770,7 @@ fn build_webview(
         // `createWindow`.
         .with_new_window_req_handler(move |url, _features| {
             if !popups.allows(&url) && webview::opens_externally(&url) {
-                if let Err(error) = open::that_detached(&url) {
-                    eprintln!("vantail: could not open {url}: {error}");
-                }
+                webview::open_externally(&url);
             } else {
                 eprintln!(
                     "vantail: window `{popup_label}` tried to open {url} in a new window; \

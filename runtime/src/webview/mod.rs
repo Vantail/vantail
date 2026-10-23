@@ -126,6 +126,67 @@ pub fn opens_externally(url: &str) -> bool {
     matches!(scheme.as_deref(), Some("http" | "https" | "mailto"))
 }
 
+/// Hand a URL to the user's browser or mail client.
+///
+/// `VANTAIL_OPEN_STUB=<file>` appends the URL to that file instead. That is
+/// what the integration tests set: a test run should not open a browser, and
+/// what they check is which URLs would have left, not that a browser came up.
+pub fn open_externally(url: &str) {
+    if let Some(stub) = std::env::var_os("VANTAIL_OPEN_STUB") {
+        use std::io::Write;
+        let written = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&stub)
+            .and_then(|mut file| writeln!(file, "{url}"));
+        if let Err(error) = written {
+            eprintln!("vantail: could not record {url} in VANTAIL_OPEN_STUB: {error}");
+        }
+        return;
+    }
+    if let Err(error) = open::that_detached(url) {
+        eprintln!("vantail: could not open {url}: {error}");
+    }
+}
+
+/// `bridge.*`: what the injected bridge asks for on the page's behalf. Not
+/// part of `@vantail/api`.
+///
+/// `bridge.openLink` is a link to another site, clicked in the page: it goes
+/// to the browser instead of taking the application's window with it. No
+/// permission, for the same reason a browser asks none - it is what clicking
+/// a link does - and only for what `target="_blank"` could already reach:
+/// a web page or a mail link that is not the application's own.
+pub fn dispatch(rt: &Runtime, method: &str, params: serde_json::Value) -> crate::error::ApiResult {
+    #[derive(serde::Deserialize)]
+    struct OpenLink {
+        url: String,
+    }
+
+    match method {
+        "bridge.openLink" => {
+            let OpenLink { url } = crate::ipc::Request::params(method, params)?;
+            leaves_for_the_system(&Origins::new(rt), &url)?;
+            open_externally(&url);
+            Ok(serde_json::Value::Null)
+        }
+        _ => Err(crate::error::ApiError::unknown_method(method)),
+    }
+}
+
+/// Whether `bridge.openLink` may hand `url` over. The page can call it
+/// directly, so what the bridge would never send is refused here as well.
+fn leaves_for_the_system(origins: &Origins, url: &str) -> Result<(), crate::error::ApiError> {
+    if opens_externally(url) && !origins.allows(url) {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::new(
+            crate::error::code::INVALID_ARGUMENT,
+            format!("`{url}` is not a link to another site"),
+        ))
+    }
+}
+
 /// Put a window's title bar metrics into a page that is already running.
 ///
 /// The same three variables the bridge sets at startup, and the same object
@@ -323,10 +384,10 @@ pub fn init_script(
   // opts out anything else - put it on `<body>` to opt out of the lot - and so
   // does calling `preventDefault()` on the event, which is how an application
   // that would rather do this itself keeps the bridge out of the way.
-  function ask(method) {{
+  function ask(method, params) {{
     var id = 'vantail:' + (seq++);
     ours.add(id);
-    window.ipc.postMessage(JSON.stringify({{ id: id, method: method, params: {{}} }}));
+    window.ipc.postMessage(JSON.stringify({{ id: id, method: method, params: params || {{}} }}));
   }}
 
   var KEEPS_THE_POINTER =
@@ -356,6 +417,36 @@ pub fn init_script(
   // it for a bar that is not there.
   document.addEventListener('dblclick', function (event) {{
     if (movesTheWindow(event)) ask('window.toggleMaximize');
+  }});
+
+  // A link to another site, followed in place, would take the application's
+  // whole window with it, and nothing on that page leads back. It goes to the
+  // browser instead - the same place a `target="_blank"` link goes.
+  //
+  // On `window`, after the bubble has passed `document`, so a router that
+  // handled the click itself has called `preventDefault()` by then. Links the
+  // page aims somewhere on purpose - another frame, a download - are left
+  // alone, and so is everything within the application's own origin.
+  window.addEventListener('click', function (event) {{
+    if (event.defaultPrevented || event.button !== 0) return;
+    var target = event.target;
+    if (!target || typeof target.closest !== 'function') return;
+    var link = target.closest('a[href]');
+    if (!link || link.hasAttribute('download')) return;
+    var aim = (link.getAttribute('target') || '').toLowerCase();
+    if (aim && aim !== '_self' && aim !== '_top' && aim !== '_parent') return;
+
+    var url;
+    try {{
+      url = new URL(link.href);
+    }} catch (error) {{
+      return;
+    }}
+    if (['http:', 'https:', 'mailto:'].indexOf(url.protocol) < 0) return;
+    if ({own}.indexOf(url.protocol + '//' + url.host) >= 0) return;
+
+    event.preventDefault();
+    ask('bridge.openLink', {{ url: url.href }});
   }});
 }})();"#,
         runtime_version = json!(env!("CARGO_PKG_VERSION")),
@@ -635,6 +726,25 @@ mod tests {
         // A default port is left out, as `location.host` leaves it out.
         let plain = Origins::with_dev(Some("https://dev.example:443"));
         assert_eq!(plain.as_seen_by_page()[1], "https://dev.example");
+    }
+
+    #[test]
+    fn a_link_out_is_only_ever_another_site() {
+        let origins = Origins::with_dev(Some("http://localhost:5173"));
+        assert!(leaves_for_the_system(&origins, "https://example.com/docs").is_ok());
+        assert!(leaves_for_the_system(&origins, "mailto:someone@example.com").is_ok());
+        for url in [
+            // The application's own pages stay in the window.
+            &app_url("settings.html"),
+            "http://localhost:5173/settings",
+            // Nothing a browser would not open from a link.
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "vantail://localhost/",
+        ] {
+            let refused = leaves_for_the_system(&origins, url).expect_err(url);
+            assert_eq!(refused.code, crate::error::code::INVALID_ARGUMENT);
+        }
     }
 
     #[test]

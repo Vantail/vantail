@@ -192,3 +192,151 @@ location.href = ${JSON.stringify(foreign)};
     });
   },
 );
+
+describe(
+  "links to other sites",
+  {
+    skip: headless
+      ? "needs a display"
+      : !runtimePath
+        ? "no runtime binary built"
+        : false,
+  },
+  () => {
+    let root;
+    let child;
+    let server;
+    let away;
+    let routed;
+    const mail = "mailto:someone@example.com";
+    /** Every path the other site was asked for - by a window that followed a link in place. */
+    const visited = [];
+
+    before(async () => {
+      root = await mkdtemp(join(tmpdir(), "vantail-links-out-"));
+
+      // The other site answers at once, so a link followed in place really
+      // does take the window away - a dead address would leave the page
+      // sitting there, and "stayed" would prove nothing.
+      server = createServer((request, response) => {
+        visited.push(request.url);
+        response.writeHead(200, { "content-type": "text/html" });
+        response.end("<!doctype html><title>elsewhere</title>");
+      });
+      await new Promise((listening) =>
+        server.listen(0, "127.0.0.1", listening),
+      );
+      const site = `http://127.0.0.1:${server.address().port}`;
+      away = `${site}/away`;
+      routed = `${site}/routed`;
+      await cp(
+        join(repoRoot, "packages", "api", "dist"),
+        join(root, "dist", "api"),
+        { recursive: true },
+      );
+      await writeFile(
+        join(root, "vantail.json"),
+        JSON.stringify({
+          app: {
+            name: "LinkOutTest",
+            identifier: `dev.vantail.linkouttest.${process.pid}`,
+            version: "1.0.0",
+          },
+          window: { width: 360, height: 240, visible: false },
+          distDir: "dist",
+          permissions: {
+            filesystem: { read: [`${root}/**`], write: [`${root}/**`] },
+          },
+        }),
+      );
+      // Clicked from script: the bridge does not ask whether a person did
+      // it, so what is checked here is exactly what a real click gets.
+      await writeFile(
+        join(root, "dist", "index.html"),
+        `<!doctype html>
+<meta charset="utf-8">
+<a id="away" href="${away}">away</a>
+<a id="routed" href="${routed}">routed</a>
+<a id="mail" href="${mail}">mail</a>
+<a id="next" href="next.html">next</a>
+<script type="module">
+import { invoke } from "./api/index.js";
+const start = location.href;
+// A router that handles its own links.
+document.getElementById("routed").addEventListener("click", (event) => event.preventDefault());
+for (const id of ["away", "routed", "mail"]) document.getElementById(id).click();
+await new Promise((settle) => setTimeout(settle, 500));
+await invoke("filesystem.writeText", {
+  path: ${JSON.stringify(join(root, "report.json"))},
+  contents: JSON.stringify({ stayed: location.href === start }),
+});
+document.getElementById("next").click();
+</script>`,
+      );
+      await writeFile(
+        join(root, "dist", "next.html"),
+        `<!doctype html>
+<meta charset="utf-8">
+<script type="module">
+import { invoke } from "./api/index.js";
+await invoke("filesystem.writeText", {
+  path: ${JSON.stringify(join(root, "arrived.txt"))},
+  contents: location.pathname,
+});
+</script>`,
+      );
+
+      child = spawn(runtimePath, ["--config", join(root, "vantail.json")], {
+        stdio: "ignore",
+        env: { ...process.env, VANTAIL_OPEN_STUB: join(root, "opened.txt") },
+      });
+    });
+
+    after(async () => {
+      child?.kill("SIGKILL");
+      server?.close();
+      if (root && !process.env.VANTAIL_KEEP) {
+        await rm(root, {
+          recursive: true,
+          force: true,
+          maxRetries: 10,
+          retryDelay: 250,
+        }).catch(() => {});
+      }
+    });
+
+    it("keeps the window on the application", async () => {
+      const report = await until(
+        "the page reporting back",
+        () =>
+          readFile(join(root, "report.json"), "utf8")
+            .then(JSON.parse)
+            .catch(() => undefined),
+        (seen) => seen !== undefined,
+      );
+      assert.equal(report.stayed, true);
+      assert.deepEqual(visited, [], "the window went to the other site");
+    });
+
+    it("hands a web page and a mail link to the system, and nothing a router handled", async () => {
+      const opened = await until(
+        "both links reaching the system",
+        () =>
+          readFile(join(root, "opened.txt"), "utf8")
+            .then((text) => text.split(/\r?\n/).filter(Boolean))
+            .catch(() => []),
+        (lines) => lines.length >= 2,
+      );
+      assert.deepEqual(opened, [away, mail]);
+    });
+
+    it("still follows a link within the application", async () => {
+      const arrived = await until(
+        "the application's own link",
+        () => readFile(join(root, "arrived.txt"), "utf8").catch(() => undefined),
+        (contents) => contents !== undefined,
+      );
+      assert.equal(arrived, "/next.html");
+    });
+  },
+);
