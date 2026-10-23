@@ -172,6 +172,13 @@ jobs:
     name: Feature combinations
     # `cargo check` only: no window, no tests, so nothing here needs macOS.
     runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-22.04' }}
+    env:
+      # A gating mistake usually shows as a warning - an import only one
+      # feature uses - and `cargo check` passes with warnings. Dead code is
+      # allowed outside the default build (see `runtime/src/main.rs`), so
+      # anything left is worth failing on. Dependencies are unaffected: cargo
+      # caps their lints regardless.
+      RUSTFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v7
 

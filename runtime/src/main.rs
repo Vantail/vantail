@@ -12,6 +12,27 @@
     all(not(debug_assertions), target_os = "windows"),
     windows_subsystem = "windows"
 )]
+// Dead code is judged in the default build, where every capability is in.
+// The config and permission layer is compiled whatever the features, so that
+// one `vantail.json` reads the same everywhere - which leaves a build without
+// `network` holding network scopes nothing reads. Gating each of those would
+// make parsing depend on features; the stripped builds only have to prove
+// they compile.
+#![cfg_attr(
+    not(all(
+        feature = "database",
+        feature = "devtools",
+        feature = "hid",
+        feature = "mdns",
+        feature = "network",
+        feature = "secrets",
+        feature = "socks",
+        feature = "updater",
+        feature = "watch",
+        feature = "websocket",
+    )),
+    allow(dead_code)
+)]
 
 mod api;
 mod chrome;
