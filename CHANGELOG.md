@@ -31,6 +31,14 @@ Notable changes per release.
   - RUSTSEC-2026-0346, TLS secrets in `Debug` output of session values: only
     reachable through a custom session store, and there is none.
 
+- **Two npm advisories in the examples.** `hono` 4.13.13 in `chat`
+  ([GHSA-5r4p-p66f-jhc7](https://github.com/advisories/GHSA-5r4p-p66f-jhc7),
+  a static path decoded twice slipping past middleware) and `source-map-js`
+  1.2.2 under `tray`'s Vue compiler
+  ([GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q),
+  a crafted source map stalling the event loop). Neither is in a published
+  `@vantail/*` package; both failed the weekly `pnpm audit`.
+
 ## 0.1.25
 
 ### Added
