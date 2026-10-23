@@ -22,14 +22,23 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
+/** The `package.json` of every directory directly under `dir`. */
+async function manifests(dir) {
+  return (await readdir(join(root, dir), { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(dir, entry.name, "package.json"))
+    .filter((path) => existsSync(join(root, path)));
+}
+
 /** Every place a version is written down, and how to read or rewrite it. */
 async function sites() {
-  const packages = (
-    await readdir(join(root, "packages"), { withFileTypes: true })
-  )
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => join("packages", entry.name, "package.json"))
-    .filter((path) => existsSync(join(root, path)));
+  // The examples follow along so a release does not leave them reporting the
+  // previous version. The `create` templates do not: their 0.1.0 is the
+  // starting version of somebody's new application, not ours.
+  const packages = [
+    ...(await manifests("packages")),
+    ...(await manifests("examples")),
+  ];
 
   return [
     { path: "package.json", kind: "json" },
