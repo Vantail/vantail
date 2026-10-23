@@ -10,6 +10,10 @@ export interface AppConfig {
   name: string;
   /** Reverse-DNS bundle identifier, e.g. `dev.wissen.myapp`. */
   identifier: string;
+  /**
+   * Defaults to the `version` in the package.json beside this config, so the
+   * version is written down once. Set it here only to report something else.
+   */
   version?: string;
   /**
    * A square PNG, relative to this config file. Every icon a platform asks

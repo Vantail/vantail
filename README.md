@@ -183,7 +183,7 @@ export default defineConfig({
   app: {
     name: "My App",
     identifier: "dev.wissen.myapp",
-    version: "1.0.0",
+    // The version comes from package.json; set `version` here to override it.
   },
 
   window: { width: 1200, height: 800 },

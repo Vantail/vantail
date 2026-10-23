@@ -4,7 +4,6 @@ export default defineConfig({
   app: {
     name: "Focus",
     identifier: "dev.vantail.example.tray",
-    version: "0.1.25",
     icon: "icon.png",
   },
 

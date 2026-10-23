@@ -35,6 +35,7 @@ async function sites() {
   // The examples follow along so a release does not leave them reporting the
   // previous version. The `create` templates do not: their 0.1.0 is the
   // starting version of somebody's new application, not ours.
+  // Their configs leave `app.version` out, so package.json is the only copy.
   const packages = [
     ...(await manifests("packages")),
     ...(await manifests("examples")),

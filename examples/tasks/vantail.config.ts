@@ -4,7 +4,6 @@ export default defineConfig({
   app: {
     name: "Tasks",
     identifier: "dev.vantail.tasks",
-    version: "0.1.25",
     // A square PNG. Every size each platform asks for is scaled down from it.
     icon: "icon.png",
   },
