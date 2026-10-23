@@ -140,9 +140,13 @@ Notable changes per release.
   already knew to clear a stale socket, but looked for it in `$TMPDIR`
   while interprocess had put it in `/tmp`, and the test that would have
   noticed skipped itself on macOS. The socket now lives in the per-user
-  `$TMPDIR`, where the cleanup looks; an identifier long enough to overflow
-  a socket path there is shortened to a hash of itself. Linux and Windows,
-  whose socket names vanish with the process, are unchanged.
+  `$TMPDIR`, where the cleanup looks. Linux and Windows, whose socket names
+  vanish with the process, keep them.
+
+  An identifier too long for a socket name is shortened to a hash of
+  itself. That was not only a macOS problem: on Linux an abstract socket
+  name has the same 108-byte limit, so an identifier over about 100
+  characters never got single instance there either.
 
 - **A misspelt key in `vantail.json` is refused wherever it is.** The
   runtime read straight past unknown keys in `app`,

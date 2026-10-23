@@ -45,18 +45,30 @@ pub enum Claim {
 /// not know to clean up.
 const NAMESPACED: bool = cfg!(any(target_os = "linux", target_os = "android", windows));
 
-/// The longest socket path that is safe to bind. `sun_path` is 104 bytes on
-/// macOS, including the terminating NUL.
+/// The longest socket name that is safe to bind. `sun_path` is 104 bytes on
+/// macOS including the terminating NUL, and 108 on Linux including the
+/// leading NUL of an abstract name. Windows pipe names allow far more.
 const MAX_SOCKET_PATH: usize = 100;
+
+/// A short stand-in for an identifier too long to fit in a socket name.
+///
+/// FNV-1a, because it has to come out the same in every build that might be
+/// running at once, which `DefaultHasher` does not promise.
+fn hashed_key(identifier: &str) -> String {
+    let hash = identifier
+        .bytes()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+        });
+    format!("vantail-{hash:016x}")
+}
 
 /// Where the socket lives where there is no namespace: the per-user temp
 /// directory, so another user cannot squat on the name.
 ///
 /// That directory is long on macOS (`/var/folders/...`), so a long identifier
 /// would push the path past what a socket can bind to. Those get a hash of
-/// the identifier instead - FNV-1a, because it has to come out the same in
-/// every build that might be running at once, which `DefaultHasher` does not
-/// promise.
+/// the identifier instead.
 fn socket_path(identifier: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir();
     let path = dir.join(format!("vantail-{identifier}.sock"));
@@ -64,17 +76,17 @@ fn socket_path(identifier: &str) -> std::path::PathBuf {
         return path;
     }
 
-    let hash = identifier
-        .bytes()
-        .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
-            (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
-        });
-    dir.join(format!("vantail-{hash:016x}.sock"))
+    dir.join(format!("{}.sock", hashed_key(identifier)))
 }
 
 fn socket_name(identifier: &str) -> std::io::Result<Name<'static>> {
     if NAMESPACED {
-        return format!("vantail-{identifier}").to_ns_name::<GenericNamespaced>();
+        // An abstract name is held to the same `sun_path` as a file on Linux.
+        let mut key = format!("vantail-{identifier}");
+        if key.len() > MAX_SOCKET_PATH {
+            key = hashed_key(identifier);
+        }
+        return key.to_ns_name::<GenericNamespaced>();
     }
 
     socket_path(identifier).to_fs_name::<GenericFilePath>()
