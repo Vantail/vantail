@@ -585,6 +585,21 @@ The check is by origin, so routing and query strings within the application
 are unaffected. An `<iframe>` of another site inside the application's page is
 another origin too, and gets nothing.
 
+**On Linux that last part stops at the top-level document.** wry reports where
+a message came from by URL, and what it puts in that URL differs by platform:
+on macOS and Windows it is the frame that sent the message, so a foreign
+`<iframe>` is refused like a foreign page. WebKitGTK's script-message handler
+has no frame, and wry substitutes the top-level document's URL instead - so a
+call posted by an `<iframe>` from another origin is attributed to the
+application's own page and allowed. The bridge is injected into the top-level
+document only, but the platform object underneath it,
+`window.webkit.messageHandlers.ipc`, is reachable from every frame in the
+page. The runtime cannot tell the two apart until wry passes the frame
+through, so an application that embeds third-party frames on Linux should put
+`frame-src 'self'` (or `child-src 'self'`) in front of them, or keep those
+frames on the application's own origin. This has not been exercised on a Linux
+run.
+
 Links to other sites leave for the user's browser or mail client instead of
 taking the window with them: a web page or a `mailto:` link, whether it is a
 plain `<a href>`, has `target="_blank"`, or comes from `window.open`. Links

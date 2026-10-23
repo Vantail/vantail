@@ -340,3 +340,317 @@ await invoke("filesystem.writeText", {
     });
   },
 );
+
+/**
+ * Nothing is pushed into a page the application did not write - including one
+ * with no origin at all.
+ *
+ * A `blob:` document has no host, so an origin check written as "is this
+ * another site?" answered no and evaluated the runtime's pushes inside it.
+ * That page is scriptable: installing a `__VANTAIL__` receiver of its own was
+ * enough to be handed `window.ready`, and with it shared state and `app.emit`
+ * payloads. This navigates the application to a page from another origin,
+ * which then navigates itself to a blob document, and counts what each one
+ * received. The application's own page counts too, so a runtime that pushes
+ * to nobody cannot pass.
+ */
+describe(
+  "pushes to a page from somewhere else",
+  {
+    skip: headless
+      ? "needs a display"
+      : !runtimePath
+        ? "no runtime binary built"
+        : false,
+  },
+  () => {
+    let root;
+    let server;
+    let child;
+    /** How many pushes each page counted, by the stage that reported. */
+    const reports = {};
+
+    before(async () => {
+      root = await mkdtemp(join(tmpdir(), "vantail-pushes-"));
+
+      /** The blob page, served as text so the other page can make a blob of it. */
+      const blobPage = (here) => `<!doctype html>
+<meta charset="utf-8">
+<script>
+var received = [];
+// What the bridge installs, so a push lands here if the runtime believes
+// this page is the application's.
+window.__VANTAIL__ = { _dispatch: function (message) { received.push(message); } };
+setTimeout(function () {
+  fetch(${JSON.stringify(`${here}/report?stage=blob&pushed=`)} + received.length);
+}, 1500);
+</script>`;
+
+      server = createServer((request, response) => {
+        const url = new URL(request.url, "http://127.0.0.1");
+        const here = `http://${request.headers.host}`;
+        if (url.pathname === "/report") {
+          reports[url.searchParams.get("stage")] = url.searchParams.get("pushed");
+          response.writeHead(204);
+          return response.end();
+        }
+        if (url.pathname === "/blob.html") {
+          response.writeHead(200, { "content-type": "text/plain" });
+          return response.end(blobPage(here));
+        }
+        response.writeHead(200, { "content-type": "text/html" });
+        response.end(`<!doctype html>
+<meta charset="utf-8">
+<script>
+var received = [];
+window.__VANTAIL__ = { _dispatch: function (message) { received.push(message); } };
+setTimeout(function () {
+  fetch("${here}/report?stage=http&pushed=" + received.length);
+}, 1500);
+setTimeout(async function () {
+  var page = await (await fetch("/blob.html")).text();
+  location.href = URL.createObjectURL(new Blob([page], { type: "text/html" }));
+}, 2500);
+</script>`);
+      });
+      await new Promise((listening) =>
+        server.listen(0, "127.0.0.1", listening),
+      );
+      const foreign = `http://127.0.0.1:${server.address().port}/evil`;
+
+      await cp(
+        join(repoRoot, "packages", "api", "dist"),
+        join(root, "dist", "api"),
+        { recursive: true },
+      );
+      await writeFile(
+        join(root, "vantail.json"),
+        JSON.stringify({
+          app: {
+            name: "PushTest",
+            identifier: `dev.vantail.pushtest.${process.pid}`,
+            version: "1.0.0",
+          },
+          window: { width: 360, height: 240, visible: false },
+          distDir: "dist",
+          permissions: {
+            filesystem: { read: [`${root}/**`], write: [`${root}/**`] },
+          },
+        }),
+      );
+      // The application's own page: count the pushes it gets, record the
+      // count, then go to the other site.
+      await writeFile(
+        join(root, "dist", "index.html"),
+        `<!doctype html>
+<meta charset="utf-8">
+<script type="module">
+import { invoke } from "./api/index.js";
+let ready = 0;
+window.__VANTAIL__.subscribe((message) => {
+  if (message && message.event === "window.ready") ready += 1;
+});
+await new Promise((settle) => setTimeout(settle, 800));
+await invoke("filesystem.writeText", {
+  path: ${JSON.stringify(join(root, "own.json"))},
+  contents: String(ready),
+});
+location.href = ${JSON.stringify(foreign)};
+</script>`,
+      );
+
+      child = spawn(runtimePath, ["--config", join(root, "vantail.json")], {
+        stdio: "ignore",
+      });
+    });
+
+    after(async () => {
+      child?.kill("SIGKILL");
+      server?.close();
+      if (root && !process.env.VANTAIL_KEEP) {
+        await rm(root, {
+          recursive: true,
+          force: true,
+          maxRetries: 10,
+          retryDelay: 250,
+        }).catch(() => {});
+      }
+    });
+
+    it("still pushes to the application's own page", async () => {
+      const own = await until(
+        "the application counting a push",
+        () => readFile(join(root, "own.json"), "utf8").catch(() => undefined),
+        (contents) => contents !== undefined,
+      );
+      assert.ok(
+        Number(own) >= 1,
+        `the application's own page received ${own} pushes`,
+      );
+    });
+
+    it("pushes nothing to a page from another origin", async () => {
+      const pushed = await until(
+        "the other page reporting",
+        () => reports.http,
+        (count) => count !== undefined,
+      );
+      assert.equal(pushed, "0");
+    });
+
+    it("pushes nothing to a blob: page either", async () => {
+      const pushed = await until(
+        "the blob page reporting",
+        () => reports.blob,
+        (count) => count !== undefined,
+      );
+      assert.equal(pushed, "0");
+    });
+  },
+);
+
+/**
+ * A frame from another origin is a page from another origin.
+ *
+ * On macOS and Windows wry reports the frame that sent a message, so the
+ * runtime refuses its calls like a foreign page's. WebKitGTK has no frame on
+ * the message and reports the top-level document instead, so this cannot pass
+ * on Linux until wry passes the frame through - see the caveat in
+ * docs/permissions.md.
+ */
+describe(
+  "an iframe from another origin",
+  {
+    skip: headless
+      ? "needs a display"
+      : process.platform === "linux"
+        ? "wry reports the top-level document on WebKitGTK"
+        : !runtimePath
+          ? "no runtime binary built"
+          : false,
+  },
+  () => {
+    let root;
+    let server;
+    let child;
+    let stderr = "";
+    let frame;
+    /** What the frame said about itself. */
+    let posted;
+
+    before(async () => {
+      root = await mkdtemp(join(tmpdir(), "vantail-frame-"));
+      const stolen = join(root, "stolen-iframe.txt");
+
+      server = createServer((request, response) => {
+        const url = new URL(request.url, "http://127.0.0.1");
+        if (url.pathname === "/report") {
+          posted = true;
+          response.writeHead(204);
+          return response.end();
+        }
+        response.writeHead(200, { "content-type": "text/html" });
+        response.end(`<!doctype html>
+<meta charset="utf-8">
+<script>
+var message = JSON.stringify({
+  id: "forged-frame",
+  method: "filesystem.writeText",
+  params: { path: ${JSON.stringify(stolen)}, contents: "from an iframe" },
+});
+// The bridge is not here, but the platform's handler may be reachable from
+// any frame: post exactly what the bridge would, by hand.
+var handler =
+  window.webkit &&
+  window.webkit.messageHandlers &&
+  window.webkit.messageHandlers.ipc;
+if (handler) handler.postMessage(message);
+else if (window.ipc && window.ipc.postMessage) window.ipc.postMessage(message);
+else if (window.chrome && window.chrome.webview) {
+  window.chrome.webview.postMessage(message);
+}
+fetch("/report");
+</script>`);
+      });
+      await new Promise((listening) =>
+        server.listen(0, "127.0.0.1", listening),
+      );
+      frame = `http://127.0.0.1:${server.address().port}/frame`;
+
+      await cp(
+        join(repoRoot, "packages", "api", "dist"),
+        join(root, "dist", "api"),
+        { recursive: true },
+      );
+      await writeFile(
+        join(root, "vantail.json"),
+        JSON.stringify({
+          app: {
+            name: "FrameTest",
+            identifier: `dev.vantail.frametest.${process.pid}`,
+            version: "1.0.0",
+          },
+          window: { width: 360, height: 240, visible: false },
+          distDir: "dist",
+          permissions: {
+            filesystem: { read: [`${root}/**`], write: [`${root}/**`] },
+          },
+        }),
+      );
+      // One real call first, so a refusal later cannot be a channel that
+      // never worked.
+      await writeFile(
+        join(root, "dist", "index.html"),
+        `<!doctype html>
+<meta charset="utf-8">
+<iframe src=${JSON.stringify(frame)}></iframe>
+<script type="module">
+import { invoke } from "./api/index.js";
+await invoke("filesystem.writeText", {
+  path: ${JSON.stringify(join(root, "own.txt"))},
+  contents: "from the application",
+});
+</script>`,
+      );
+
+      child = spawn(runtimePath, ["--config", join(root, "vantail.json")], {
+        stdio: ["ignore", "ignore", "pipe"],
+      });
+      child.stderr.on("data", (chunk) => (stderr += chunk));
+    });
+
+    after(async () => {
+      child?.kill("SIGKILL");
+      server?.close();
+      if (root && !process.env.VANTAIL_KEEP) {
+        await rm(root, {
+          recursive: true,
+          force: true,
+          maxRetries: 10,
+          retryDelay: 250,
+        }).catch(() => {});
+      }
+    });
+
+    it("lets the application's own page reach the runtime", async () => {
+      const own = await until(
+        "the application's own call",
+        () => readFile(join(root, "own.txt"), "utf8").catch(() => undefined),
+        (contents) => contents !== undefined,
+      );
+      assert.equal(own, "from the application");
+    });
+
+    it("refuses a call the frame forges by hand", async () => {
+      await until("the frame running", () => posted, (seen) => seen === true);
+      await until(
+        "the runtime refusing the frame's call",
+        () => stderr,
+        (text) => text.includes(`ignored a native call from ${frame}`),
+      );
+      // Refused before dispatch, so nothing is still in flight that could
+      // write it a moment later.
+      assert.equal(existsSync(join(root, "stolen-iframe.txt")), false);
+    });
+  },
+);

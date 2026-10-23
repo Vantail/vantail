@@ -1,7 +1,12 @@
 /**
- * The Node floor is repeated across the manifests that run under Node, and in
- * the templates a new project starts from. Duplicating it is unavoidable -
- * `engines` is per package - so this is what keeps the copies honest.
+ * The Node floor is repeated across the manifests whose code runs under Node,
+ * and in the templates a new project starts from. Duplicating it is
+ * unavoidable - `engines` is per package - so this is what keeps the copies
+ * honest.
+ *
+ * That is the CLI and the scaffold, the runtime's resolver, the shared schema
+ * and the Vite plugin. `@vantail/api` and `@vantail/icons` ship code that runs
+ * in a webview or a browser, so they declare no engine and are not listed.
  *
  * 22.23.4, 24.22.1 and 26.12.1 are the releases with the Brotli decoder fix
  * (CVE-2026-111497). Node 20 is end-of-life and never receives it.

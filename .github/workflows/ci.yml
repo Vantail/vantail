@@ -172,6 +172,10 @@ jobs:
       - name: A virtual desktop for the integration tests
         if: runner.os == 'Linux'
         run: |
+          # The runner image ships with package lists that can be days old,
+          # and a stale index turns into a 404 from the mirror rather than a
+          # version that resolves.
+          sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
             xvfb xauth dbus dbus-x11 openbox gnome-keyring
 

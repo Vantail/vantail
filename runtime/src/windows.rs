@@ -269,14 +269,21 @@ impl WindowEntry {
 
     /// Push a response or event into this window.
     ///
-    /// Not while the window shows somebody else's page: broadcasts carry the
-    /// application's own data - shared state, `app.emit` payloads - and that
-    /// page was never meant to see them.
+    /// Only while the window shows one of the application's own pages:
+    /// broadcasts carry the application's own data - shared state,
+    /// `app.emit` payloads - and a page reached by a link was never meant to
+    /// see them.
+    ///
+    /// The check fails closed. A URL with no host - `about:blank` between
+    /// loads, and `blob:` and `data:` documents, which are scriptable - is not
+    /// the application's origin, so nothing is pushed to it either. Asking
+    /// "is this another site?" instead let those through, because a hostless
+    /// URL was nobody's site.
     pub fn deliver(&self, outgoing: &Outgoing) {
-        if self
+        if !self
             .webview
             .url()
-            .is_ok_and(|url| self.origins.is_foreign(&url))
+            .is_ok_and(|url| self.origins.allows(&url))
         {
             return;
         }
@@ -731,10 +738,14 @@ fn build_webview(
             move |event| drag_drop(&rt, &label, event)
         })
         .with_ipc_handler(move |request: wry::http::Request<String>| {
-            // wry reports the page that sent the message - the frame itself
-            // on macOS - so a page from anywhere else never reaches the
-            // router, whatever permissions the application holds. Not
-            // answered either: the answer could only go back to that page.
+            // wry reports the page that sent the message. On macOS and
+            // Windows that is the frame itself, so a page from anywhere else
+            // never reaches the router, whatever permissions the application
+            // holds. WebKitGTK has no frame on the message and reports the
+            // top-level document instead, so on Linux this can only prove the
+            // window is on the application's own page - see the caveat in
+            // docs/permissions.md. A refused message is not answered either:
+            // the reply could only go back to the page that sent it.
             let sender = request.uri().to_string();
             if !callers.allows(&sender) {
                 eprintln!(

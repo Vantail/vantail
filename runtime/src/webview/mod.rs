@@ -65,15 +65,6 @@ impl Origins {
         Origin::parse(url).is_some_and(|origin| self.trusted.contains(&origin))
     }
 
-    /// Whether `url` is a page from somewhere else.
-    ///
-    /// Not quite `!allows`: a URL with no origin at all - `about:blank`
-    /// between loads - is nobody's page, and a message delivered there goes
-    /// nowhere.
-    pub fn is_foreign(&self, url: &str) -> bool {
-        Origin::parse(url).is_some_and(|origin| !self.trusted.contains(&origin))
-    }
-
     /// The trusted origins as a page sees itself: `location.protocol + '//' +
     /// location.host`. Not `location.origin`, which is `"null"` for a scheme
     /// the URL standard does not know, `vantail:` included.
@@ -663,11 +654,10 @@ mod tests {
         let origins = Origins::with_dev(None);
         assert!(origins.allows(&app_url("index.html")));
         assert!(origins.allows(&app_url("settings/profile?tab=2#top")));
-        assert!(!origins.is_foreign(&app_url("index.html")));
     }
 
     #[test]
-    fn a_page_from_anywhere_else_is_foreign() {
+    fn a_page_from_anywhere_else_is_refused() {
         let origins = Origins::with_dev(None);
         for url in [
             "https://example.com/",
@@ -679,7 +669,6 @@ mod tests {
             "http://localhost/",
         ] {
             assert!(!origins.allows(url), "{url} was trusted");
-            assert!(origins.is_foreign(url), "{url} was not foreign");
         }
     }
 
@@ -703,12 +692,24 @@ mod tests {
     }
 
     #[test]
-    fn a_page_with_no_origin_is_neither_trusted_nor_foreign() {
-        let origins = Origins::with_dev(None);
-        for url in ["about:blank", "", "not a url", "data:text/html,hi"] {
+    fn a_page_with_no_origin_is_not_the_application() {
+        let origins = Origins::with_dev(Some("http://127.0.0.1:5173"));
+        for url in [
+            // Between loads.
+            "about:blank",
+            "",
+            "not a url",
+            // Scriptable, and with no host for the comparison: a page can
+            // navigate itself to one of these and keep running. Nothing may
+            // be pushed into it, so it is not the application's own.
+            "data:text/html,<script>alert(1)</script>",
+            "blob:http://127.0.0.1:5173/1b6a2f7c",
+        ] {
             assert!(!origins.allows(url), "{url} was trusted");
-            assert!(!origins.is_foreign(url), "{url} was foreign");
         }
+        // Its creator's origin is still trusted; it is the blob document,
+        // which has no host of its own, that is nobody the runtime knows.
+        assert!(origins.allows("http://127.0.0.1:5173/evil"));
     }
 
     #[test]

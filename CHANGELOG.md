@@ -2,6 +2,29 @@
 
 Notable changes per release.
 
+## Unreleased
+
+### Security
+
+- **Nothing is pushed into a page without an origin either.** The origin guard
+  treated a URL with no host as "not another site", so `blob:`, `data:` and
+  `about:blank` documents still received everything the runtime broadcasts.
+  A `blob:` page is scriptable: navigating the window to one and installing a
+  `__VANTAIL__` receiver of its own was enough to be handed `window.ready`,
+  and with it shared state and `app.emit` payloads. Pushes are now delivered
+  only to the application's own origin and dropped for everything else, so a
+  document the application did not write is not a recipient.
+
+- **A cross-origin `<iframe>` can still reach the IPC channel on Linux.** wry
+  reports the page a message came from by URL: the frame on macOS and
+  Windows, but the top-level document on WebKitGTK, whose handler carries no
+  frame. Calls posted by an embedded frame from another origin are therefore
+  attributed to the application's own page there. No check the runtime can
+  make will tell the two apart until wry passes the frame through; an
+  application that embeds third-party frames on Linux should use a
+  `frame-src 'self'` CSP. See
+  [permissions](docs/permissions.md#only-the-applications-own-pages).
+
 ## 0.1.26
 
 ### Security
