@@ -72,6 +72,9 @@ OPTIONS:
     -c, --config <PATH>    Path to vantail.json
                            (default: $VANTAIL_CONFIG, then next to the
                            executable, then ./vantail.json)
+        --check            Read and validate the config, then exit without
+                           opening anything. Exit status 1 and the reason on
+                           stderr when the runtime would refuse to start.
     -V, --version          Print the runtime version
         --features         Print the capabilities this build was compiled with
     -h, --help             Print this message
@@ -109,7 +112,11 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
-    let Some(config_path) = parse_args()? else {
+    let Some(Args {
+        config: config_path,
+        check,
+    }) = parse_args()?
+    else {
         return Ok(()); // --help / --version already printed.
     };
 
@@ -119,6 +126,17 @@ fn run() -> Result<(), String> {
     // fix it.
     for protocol in &loaded.config.protocols {
         deeplink::is_valid_scheme(protocol)?;
+    }
+
+    // Everything the config can be refused for happens before a window is
+    // involved: the parse above, and compiling the permissions, which
+    // `Runtime::new` does again for real. That is the whole of what a check
+    // needs, and what lets the CLI's config tests ask this parser rather than
+    // a copy of it.
+    if check {
+        let vars = permissions::Vars::resolve(&loaded.config.app.identifier, &loaded.dist_dir);
+        permissions::Permissions::compile(&loaded.config.permissions, &vars)?;
+        return Ok(());
     }
 
     // A previous version left behind by `updater.install` can only be removed
@@ -575,10 +593,17 @@ fn worker_count() -> usize {
         .unwrap_or(4)
 }
 
+struct Args {
+    config: PathBuf,
+    /// `--check`: validate the config and exit.
+    check: bool,
+}
+
 /// Returns `Ok(None)` when the process should exit quietly (`--help`).
-fn parse_args() -> Result<Option<PathBuf>, String> {
+fn parse_args() -> Result<Option<Args>, String> {
     let mut args = std::env::args().skip(1);
     let mut config: Option<PathBuf> = None;
+    let mut check = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -594,6 +619,7 @@ fn parse_args() -> Result<Option<PathBuf>, String> {
                 println!("{}", features().join(" "));
                 return Ok(None);
             }
+            "--check" => check = true,
             "-c" | "--config" => {
                 let value = args
                     .next()
@@ -618,5 +644,5 @@ fn parse_args() -> Result<Option<PathBuf>, String> {
                 .to_string()
         })?;
 
-    Ok(Some(config))
+    Ok(Some(Args { config, check }))
 }

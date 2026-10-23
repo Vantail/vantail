@@ -22,6 +22,14 @@ Notable changes per release.
   Routing and query strings within the application are unaffected. See
   [permissions](docs/permissions.md#only-the-applications-own-pages).
 
+### Added
+
+- **`vantail-runtime --check`.** Reads and validates a `vantail.json`
+  exactly as a launch would - the parse and compiling the permissions - and
+  exits without opening a window: status 0, or 1 with the reason on stderr.
+  For checking a hand-written or generated config before shipping it, and
+  what the config contract test below runs against.
+
 ### Changed
 
 - **Links to other sites open in the user's browser.** A plain
@@ -56,7 +64,32 @@ Notable changes per release.
   the default build only, where every capability is in, and the stripped
   builds run with `-D warnings`.
 
+- **The CLI's config schema and the runtime's parser are tested against each
+  other.** `vantail.config.ts` is checked by the Zod schema, turned into
+  `vantail.json`, and parsed again by the runtime; nothing made the two
+  agree. `scripts/test/config-contract.test.js` runs each case through
+  `parseConfig`, `buildRuntimeConfig` and `vantail-runtime --check` and
+  requires the same verdict, puts a misspelt key into every object of a
+  config that uses every key and requires both to refuse it, and fails when
+  a key the schema knows is used by no case - so a key added on one side
+  only cannot pass until the other side has it. The few rules only the
+  schema enforces are listed with why, and checked to still hold.
+  Contributors only; nothing that ships changes.
+
 ### Fixed
+
+- **A misspelt key in `vantail.json` is refused wherever it is.** The
+  runtime read straight past unknown keys in `app`,
+  `window.trafficLightPosition`, `window.borderRadius`, the object forms of
+  the filesystem scopes, `clipboard`, `database` and shell argument
+  patterns and `cwd`, and in every menu item - so `"verison"` or
+  `"acelerator"` in a hand-written config started fine and did nothing. The
+  CLI's schema already refused these, so a config made from
+  `vantail.config.ts` is unaffected. Menus from `@vantail/api` go through
+  the same parser: a `menu.set`, `menu.popup` or `tray.setMenu` call with
+  an unknown key on an item now rejects with `INVALID_PARAMS` instead of
+  ignoring it. TypeScript already flags such a key; plain JavaScript gets
+  the error at run time.
 
 - **Certificates chaining through the distrusted emSign intermediates are
   rejected.** The private keys behind those intermediates are now public,

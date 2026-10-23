@@ -223,6 +223,23 @@ vantail.config.ts --(@vantail/shared/load)--> validated config
 The runtime finds its config next to the executable, in `resources/`, or at
 `../Resources/` for a macOS bundle - so a packaged app needs no arguments.
 
+That makes two parsers for one format: the Zod schema the CLI validates with,
+and serde in the runtime. Both refuse a key they do not know, at every depth,
+so a misspelt setting is an error rather than something that silently does
+nothing. `vantail-runtime --check --config <path>` runs everything the runtime
+would refuse a config for - the parse and compiling the permissions - and
+exits without opening a window, and `scripts/test/config-contract.test.js`
+uses it to hold the two together: each case goes through `parseConfig`, then
+`buildRuntimeConfig`, then `--check`, and both verdicts have to match. The
+cases must use every key the schema knows, so a key added on one side only
+fails the test until the other side has it too.
+
+A few rules live in the schema alone, on purpose: a malformed colour, a
+negative corner radius, an unknown predefined menu item or accelerator. The
+runtime's job is to start, so it drops the bad part and says so on stderr
+rather than refusing to open over something cosmetic. The test lists these
+and checks each is still tolerated, so the list cannot drift either.
+
 ## The bundle
 
 ```text
