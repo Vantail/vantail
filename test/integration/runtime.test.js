@@ -34,9 +34,10 @@ const autostartEntry =
         "autostart/dev.vantail.integration.desktop",
       );
 
-// Linux is skipped by default: these open real windows, and WebKitGTK under
-// Xvfb is not something this project has verified. Set VANTAIL_FORCE_INTEGRATION
-// to try it anyway.
+// Linux is skipped by default: these open real windows, and need a window
+// manager and a D-Bus session as well as a display - which a Linux shell often
+// lacks. CI and `scripts/linux/run` provide all three (Xvfb, openbox, a session
+// with GNOME Keyring) and set VANTAIL_FORCE_INTEGRATION=1.
 const headless =
   process.env.VANTAIL_SKIP_INTEGRATION === "1" ||
   (process.platform === "linux" &&
@@ -1545,9 +1546,10 @@ try {
   // This runtime is unpackaged, so the honest answer is that it cannot.
   results.autostartCode = (await failure(autostart.enable())).code;
 
-  // Not every machine has one. A container, and a Linux CI runner, have no
-  // Secret Service running - the runtime says UNSUPPORTED, which is the right
-  // answer and not something to fail over.
+  // Not every machine has one. A Linux box with no keyring running - a bare
+  // container, say - has no Secret Service, and the runtime says UNSUPPORTED,
+  // which is the right answer and not something to fail over. CI starts GNOME
+  // Keyring so this path is exercised there.
   const storeProbe = await failure(secrets.get(secretKey));
   results.secretsUnsupported = storeProbe.code === "UNSUPPORTED";
 

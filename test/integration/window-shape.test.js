@@ -27,8 +27,8 @@ import { resolveRuntimeBinary } from "@vantail/runtime";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 // Linux is skipped by default for the same reason as the rest of the suite:
-// these open real windows, and WebKitGTK under Xvfb is not something this
-// project has verified.
+// these open real windows, and need a window manager and a D-Bus session as
+// well as a display. See `test/integration/runtime.test.js`.
 const headless =
   process.env.VANTAIL_SKIP_INTEGRATION === "1" ||
   (process.platform === "linux" &&

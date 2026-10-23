@@ -76,6 +76,17 @@ Notable changes per release.
   schema enforces are listed with why, and checked to still hold.
   Contributors only; nothing that ships changes.
 
+- **The integration suite runs on Linux in CI.** It used to skip there,
+  because the runner has no desktop - so the webview, windows, menus, the
+  origin checks and everything else that needs a real window had only ever
+  been tested on macOS and Windows. The Linux job now gives it one: Xvfb
+  for a display, openbox to manage windows (maximising needs a window
+  manager), and a D-Bus session with GNOME Keyring as the Secret Service,
+  so the secrets test exercises the keyring's Linux path instead of
+  skipping. All 93 tests pass on Ubuntu 22.04, the runner's image.
+  `scripts/linux/run` does the same locally, now including the keyring.
+  Contributors only; nothing that ships changes.
+
 ### Fixed
 
 - **A misspelt key in `vantail.json` is refused wherever it is.** The

@@ -78,7 +78,14 @@ scripts/linux/run shell      # a prompt inside the container
 
 The container brings its own virtual display and window manager. The window
 manager is not optional: maximising is something a window manager does, and
-without one a window never changes size.
+without one a window never changes size. It also starts GNOME Keyring in a
+D-Bus session, so the secrets test runs against a real Secret Service.
+
+CI's Linux job runs the integration suite the same way - Xvfb, openbox and the
+keyring - so a Linux-only failure shows up on the pull request rather than on
+somebody's desktop. On a Linux machine of your own the suite skips unless
+`VANTAIL_FORCE_INTEGRATION=1` is set, since a shell there may have a display
+but no window manager.
 
 ## Building the runtime for other platforms
 

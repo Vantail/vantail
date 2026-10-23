@@ -33,9 +33,10 @@ import { resolveRuntimeBinary } from "@vantail/runtime";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-// Linux is skipped by default: these open real windows, and WebKitGTK under
-// Xvfb is not something this project has verified. Set VANTAIL_FORCE_INTEGRATION
-// to try it anyway.
+// Linux is skipped by default: these open real windows, and need a window
+// manager and a D-Bus session as well as a display - which a Linux shell often
+// lacks. CI and `scripts/linux/run` provide all three (Xvfb, openbox, a session
+// with GNOME Keyring) and set VANTAIL_FORCE_INTEGRATION=1.
 const headless =
   process.env.VANTAIL_SKIP_INTEGRATION === "1" ||
   (process.platform === "linux" && process.env.VANTAIL_FORCE_INTEGRATION !== "1");

@@ -65,8 +65,12 @@ case "${1:-all}" in
       # A display and a window manager: without the latter, maximising does
       # nothing and the window-size tests fail for a reason that is not about
       # this code.
+      # The keyring is the Secret Service, so the secrets test runs rather
+      # than skips - the same as the CI step.
       xvfb-run -a --server-args="-screen 0 1400x1000x24" dbus-run-session -- bash -c "
+        printf throwaway | gnome-keyring-daemon --unlock --components=secrets >/dev/null
         openbox 2>/dev/null &
+        # Covers both: the keyring claims its bus name after --unlock returns.
         sleep 2
         node --test --test-concurrency=1 --test-timeout=240000 test/integration/*.test.js
       "
