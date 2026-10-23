@@ -16,9 +16,11 @@ Notable changes per release.
   document the application did not write is not a recipient.
 
 - **A cross-origin `<iframe>` can still reach the IPC channel on Linux.** wry
-  reports the page a message came from by URL: the frame on macOS and
-  Windows, but the top-level document on WebKitGTK, whose handler carries no
-  frame. Calls posted by an embedded frame from another origin are therefore
+  reports the page a message came from by URL: the frame on macOS, but the
+  top-level document on WebKitGTK, whose handler carries no frame. (On
+  Windows a frame's message never reaches the runtime: WebView2 delivers it
+  to an event wry does not listen to.) Calls posted by an embedded frame from
+  another origin are therefore
   attributed to the application's own page there. No check the runtime can
   make will tell the two apart until wry passes the frame through; an
   application that embeds third-party frames on Linux should use a

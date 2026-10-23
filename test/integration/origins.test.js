@@ -643,13 +643,25 @@ await invoke("filesystem.writeText", {
 
     it("refuses a call the frame forges by hand", async () => {
       await until("the frame running", () => posted, (seen) => seen === true);
-      await until(
-        "the runtime refusing the frame's call",
-        () => stderr,
-        (text) => text.includes(`ignored a native call from ${frame}`),
-      );
-      // Refused before dispatch, so nothing is still in flight that could
-      // write it a moment later.
+      if (process.platform === "win32") {
+        // WebView2 hands a frame's `postMessage` to that frame's own
+        // `WebMessageReceived`, and wry subscribes to the top-level one only:
+        // the call never reaches the runtime, so there is no refusal to log.
+        // The frame does have `window.ipc` and `chrome.webview` - it posts,
+        // and nothing arrives. Allow far longer than a delivered message
+        // takes, then check that nothing ran.
+        await new Promise((settle) => setTimeout(settle, 2000));
+      } else {
+        // WKWebView delivers it, attributed to the frame, and the runtime
+        // refuses it by origin.
+        await until(
+          "the runtime refusing the frame's call",
+          () => stderr,
+          (text) => text.includes(`ignored a native call from ${frame}`),
+        );
+      }
+      // Refused before dispatch, or never delivered: either way nothing is
+      // still in flight that could write it a moment later.
       assert.equal(existsSync(join(root, "stolen-iframe.txt")), false);
     });
   },

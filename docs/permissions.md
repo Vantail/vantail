@@ -587,8 +587,11 @@ another origin too, and gets nothing.
 
 **On Linux that last part stops at the top-level document.** wry reports where
 a message came from by URL, and what it puts in that URL differs by platform:
-on macOS and Windows it is the frame that sent the message, so a foreign
-`<iframe>` is refused like a foreign page. WebKitGTK's script-message handler
+on macOS it is the frame that sent the message, so a foreign `<iframe>` is
+refused like a foreign page. On Windows a frame's message never reaches the
+runtime at all - WebView2 delivers it to that frame's own event, which wry
+does not listen to - so a foreign `<iframe>` gets nothing there either, though
+neither does one of the application's own. WebKitGTK's script-message handler
 has no frame, and wry substitutes the top-level document's URL instead - so a
 call posted by an `<iframe>` from another origin is attributed to the
 application's own page and allowed. The bridge is injected into the top-level
