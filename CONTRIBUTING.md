@@ -2,7 +2,9 @@
 
 ## Getting set up
 
-Node 20.19 or newer, pnpm, and Rust 1.99. The Rust version is pinned in
+Node 22.23.4 or newer, pnpm, and Rust 1.99 - 24.x needs 24.22.1+ and 26.x
+needs 26.12.1+, the releases with the Brotli decoder fix. Node 20 is
+end-of-life and no longer supported. The Rust version is pinned in
 [`rust-toolchain.toml`](rust-toolchain.toml), so `rustup` installs and selects
 it for you the first time you build here - there is nothing to choose. A cargo
 that does not come from rustup ignores that file, so check `cargo --version`

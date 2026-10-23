@@ -6,6 +6,12 @@ Notable changes per release.
 
 ### Security
 
+- **The minimum Node.js is now a release with the Brotli decoder fix
+  (CVE-2026-111497).** The supported lines are 22.23.4+, 24.22.1+ and
+  26.12.1+; Node 20 is end-of-life and will not receive the fix. This is a
+  development-toolchain requirement only: applications ship the Rust runtime
+  and never include Node.js.
+
 - **A page from another site no longer gets the application's
   permissions.** A window that followed a link, a redirect or a mistyped URL
   to somebody else's page kept the bridge and the IPC channel, and the
