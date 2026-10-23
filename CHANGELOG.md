@@ -2,31 +2,6 @@
 
 Notable changes per release.
 
-## Unreleased
-
-### Security
-
-- **Nothing is pushed into a page without an origin either.** The origin guard
-  treated a URL with no host as "not another site", so `blob:`, `data:` and
-  `about:blank` documents still received everything the runtime broadcasts.
-  A `blob:` page is scriptable: navigating the window to one and installing a
-  `__VANTAIL__` receiver of its own was enough to be handed `window.ready`,
-  and with it shared state and `app.emit` payloads. Pushes are now delivered
-  only to the application's own origin and dropped for everything else, so a
-  document the application did not write is not a recipient.
-
-- **A cross-origin `<iframe>` can still reach the IPC channel on Linux.** wry
-  reports the page a message came from by URL: the frame on macOS, but the
-  top-level document on WebKitGTK, whose handler carries no frame. (On
-  Windows a frame's message never reaches the runtime: WebView2 delivers it
-  to an event wry does not listen to.) Calls posted by an embedded frame from
-  another origin are therefore
-  attributed to the application's own page there. No check the runtime can
-  make will tell the two apart until wry passes the frame through; an
-  application that embeds third-party frames on Linux should use a
-  `frame-src 'self'` CSP. See
-  [permissions](docs/permissions.md#only-the-applications-own-pages).
-
 ## 0.1.26
 
 ### Security
@@ -53,6 +28,27 @@ Notable changes per release.
   Routing and query strings within the application are unaffected. See
   [permissions](docs/permissions.md#only-the-applications-own-pages).
 
+- **Nothing is pushed into a page without an origin either.** The origin guard
+  treated a URL with no host as "not another site", so `blob:`, `data:` and
+  `about:blank` documents still received everything the runtime broadcasts.
+  A `blob:` page is scriptable: navigating the window to one and installing a
+  `__VANTAIL__` receiver of its own was enough to be handed `window.ready`,
+  and with it shared state and `app.emit` payloads. Pushes are now delivered
+  only to the application's own origin and dropped for everything else, so a
+  document the application did not write is not a recipient.
+
+- **A cross-origin `<iframe>` can still reach the IPC channel on Linux.** wry
+  reports the page a message came from by URL: the frame on macOS, but the
+  top-level document on WebKitGTK, whose handler carries no frame. (On
+  Windows a frame's message never reaches the runtime: WebView2 delivers it
+  to an event wry does not listen to.) Calls posted by an embedded frame from
+  another origin are therefore
+  attributed to the application's own page there. No check the runtime can
+  make will tell the two apart until wry passes the frame through; an
+  application that embeds third-party frames on Linux should use a
+  `frame-src 'self'` CSP. See
+  [permissions](docs/permissions.md#only-the-applications-own-pages).
+
 ### Added
 
 - **`vantail-runtime --check`.** Reads and validates a `vantail.json`
@@ -62,6 +58,21 @@ Notable changes per release.
   what the config contract test below runs against.
 
 ### Changed
+
+- **`app.version` defaults to the version in `package.json`.** A config
+  that left it out shipped as `0.0.0` - in the bundle, the installers, the
+  updater manifest and `app.version()` - and one that set it kept a second
+  copy of the version to forget on every release. Leave it out and the
+  `version` from the `package.json` next to `vantail.config.ts` is used;
+  set it to report something else. The `create` templates no longer write
+  it, so a new application has its version in one place.
+
+- **The examples report the release they belong to.** Their versions were
+  bumped by hand and fell behind - the showcase called itself 0.1.25 on a
+  0.1.26 runtime. They now take their version from their own
+  `package.json`, which `scripts/version.mjs` sets along with everything
+  else, and `--check` fails when one is left behind. Contributors only;
+  nothing that ships changes.
 
 - **Links to other sites open in the user's browser.** A plain
   `<a href="https://...">` used to take the application's whole window to
@@ -119,6 +130,19 @@ Notable changes per release.
   Contributors only; nothing that ships changes.
 
 ### Fixed
+
+- **Single instance survives an unclean exit on macOS.** An application
+  that did not get to remove its socket - a crash, a force quit, or a
+  development server stopped underneath it - left the file behind, and
+  every later launch failed to claim it with `Address already in use`. It
+  then ran without single-instance handling, so a second launch or a deep
+  link opened a second copy instead of reaching the first. The runtime
+  already knew to clear a stale socket, but looked for it in `$TMPDIR`
+  while interprocess had put it in `/tmp`, and the test that would have
+  noticed skipped itself on macOS. The socket now lives in the per-user
+  `$TMPDIR`, where the cleanup looks; an identifier long enough to overflow
+  a socket path there is shortened to a hash of itself. Linux and Windows,
+  whose socket names vanish with the process, are unchanged.
 
 - **A misspelt key in `vantail.json` is refused wherever it is.** The
   runtime read straight past unknown keys in `app`,
