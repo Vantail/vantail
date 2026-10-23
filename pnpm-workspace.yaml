@@ -1,3 +1,14 @@
 packages:
   - "packages/*"
   - "examples/*"
+
+# Packages whose install scripts may run. pnpm runs none by default; esbuild
+# needs its postinstall to put the right platform binary in place.
+onlyBuiltDependencies:
+  - esbuild
+
+# Install scripts deliberately not run. @parcel/watcher (through the Tailwind
+# CLI in the chat example) ships prebuilt binaries; its script only compiles
+# from source when none fits.
+ignoredBuiltDependencies:
+  - "@parcel/watcher"

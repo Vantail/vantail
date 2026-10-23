@@ -29,10 +29,5 @@
     "@vantail/runtime": "workspace:*",
     "typescript": "^7.0.0",
     "yaml": "^2.9.1"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
   }
 }
