@@ -14,7 +14,7 @@ use std::io::{BufRead, BufReader, Write};
 
 use interprocess::local_socket::traits::{ListenerExt as _, Stream as _};
 use interprocess::local_socket::{
-    GenericFilePath, GenericNamespaced, ListenerOptions, Name, NameType, Stream, ToFsName, ToNsName,
+    GenericFilePath, GenericNamespaced, ListenerOptions, Name, Stream, ToFsName, ToNsName,
 };
 use serde::{Deserialize, Serialize};
 use tao::event_loop::EventLoopProxy;
@@ -36,19 +36,56 @@ pub enum Claim {
     HandedOver,
 }
 
-/// Where the socket lives.
+/// Whether socket names live in a namespace that goes away with the process:
+/// Linux's abstract namespace, or Windows' named pipes.
 ///
-/// Linux and Windows have a namespace for these; macOS does not, so it gets a
-/// path in the temp directory instead.
+/// Not `GenericNamespaced::is_supported()`: interprocess says yes on macOS
+/// too, and fakes the namespace there with a file in /tmp - a file that
+/// outlives any process that does not unlink it, and one this module would
+/// not know to clean up.
+const NAMESPACED: bool = cfg!(any(target_os = "linux", target_os = "android", windows));
+
+/// The longest socket name that is safe to bind. `sun_path` is 104 bytes on
+/// macOS including the terminating NUL, and 108 on Linux including the
+/// leading NUL of an abstract name. Windows pipe names allow far more.
+const MAX_SOCKET_PATH: usize = 100;
+
+/// A short stand-in for an identifier too long to fit in a socket name.
+///
+/// FNV-1a, because it has to come out the same in every build that might be
+/// running at once, which `DefaultHasher` does not promise.
+fn hashed_key(identifier: &str) -> String {
+    let hash = identifier
+        .bytes()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+        });
+    format!("vantail-{hash:016x}")
+}
+
+/// Where the socket lives where there is no namespace: the per-user temp
+/// directory, so another user cannot squat on the name.
+///
+/// That directory is long on macOS (`/var/folders/...`), so a long identifier
+/// would push the path past what a socket can bind to. Those get a hash of
+/// the identifier instead.
 fn socket_path(identifier: &str) -> std::path::PathBuf {
-    let key = format!("vantail-{identifier}");
-    std::env::temp_dir().join(format!("{key}.sock"))
+    let dir = std::env::temp_dir();
+    let path = dir.join(format!("vantail-{identifier}.sock"));
+    if path.as_os_str().len() <= MAX_SOCKET_PATH {
+        return path;
+    }
+
+    dir.join(format!("{}.sock", hashed_key(identifier)))
 }
 
 fn socket_name(identifier: &str) -> std::io::Result<Name<'static>> {
-    let key = format!("vantail-{identifier}");
-
-    if GenericNamespaced::is_supported() {
+    if NAMESPACED {
+        // An abstract name is held to the same `sun_path` as a file on Linux.
+        let mut key = format!("vantail-{identifier}");
+        if key.len() > MAX_SOCKET_PATH {
+            key = hashed_key(identifier);
+        }
         return key.to_ns_name::<GenericNamespaced>();
     }
 
@@ -62,7 +99,7 @@ fn socket_name(identifier: &str) -> std::io::Result<Name<'static>> {
 /// Windows use vanish with the process, so there is nothing to clean. Missing
 /// files are fine: that just means there was nothing stale.
 fn remove_stale_socket(identifier: &str) {
-    if GenericNamespaced::is_supported() {
+    if NAMESPACED {
         return;
     }
 
@@ -225,7 +262,7 @@ mod tests {
         // A crash or SIGKILL leaves the macOS socket file behind with nobody
         // listening. The next launch used to fail with
         // `Address already in use (os error 48)`; it must reclaim the name.
-        if GenericNamespaced::is_supported() {
+        if NAMESPACED {
             return;
         }
 
@@ -249,6 +286,47 @@ mod tests {
             matches!(primary, Claim::Primary(_)),
             "nobody is listening, so this launch is primary"
         );
+        drop(primary);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn the_socket_is_bound_where_a_stale_one_is_cleaned_up() {
+        // The cleanup only helps if it removes the file the listener actually
+        // created. On macOS it once looked in $TMPDIR while the socket sat in
+        // /tmp, so every unclean exit blocked single-instance for good.
+        if NAMESPACED {
+            return;
+        }
+
+        let id = unique_id("bound");
+        let primary = claim(&id, vec![]).expect("first claim is primary");
+        assert!(matches!(primary, Claim::Primary(_)));
+        assert!(
+            socket_path(&id).exists(),
+            "the listener should be at socket_path"
+        );
+        drop(primary);
+    }
+
+    #[test]
+    fn a_long_identifier_still_fits_in_a_socket_path() {
+        let id = format!("com.example.{}", "very-long-segment.".repeat(8));
+        let path = socket_path(&id);
+        assert!(
+            path.as_os_str().len() <= MAX_SOCKET_PATH,
+            "{}",
+            path.display()
+        );
+        assert_eq!(
+            path,
+            socket_path(&id),
+            "the same identifier gives the same path"
+        );
+        assert_ne!(path, socket_path(&format!("{id}x")));
+
+        let primary = claim(&id, vec![]).expect("a long identifier can still claim");
+        assert!(matches!(primary, Claim::Primary(_)));
         drop(primary);
     }
 }

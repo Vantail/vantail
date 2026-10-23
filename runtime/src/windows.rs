@@ -98,6 +98,9 @@ pub struct WindowEntry {
     /// for when we set the frame ourselves.
     pub restore_frame: Option<(f64, f64, f64, f64)>,
 
+    /// The pages allowed to hear from the runtime. See `webview::Origins`.
+    pub origins: webview::Origins,
+
     pub webview: WebView,
     pub window: Window,
 }
@@ -265,7 +268,25 @@ impl WindowEntry {
     }
 
     /// Push a response or event into this window.
+    ///
+    /// Only while the window shows one of the application's own pages:
+    /// broadcasts carry the application's own data - shared state,
+    /// `app.emit` payloads - and a page reached by a link was never meant to
+    /// see them.
+    ///
+    /// The check fails closed. A URL with no host - `about:blank` between
+    /// loads, and `blob:` and `data:` documents, which are scriptable - is not
+    /// the application's origin, so nothing is pushed to it either. Asking
+    /// "is this another site?" instead let those through, because a hostless
+    /// URL was nobody's site.
     pub fn deliver(&self, outgoing: &Outgoing) {
+        if !self
+            .webview
+            .url()
+            .is_ok_and(|url| self.origins.allows(&url))
+        {
+            return;
+        }
         if let Err(error) = self.webview.evaluate_script(&outgoing.to_script()) {
             eprintln!("vantail: could not reach window `{}`: {error}", self.label);
         }
@@ -428,12 +449,14 @@ impl WindowManager {
             TitleBarStyle::Hidden => titlebar::metrics_for(native, height, !buttons_hidden),
             TitleBarStyle::Default => titlebar::Metrics::none(),
         };
+        let origins = webview::Origins::new(rt);
         let webview = build_webview(
             rt,
             &window,
             proxy,
             label,
             url,
+            &origins,
             Presentation {
                 title_bar,
                 background: config
@@ -483,6 +506,7 @@ impl WindowManager {
             restore_frame: None,
             focused: false,
             size,
+            origins,
             webview,
             window,
         });
@@ -678,6 +702,7 @@ fn build_webview(
     proxy: EventLoopProxy<UserEvent>,
     label: &str,
     url: &str,
+    origins: &webview::Origins,
     look: Presentation,
 ) -> Result<WebView, String> {
     let resources = webview::Resources::new(&rt.resource_dir);
@@ -685,9 +710,18 @@ fn build_webview(
     let source = label.to_string();
     let loaded_label = label.to_string();
     let load_proxy = proxy.clone();
+    let callers = origins.clone();
+    let popups = origins.clone();
+    let popup_label = label.to_string();
 
     let builder = WebViewBuilder::new()
-        .with_initialization_script(webview::init_script(rt, label, look.title_bar, look.scroll))
+        .with_initialization_script(webview::init_script(
+            rt,
+            label,
+            origins,
+            look.title_bar,
+            look.scroll,
+        ))
         .with_devtools(devtools)
         // A desktop app's background window is not a browser tab that nobody
         // is looking at: it may be doing work on purpose, and a window that
@@ -704,6 +738,22 @@ fn build_webview(
             move |event| drag_drop(&rt, &label, event)
         })
         .with_ipc_handler(move |request: wry::http::Request<String>| {
+            // wry reports the page that sent the message. On macOS and
+            // Windows that is the frame itself, so a page from anywhere else
+            // never reaches the router, whatever permissions the application
+            // holds. WebKitGTK has no frame on the message and reports the
+            // top-level document instead, so on Linux this can only prove the
+            // window is on the application's own page - see the caveat in
+            // docs/permissions.md. A refused message is not answered either:
+            // the reply could only go back to the page that sent it.
+            let sender = request.uri().to_string();
+            if !callers.allows(&sender) {
+                eprintln!(
+                    "vantail: ignored a native call from {sender} in window `{source}`; \
+                     only the application's own pages can use the native API"
+                );
+                return;
+            }
             let body = request.into_body();
             // The label is stamped on here rather than sent by JavaScript, so
             // a window cannot claim to be a different one.
@@ -722,6 +772,23 @@ fn build_webview(
             // A closed event loop means we are shutting down; the message has
             // nowhere useful to go.
             let _ = proxy.send_event(message);
+        })
+        // `target="_blank"` and `window.open` would otherwise get a bare
+        // window of the platform's making: no bridge, no title, no way for
+        // the application to manage it. A web page or a mail link goes to
+        // the user's browser or mail client instead, where it has an address
+        // bar; anything else is refused. A window of the application's own is
+        // `createWindow`.
+        .with_new_window_req_handler(move |url, _features| {
+            if !popups.allows(&url) && webview::opens_externally(&url) {
+                webview::open_externally(&url);
+            } else {
+                eprintln!(
+                    "vantail: window `{popup_label}` tried to open {url} in a new window; \
+                     use `createWindow` for a window of the application's own"
+                );
+            }
+            wry::NewWindowResponse::Deny
         })
         .with_on_page_load_handler(move |event, _url| {
             // A window exists before its page does. Announcing readiness is

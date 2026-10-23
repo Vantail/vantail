@@ -62,7 +62,7 @@ pub struct Config {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AppConfig {
     pub name: String,
     pub identifier: String,
@@ -247,7 +247,7 @@ pub enum BorderRadius {
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Corners {
     pub top_left: Option<f64>,
     pub top_right: Option<f64>,
@@ -303,7 +303,7 @@ impl BorderRadius {
 
 /// A position in logical pixels, for nudging the traffic lights.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Inset {
     pub x: f64,
     /// How far down, or `None` to leave them centred in the bar.
@@ -435,6 +435,66 @@ impl LoadedConfig {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_misspelt_key_is_refused_wherever_it_is() {
+        // The schema the CLI checks with refuses all of these, and the
+        // runtime used to read straight past them - a setting someone wrote
+        // that silently did nothing. `scripts/test/config-contract.test.js`
+        // tries every object against both; these are the ones that slipped.
+        let app = serde_json::json!({ "name": "A", "identifier": "dev.test.a" });
+        for (section, value) in [
+            (
+                "app",
+                serde_json::json!({ "name": "A", "identifier": "dev.test.a", "verison": "1" }),
+            ),
+            (
+                "window",
+                serde_json::json!({ "borderRadius": { "topLeft": 4, "topLft": 4 } }),
+            ),
+            (
+                "window",
+                serde_json::json!({ "trafficLightPosition": { "x": 1, "z": 2 } }),
+            ),
+            (
+                "permissions",
+                serde_json::json!({ "filesystem": { "read": { "alow": [] } } }),
+            ),
+            (
+                "permissions",
+                serde_json::json!({ "clipboard": { "raed": true } }),
+            ),
+            (
+                "permissions",
+                serde_json::json!({ "database": { "encrypted": true } }),
+            ),
+            (
+                "permissions",
+                serde_json::json!({ "shell": { "allow": [
+                { "program": "git", "args": [{ "patern": "x" }] }
+            ] } }),
+            ),
+            (
+                "menu",
+                serde_json::json!([{ "type": "normal", "id": "a", "label": "A", "acelerator": "Ctrl+A" }]),
+            ),
+            (
+                "menu",
+                serde_json::json!([{ "type": "separator", "label": "x" }]),
+            ),
+        ] {
+            let mut config = serde_json::json!({ "app": app });
+            if section == "app" {
+                config["app"] = value.clone();
+            } else {
+                config[section] = value.clone();
+            }
+            assert!(
+                serde_json::from_value::<Config>(config).is_err(),
+                "{section}: {value} was accepted"
+            );
+        }
+    }
+
     #[test]
     fn an_app_is_in_the_dock_unless_it_says_otherwise() {
         // The CLI leaves `showInDock` out entirely when nobody set it, so the

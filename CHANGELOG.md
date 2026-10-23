@@ -2,7 +2,249 @@
 
 Notable changes per release.
 
-## Unreleased
+## 0.1.26
+
+### Security
+
+- **The minimum Node.js is now a release with the Brotli decoder fix
+  (CVE-2026-111497).** The supported lines are 22.23.4+, 24.22.1+ and
+  26.12.1+; Node 20 is end-of-life and will not receive the fix. This is a
+  development-toolchain requirement only: applications ship the Rust runtime
+  and never include Node.js.
+
+- **A page from another site no longer gets the application's
+  permissions.** A window that followed a link, a redirect or a mistyped URL
+  to somebody else's page kept the bridge and the IPC channel, and the
+  runtime answered that page's calls exactly as it answered the
+  application's: whatever `filesystem`, `shell`, `secrets` or `network`
+  scope the application held, that page held too, and it received shared
+  state and `app.emit` broadcasts. Reproduced on Windows: a page served from
+  another origin wrote a file through `filesystem.writeText` with nothing
+  but `window.ipc.postMessage`.
+
+  The runtime now trusts the application's own origin only - `distDir`, or
+  the dev server in development. Another origin gets no bridge, its calls
+  are dropped before they reach the router, and nothing is pushed to it.
+  Routing and query strings within the application are unaffected. See
+  [permissions](docs/permissions.md#only-the-applications-own-pages).
+
+- **Nothing is pushed into a page without an origin either.** The origin guard
+  treated a URL with no host as "not another site", so `blob:`, `data:` and
+  `about:blank` documents still received everything the runtime broadcasts.
+  A `blob:` page is scriptable: navigating the window to one and installing a
+  `__VANTAIL__` receiver of its own was enough to be handed `window.ready`,
+  and with it shared state and `app.emit` payloads. Pushes are now delivered
+  only to the application's own origin and dropped for everything else, so a
+  document the application did not write is not a recipient.
+
+- **A cross-origin `<iframe>` can still reach the IPC channel on Linux.** wry
+  reports the page a message came from by URL: the frame on macOS, but the
+  top-level document on WebKitGTK, whose handler carries no frame. (On
+  Windows a frame's message never reaches the runtime: WebView2 delivers it
+  to an event wry does not listen to.) Calls posted by an embedded frame from
+  another origin are therefore
+  attributed to the application's own page there. No check the runtime can
+  make will tell the two apart until wry passes the frame through; an
+  application that embeds third-party frames on Linux should use a
+  `frame-src 'self'` CSP. See
+  [permissions](docs/permissions.md#only-the-applications-own-pages).
+
+### Added
+
+- **`vantail-runtime --check`.** Reads and validates a `vantail.json`
+  exactly as a launch would - the parse and compiling the permissions - and
+  exits without opening a window: status 0, or 1 with the reason on stderr.
+  For checking a hand-written or generated config before shipping it, and
+  what the config contract test below runs against.
+
+### Changed
+
+- **`app.version` defaults to the version in `package.json`.** A config
+  that left it out shipped as `0.0.0` - in the bundle, the installers, the
+  updater manifest and `app.version()` - and one that set it kept a second
+  copy of the version to forget on every release. Leave it out and the
+  `version` from the `package.json` next to `vantail.config.ts` is used;
+  set it to report something else. The `create` templates no longer write
+  it, so a new application has its version in one place.
+
+- **The examples report the release they belong to.** Their versions were
+  bumped by hand and fell behind - the showcase called itself 0.1.25 on a
+  0.1.26 runtime. They now take their version from their own
+  `package.json`, which `scripts/version.mjs` sets along with everything
+  else, and `--check` fails when one is left behind. Contributors only;
+  nothing that ships changes.
+
+- **Links to other sites open in the user's browser.** A plain
+  `<a href="https://...">` used to take the application's whole window to
+  that site, with nothing there leading back; `target="_blank"` and
+  `window.open` got a bare window of the platform's making, with no bridge,
+  no title and nothing the application could manage. A web page or a
+  `mailto:` link now goes to the browser or mail client, however it was
+  opened. Links within the application are followed as before, and so is
+  any click the application's own handler called `preventDefault()` on, so
+  a router keeps its links. A popup for anything else, including one of the
+  application's own pages, is refused - that is what `createWindow` is for.
+  See [permissions](docs/permissions.md#only-the-applications-own-pages).
+
+- **pnpm reads its build-script allowlist again.** pnpm 10 stopped reading
+  the `"pnpm"` field in `package.json`, so `onlyBuiltDependencies` was
+  silently ignored and every pnpm command warned about it. The setting now
+  lives in `pnpm-workspace.yaml`, with `@parcel/watcher` (from the Tailwind
+  CLI in the `chat` example, which ships prebuilt binaries) listed as
+  deliberately not built. Contributors only; nothing that ships changes.
+
+- **The root README's API list is checked against the SDK.** It had fallen
+  nine modules behind - `autostart`, `database`, `deepLink`, `fileDrop`,
+  `path`, `power`, `privacy`, `screen` and `shortcut` - with nothing to
+  notice. A test now fails when a module has no row, or when a row names a
+  method `@vantail/api` does not have.
+
+- **The feature-combination CI job fails on warnings.** It exists to catch
+  code that uses an optional dependency without being gated, which usually
+  shows up as a warning, and `cargo check` passes with warnings - buried
+  under 10 to 40 dead-code warnings per build. Dead code is now judged in
+  the default build only, where every capability is in, and the stripped
+  builds run with `-D warnings`.
+
+- **The CLI's config schema and the runtime's parser are tested against each
+  other.** `vantail.config.ts` is checked by the Zod schema, turned into
+  `vantail.json`, and parsed again by the runtime; nothing made the two
+  agree. `scripts/test/config-contract.test.js` runs each case through
+  `parseConfig`, `buildRuntimeConfig` and `vantail-runtime --check` and
+  requires the same verdict, puts a misspelt key into every object of a
+  config that uses every key and requires both to refuse it, and fails when
+  a key the schema knows is used by no case - so a key added on one side
+  only cannot pass until the other side has it. The few rules only the
+  schema enforces are listed with why, and checked to still hold.
+  Contributors only; nothing that ships changes.
+
+- **The integration suite runs on Linux in CI.** It used to skip there,
+  because the runner has no desktop - so the webview, windows, menus, the
+  origin checks and everything else that needs a real window had only ever
+  been tested on macOS and Windows. The Linux job now gives it one: Xvfb
+  for a display, openbox to manage windows (maximising needs a window
+  manager), and a D-Bus session with GNOME Keyring as the Secret Service,
+  so the secrets test exercises the keyring's Linux path instead of
+  skipping. All 93 tests pass on Ubuntu 22.04, the runner's image.
+  `scripts/linux/run` does the same locally, now including the keyring.
+  Contributors only; nothing that ships changes.
+
+### Fixed
+
+- **Single instance survives an unclean exit on macOS.** An application
+  that did not get to remove its socket - a crash, a force quit, or a
+  development server stopped underneath it - left the file behind, and
+  every later launch failed to claim it with `Address already in use`. It
+  then ran without single-instance handling, so a second launch or a deep
+  link opened a second copy instead of reaching the first. The runtime
+  already knew to clear a stale socket, but looked for it in `$TMPDIR`
+  while interprocess had put it in `/tmp`, and the test that would have
+  noticed skipped itself on macOS. The socket now lives in the per-user
+  `$TMPDIR`, where the cleanup looks. Linux and Windows, whose socket names
+  vanish with the process, keep them.
+
+  An identifier too long for a socket name is shortened to a hash of
+  itself. That was not only a macOS problem: on Linux an abstract socket
+  name has the same 108-byte limit, so an identifier over about 100
+  characters never got single instance there either.
+
+- **A misspelt key in `vantail.json` is refused wherever it is.** The
+  runtime read straight past unknown keys in `app`,
+  `window.trafficLightPosition`, `window.borderRadius`, the object forms of
+  the filesystem scopes, `clipboard`, `database` and shell argument
+  patterns and `cwd`, and in every menu item - so `"verison"` or
+  `"acelerator"` in a hand-written config started fine and did nothing. The
+  CLI's schema already refused these, so a config made from
+  `vantail.config.ts` is unaffected. Menus from `@vantail/api` go through
+  the same parser: a `menu.set`, `menu.popup` or `tray.setMenu` call with
+  an unknown key on an item now rejects with `INVALID_PARAMS` instead of
+  ignoring it. TypeScript already flags such a key; plain JavaScript gets
+  the error at run time.
+
+- **Certificates chaining through the distrusted emSign intermediates are
+  rejected.** The private keys behind those intermediates are now public,
+  and the HTTP client, the updater and WebSockets verify servers against the
+  bundled `webpki-roots` store, which still allowed paths through them.
+  `rustls-webpki` 0.103.16 rejects those keys outright (RUSTSEC-2026-0382)
+  and `webpki-roots` 1.0.10 stops trusting them (RUSTSEC-2026-0381).
+  Lockfile-only.
+
+- **`rustls` 0.23.46, for four advisories published against 0.23.45.** None
+  of them reaches the runtime as it is built today, so this is precaution
+  rather than a fix anyone was exposed to - but the HTTP client, the updater
+  and WebSockets ship this code to every application, so it is taken now
+  instead of waiting for the monthly sweep. Lockfile-only.
+  - RUSTSEC-2026-0349, a forged ServerHello steering later connections to
+    the same host off the post-quantum key exchange: the record it poisons
+    lives in the client's session store, and every TLS connection the
+    runtime makes starts from a fresh one - one ureq agent per request, one
+    rustls config per WebSocket.
+  - RUSTSEC-2026-0348, Brotli certificate decompression: the `brotli`
+    feature is not enabled.
+  - RUSTSEC-2026-0347, application data after an ECH rejection: ECH is not
+    enabled.
+  - RUSTSEC-2026-0346, TLS secrets in `Debug` output of session values: only
+    reachable through a custom session store, and there is none.
+
+- **Two npm advisories in the examples.** `hono` 4.13.13 in `chat`
+  ([GHSA-5r4p-p66f-jhc7](https://github.com/advisories/GHSA-5r4p-p66f-jhc7),
+  a static path decoded twice slipping past middleware) and `source-map-js`
+  1.2.2 under `tray`'s Vue compiler
+  ([GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q),
+  a crafted source map stalling the event loop). Neither is in a published
+  `@vantail/*` package; both failed the weekly `pnpm audit`.
+
+## 0.1.25
+
+### Added
+
+- **`privacy`: the macOS camera, microphone and screen recording prompts.**
+  `privacy.status(kind)` reads the system's stored decision
+  (`not-determined`, `authorized`, `denied`, `restricted`),
+  `privacy.request(kind)` shows Apple's own prompt the first time and
+  answers from the stored decision after that, and `privacy.openSettings()`
+  opens Privacy & Security so the user can reverse a denial - the only way
+  one can be reversed. The kinds are `microphone`, `camera` and `screen`;
+  the rest of what macOS guards (accessibility, location, contacts) has no
+  prompt for the runtime to call, so `openSettings()` is the whole flow
+  there. This is the OS's decision, not the permission layer's, so there is
+  no `permissions.privacy` flag. Off macOS, `status` answers `unsupported`
+  and the other calls reject with `UNSUPPORTED`.
+
+  Screen recording cannot tell "never asked" from "denied", so a first-ever
+  `status("screen")` reads `denied` until the prompt has been answered.
+
+- **`macos.microphoneUsageDescription` and `macos.cameraUsageDescription`**
+  in `vantail.config.ts`, written into the packaged `Info.plist` as
+  `NSMicrophoneUsageDescription` / `NSCameraUsageDescription`. Without the
+  matching string macOS denies capture without ever prompting. Grants belong
+  to the bundle that asked, so `vantail dev` and the installed `.app` keep
+  separate decisions. See [macOS privacy](docs/macos-privacy.md).
+
+- **`@vantail/icons`: the full Lucide catalogue as a first-party package.**
+  1890 icons by name, with a vanilla API (`getIconSvg`, `createIconElement`)
+  and a React one (`<Icon name>` plus a named component per icon) from
+  `@vantail/icons/react`. Size, stroke and color props, accessible markup
+  when given a `label`, and a placeholder rather than a throw for an unknown
+  name. Static imports tree-shake down to the icons used; `<Icon name>`
+  with a name only known at runtime pulls in the whole catalogue - measured
+  with Vite at 57.5 kB against 833.3 kB. No network fetch and no separate
+  Lucide install. See [icons](docs/icons.md).
+
+- **Examples**: `camera` walks the `privacy.*` camera flow,
+  `vantail-symbols` is a searchable browser over the icon catalogue, and
+  `tasks` is a small React app using both icon import styles. The showcase
+  gains privacy and icons panels.
+
+### Fixed
+
+- **`print.document` on Linux reports whether the job actually printed.**
+  `{ printed: true }` came from the GTK dialog's answer, which only means
+  the user pressed Print and the job started - a job that then failed still
+  reported success. It now waits for the job to finish and answers from
+  whether it failed. Thanks to geennoob for finding and fixing this.
+
+## 0.1.24
 
 ### Added
 
@@ -26,6 +268,26 @@ Notable changes per release.
 
   The React example gains an "Open sync window" demo proving it: a counter
   set in either window is reflected in the other without a reload.
+
+- **`print.document`: printing through the native print dialog.** Give it
+  an `html` string or a `pdfPath`, exactly one of the two, and the user
+  chooses the printer, copies and page range - or cancels - in Edge's print
+  preview on Windows, the print panel on macOS or the GTK dialog on Linux.
+  The promise resolves when the dialog closes, with `{ printed }` saying
+  whether they went through with it (`null` on Windows, where Edge's
+  preview does not say).
+
+  The content always renders in a view of its own, never one of the
+  application's windows, and there is deliberately no call that prints the
+  current window - so nothing a compromised page does can send the app's own
+  UI to paper. That, plus a dialog the application cannot click through, is
+  why there is no `permissions.print` flag. `pdfPath` still goes through
+  `permissions.filesystem` read scope. Passing both sources or neither
+  rejects with `INVALID_ARGUMENT`. See
+  [permissions](docs/permissions.md#printing-has-no-permission).
+
+  The `invoice` example prints both ways, and the showcase gains a print
+  panel showing the working call next to the refused ones.
 
 ## 0.1.23
 

@@ -78,7 +78,8 @@ not, and `@vantail/api` is the replacement.
 
 ```text
 app            name | version | identifier | info | infoSync | isDev
-               emit | listen | quit | restart
+               emit | listen | onSecondInstance | setBadge | setProgress
+               quit | restart
 
 appWindow      setTitle | title | setSize | size | setPosition | position
                minimize | maximize | unmaximize | toggleMaximize | isMaximized
@@ -94,22 +95,41 @@ sharedState    get | set | subscribe
 
 filesystem     readText | writeText | appendText | readBinary | writeBinary
                readDir | exists | stat | mkdir | remove | copy | rename
+               watch | unwatch | watches | onChange
+
+path           join | normalize | dirname | basename | extname | isAbsolute
 
 dialog         openFile | openFiles | openDirectory | openDirectories
                saveFile | message | confirm
 
+fileDrop       onEnter | onDrop | onLeave
+
 clipboard      readText | writeText | hasText | clear
+               readImage | writeImage | hasImage
 
 menu           set | remove | popup | setEnabled | setLabel
                setChecked | isChecked | onClick
 
 tray           set | remove | exists | setIcon | setTooltip | setTitle
-               setVisible | setMenu | onClick | onDoubleClick
+               setVisible | setMenu | showMenu | onClick | onDoubleClick
+
+shortcut       register | unregister | unregisterAll | isRegistered | list
+               onPressed
+
+deepLink       onOpen | protocols
+
+autostart      enable | disable | isEnabled
+
+power          onSuspend | onResume | supported
+
+screen         list | primary | current | fromPoint
 
 process        execute | spawn | list
                child: write | closeStdin | kill | onStdout | onStderr | onExit
 
-network        request | json | binary
+network        request | json | binary | stream | streamBinary | socket
+
+database       createKey | open
 
 mdns           discover | browse | stop | browsing | onFound | onLost
 
@@ -128,6 +148,8 @@ os             platform | arch | info | infoSync | homeDir | tempDir
                appDataDir | appConfigDir | resourceDir
 
 notification   show
+
+privacy        status | request | openSettings
 
 print          document
 ```
@@ -161,7 +183,7 @@ export default defineConfig({
   app: {
     name: "My App",
     identifier: "dev.wissen.myapp",
-    version: "1.0.0",
+    // The version comes from package.json; set `version` here to override it.
   },
 
   window: { width: 1200, height: 800 },

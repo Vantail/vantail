@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, it } from "node:test";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -129,6 +129,121 @@ describe("the api readme keeps up with the api", () => {
       [],
       `packages/api/README.md does not mention: ${missing.join(", ")}.\n` +
         "Add it to the list of what is in the package.",
+    );
+  });
+});
+
+describe("the root readme keeps up with the api", () => {
+  /**
+   * The modules `@vantail/api` exports, by name, as the built package has
+   * them - so their methods can be checked as well as their names.
+   *
+   * A module is an exported object. `ErrorCode` is one too, but it is a table
+   * of strings rather than something to call. `window` is `appWindow` under a
+   * second name; namespace keys come sorted, so the first name wins.
+   */
+  async function modules() {
+    const api = await import(
+      pathToFileURL(join(root, "packages/api/dist/index.js")).href
+    );
+    const seen = new Set();
+    const found = new Map();
+    for (const [name, value] of Object.entries(api)) {
+      if (!value || typeof value !== "object" || name === "ErrorCode") continue;
+      if (seen.has(value)) continue;
+      seen.add(value);
+      found.set(name, value);
+    }
+    return { api, found };
+  }
+
+  /**
+   * The `## The API` block, as module -> the names its row lists.
+   *
+   * A row is a module name at the start of a line, continued by indented
+   * lines. `child: write | kill` lists what a returned object has rather than
+   * the module, so that segment - and anything indented under it - is left
+   * out.
+   */
+  async function listed() {
+    // A Windows checkout has CRLF line endings; nothing here should care.
+    const readme = (await readFile(join(root, "README.md"), "utf8")).replace(/\r\n/g, "\n");
+    const section = readme.split(/^## The API$/m)[1];
+    assert.ok(section, "README.md has no `## The API` section");
+    const block = section.match(/```text\n([\s\S]*?)```/)?.[1];
+    assert.ok(block, "the API section has no ```text block");
+
+    const rows = new Map();
+    let current;
+    let nestedAt;
+    for (const line of block.split("\n")) {
+      if (!line.trim()) continue;
+      const indent = line.length - line.trimStart().length;
+      let content = line.trim();
+      if (indent === 0) {
+        const [, name, rest] = content.match(/^(\w+)\s+(.*)$/);
+        current = name;
+        rows.set(current, []);
+        content = rest;
+        nestedAt = undefined;
+      }
+      if (/^\w+:/.test(content)) {
+        nestedAt = indent;
+        continue;
+      }
+      if (nestedAt !== undefined && indent > nestedAt) continue;
+      nestedAt = undefined;
+      rows.get(current).push(
+        ...content
+          .split("|")
+          .map((name) => name.trim())
+          .filter(Boolean),
+      );
+    }
+    return rows;
+  }
+
+  it("has a row for every module", async () => {
+    // Nine modules shipped without one, and nothing noticed: the README is
+    // the first thing anyone reads, so a module missing from it is a module
+    // nobody finds.
+    const { found } = await modules();
+    const rows = await listed();
+
+    const missing = [...found.keys()].filter((name) => !rows.has(name));
+
+    assert.deepEqual(
+      missing,
+      [],
+      `README.md's API list has no row for: ${missing.join(", ")}.\n` +
+        "Add one under `## The API`, with the module's main methods.",
+    );
+  });
+
+  it("lists only modules and methods that exist", async () => {
+    // The other direction: a method renamed or removed in the SDK, still
+    // advertised here. A row may also name top-level exports that belong
+    // with it - `createWindow` sits with `appWindow`.
+    const { api, found } = await modules();
+    const rows = await listed();
+
+    const phantom = [];
+    for (const [module, names] of rows) {
+      if (!found.has(module)) {
+        phantom.push(module);
+        continue;
+      }
+      for (const name of names) {
+        if (!(name in found.get(module)) && !(name in api)) {
+          phantom.push(`${module}.${name}`);
+        }
+      }
+    }
+
+    assert.deepEqual(
+      phantom,
+      [],
+      `README.md's API list names what @vantail/api does not have: ${phantom.join(", ")}`,
     );
   });
 });

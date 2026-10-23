@@ -63,7 +63,7 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 22.23.4
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -98,13 +98,14 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-14, windows-2022, ubuntu-22.04]
-        node: [22]
+        node: ["22.23.4"]
         include:
-          # One extra job on the newest Node, since that is what most people
-          # will actually have installed. What it catches is JavaScript-level
-          # and not platform-specific, so it runs on the cheapest runner.
+          # One extra job on the current LTS line, since that is what most
+          # people will actually have installed. What it catches is
+          # JavaScript-level and not platform-specific, so it runs on the
+          # cheapest runner.
           - os: ubuntu-22.04
-            node: 24
+            node: "24.22.1"
     steps:
       - uses: actions/checkout@v7
 
@@ -153,12 +154,44 @@ jobs:
       - run: pnpm run test:packages
 
       # These open real windows and drive a real webview, so they need a
-      # desktop session. macOS and Windows runners have one; the Linux runner
-      # does not, and WebKitGTK under Xvfb is not something this project has
-      # verified - so it is skipped rather than pretended.
+      # desktop session. macOS and Windows runners have one.
       - name: Integration tests
         if: runner.os != 'Linux'
         run: pnpm run test:integration
+
+      # The Linux runner has no desktop, so it gets the pieces of one the
+      # suite needs - the same ones `scripts/linux/run` uses:
+      #   - Xvfb, a display. Large enough for the window-size tests, and
+      #     24-bit so screens report the depth a real one would.
+      #   - openbox, a window manager. Maximising is something a window
+      #     manager does; without one the window silently never changes size.
+      #   - a D-Bus session, and GNOME Keyring in it as the Secret Service,
+      #     unlocked with a throwaway password since nobody is there to type
+      #     one. Without it the secrets test can only skip, and the keyring's
+      #     whole Linux path (zbus) would go untested.
+      - name: A virtual desktop for the integration tests
+        if: runner.os == 'Linux'
+        run: |
+          # The runner image ships with package lists that can be days old,
+          # and a stale index turns into a 404 from the mirror rather than a
+          # version that resolves.
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            xvfb xauth dbus dbus-x11 openbox gnome-keyring
+
+      - name: Integration tests (Linux, under Xvfb)
+        if: runner.os == 'Linux'
+        env:
+          VANTAIL_FORCE_INTEGRATION: "1"
+        run: |
+          xvfb-run -a --server-args="-screen 0 1400x1000x24" dbus-run-session -- sh -c '
+            printf throwaway | gnome-keyring-daemon --unlock --components=secrets >/dev/null
+            openbox >/dev/null 2>&1 &
+            # Both come up in the background: the keyring claims its bus name
+            # a moment after --unlock returns, and openbox takes a moment too.
+            sleep 2
+            pnpm run test:integration
+          '
 
       # Packaging is where icon generation, bundling and the installer all
       # meet, and it is platform-specific - so it runs on every platform.
@@ -172,6 +205,13 @@ jobs:
     name: Feature combinations
     # `cargo check` only: no window, no tests, so nothing here needs macOS.
     runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-22.04' }}
+    env:
+      # A gating mistake usually shows as a warning - an import only one
+      # feature uses - and `cargo check` passes with warnings. Dead code is
+      # allowed outside the default build (see `runtime/src/main.rs`), so
+      # anything left is worth failing on. Dependencies are unaffected: cargo
+      # caps their lints regardless.
+      RUSTFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v7
 

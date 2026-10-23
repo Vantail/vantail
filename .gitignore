@@ -6,6 +6,7 @@ build/
 *.tsbuildinfo
 .DS_Store
 .npmrc
+.freebuff/
 
 # What a release is assembled from: native binaries downloaded from a build,
 # and the platform packages built out of them. `dist/` above does not match

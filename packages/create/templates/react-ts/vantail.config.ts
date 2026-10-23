@@ -4,7 +4,6 @@ export default defineConfig({
   app: {
     name: "__APP_NAME__",
     identifier: "__APP_IDENTIFIER__",
-    version: "0.1.0",
     // A square PNG. Every size each platform asks for is scaled down from it.
     icon: "icon.png",
   },

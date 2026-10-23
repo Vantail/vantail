@@ -42,7 +42,7 @@ fn quit_label(given: Option<&str>, app: Option<&str>) -> String {
 /// `type` is always explicit on the wire. `@vantail/api` fills in `normal`
 /// when an application leaves it out, so the runtime never has to guess.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum MenuSpec {
     Normal {
         id: String,
@@ -70,7 +70,10 @@ pub enum MenuSpec {
         #[serde(default)]
         items: Vec<MenuSpec>,
     },
-    Separator,
+    /// A struct with no fields rather than a unit variant: a unit variant
+    /// ignores whatever else the object carries, and `{ type: "separator",
+    /// label: "x" }` is a mistake worth hearing about.
+    Separator {},
     /// A platform-provided item. These are not optional decoration on macOS:
     /// without `copy`, `paste` and friends in the menu, their keyboard
     /// shortcuts do not work at all.
@@ -106,13 +109,13 @@ pub fn default_app_menu(app_name: &str) -> Vec<MenuSpec> {
             enabled: true,
             items: vec![
                 predefined("about"),
-                MenuSpec::Separator,
+                MenuSpec::Separator {},
                 predefined("services"),
-                MenuSpec::Separator,
+                MenuSpec::Separator {},
                 predefined("hide"),
                 predefined("hideOthers"),
                 predefined("showAll"),
-                MenuSpec::Separator,
+                MenuSpec::Separator {},
                 predefined("quit"),
             ],
         },
@@ -122,7 +125,7 @@ pub fn default_app_menu(app_name: &str) -> Vec<MenuSpec> {
             items: vec![
                 predefined("undo"),
                 predefined("redo"),
-                MenuSpec::Separator,
+                MenuSpec::Separator {},
                 predefined("cut"),
                 predefined("copy"),
                 predefined("paste"),
@@ -135,7 +138,7 @@ pub fn default_app_menu(app_name: &str) -> Vec<MenuSpec> {
             items: vec![
                 predefined("minimize"),
                 predefined("closeWindow"),
-                MenuSpec::Separator,
+                MenuSpec::Separator {},
                 predefined("fullscreen"),
             ],
         },
@@ -220,7 +223,7 @@ fn append(
     skipped: &mut Vec<String>,
 ) -> Result<(), String> {
     match spec {
-        MenuSpec::Separator => menu.add(&PredefinedMenuItem::separator()),
+        MenuSpec::Separator {} => menu.add(&PredefinedMenuItem::separator()),
 
         MenuSpec::Normal {
             id,

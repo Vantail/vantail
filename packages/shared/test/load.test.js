@@ -36,6 +36,37 @@ test("loads a TypeScript config with types and imports", async () => {
   assert.equal(loaded.root, root);
 });
 
+test("app.version defaults to the version in package.json", async () => {
+  const root = await project(`
+    export default { app: { name: "Versioned", identifier: "dev.vantail.versioned" } };
+  `);
+  await writeFile(join(root, "package.json"), JSON.stringify({ version: "2.3.4" }));
+
+  const loaded = await loadConfig({ cwd: root });
+  assert.equal(loaded.config.app.version, "2.3.4");
+});
+
+test("an app.version in the config wins over package.json", async () => {
+  const root = await project(`
+    export default {
+      app: { name: "Pinned", identifier: "dev.vantail.pinned", version: "9.0.0" },
+    };
+  `);
+  await writeFile(join(root, "package.json"), JSON.stringify({ version: "2.3.4" }));
+
+  const loaded = await loadConfig({ cwd: root });
+  assert.equal(loaded.config.app.version, "9.0.0");
+});
+
+test("without a package.json app.version stays unset", async () => {
+  const root = await project(`
+    export default { app: { name: "Bare", identifier: "dev.vantail.bare" } };
+  `);
+
+  const loaded = await loadConfig({ cwd: root });
+  assert.equal(loaded.config.app.version, undefined);
+});
+
 test("searches parent directories", async () => {
   const root = await project(`
     export default { app: { name: "Parent", identifier: "dev.vantail.parent" } };

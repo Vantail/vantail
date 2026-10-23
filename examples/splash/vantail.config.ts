@@ -4,7 +4,6 @@ export default defineConfig({
   app: {
     name: "Splash Example",
     identifier: "dev.vantail.example.splash",
-    version: "0.1.25",
     icon: "icon.png",
   },
 

@@ -275,7 +275,7 @@ pub struct ShellRule {
 
 /// `"status"` for an exact argument, or `{ pattern: "-n*" }` for a glob.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum ArgRule {
     Exact(String),
     Pattern { pattern: String },
@@ -402,7 +402,7 @@ impl Default for FilesystemConfig {
 
 /// `false` | `true` | `["glob", ...]` | `{ allow: [...], deny: [...] }`
 #[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum PathScopeConfig {
     All(bool),
     Patterns(Vec<String>),
@@ -422,7 +422,7 @@ impl Default for PathScopeConfig {
 
 /// `false` | `true` | `{ read: bool, write: bool }`
 #[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum ClipboardConfig {
     All(bool),
     Detailed {
@@ -658,7 +658,7 @@ pub struct Permissions {
 /// Whether an application may keep a database, and whether it needs the
 /// encrypted build to do it.
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
-#[serde(untagged, rename_all = "camelCase")]
+#[serde(untagged, rename_all = "camelCase", deny_unknown_fields)]
 pub enum DatabaseConfig {
     #[default]
     Off,

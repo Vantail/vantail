@@ -48,7 +48,7 @@ export default defineConfig({
   app: {
     name: "My App",
     identifier: "dev.example.myapp",
-    version: "1.0.0",
+    // The version comes from package.json; set `version` here to override it.
     // One square PNG. Every size each platform asks for is scaled from it.
     icon: "icon.png",
   },

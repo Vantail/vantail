@@ -10,7 +10,7 @@
  * resolves those externals from the project's own `node_modules`.
  */
 
-import { rm, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -97,7 +97,34 @@ export async function loadConfig(options: {
     );
   }
 
-  return { config: parsed.config, path, root: dirname(path) };
+  const root = dirname(path);
+  const config = parsed.config;
+  config.app.version ??= await packageVersion(root);
+
+  return { config, path, root };
+}
+
+/**
+ * The `version` in the project's own package.json, if it has one.
+ *
+ * An application usually already has a version there, and a second copy in
+ * the config is one more place to forget on a release - so a config that
+ * leaves `app.version` out gets this one.
+ */
+async function packageVersion(root: string): Promise<string | undefined> {
+  let text: string;
+  try {
+    text = await readFile(join(root, "package.json"), "utf8");
+  } catch {
+    return undefined;
+  }
+
+  try {
+    const { version } = JSON.parse(text) as { version?: unknown };
+    return typeof version === "string" && version !== "" ? version : undefined;
+  } catch {
+    throw new ConfigError(`Could not parse ${join(root, "package.json")}`);
+  }
 }
 
 async function importConfigModule(path: string): Promise<unknown> {

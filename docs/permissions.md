@@ -118,14 +118,14 @@ matches on macOS, where `/tmp` is `/private/tmp`.
 ## How a path is checked
 
 ```text
-"/Users/jeroen/docs/../notes.txt"
+"/Users/me/docs/../notes.txt"
         |
         +- make absolute
         +- resolve "." and ".." lexically
         +- canonicalise the part that exists  (follows symlinks)
         +- re-append the part that does not
         v
-"/Users/jeroen/notes.txt"
+"/Users/me/notes.txt"
         |
         +- granted by a dialog this session?  --> allow
         +- matched by `deny`?                 --> deny
@@ -143,7 +143,7 @@ A denial is a `VantailError`:
 ```json
 {
   "code": "PERMISSION_DENIED",
-  "message": "`filesystem.read` is not allowed for /etc/passwd. Allowed: /Users/jeroen/Documents/**",
+  "message": "`filesystem.read` is not allowed for /etc/passwd. Allowed: /Users/me/Documents/**",
   "data": { "path": "/etc/passwd", "access": "filesystem.read" }
 }
 ```
@@ -569,6 +569,49 @@ nothing a compromised page could turn into silent exfiltration to paper.
 What *is* still scoped is the file: `pdfPath` goes through
 `permissions.filesystem` read scope like any other read, because printing
 reads the file into the renderer.
+
+## Only the application's own pages
+
+Everything on this page is granted to the application's own pages - the ones
+served from `distDir`, or in development from the dev server - and to no
+other page, whatever it is shown in. A window can still end up on somebody
+else's site - by script setting `location`, a redirect, a form posted
+elsewhere. That page gets no bridge, the runtime ignores any call it makes by
+hand, and nothing the runtime pushes - shared state, `app.emit` payloads, deep
+links - is delivered to it. Navigate back to the application and everything
+works again.
+
+The check is by origin, so routing and query strings within the application
+are unaffected. An `<iframe>` of another site inside the application's page is
+another origin too, and gets nothing.
+
+**On Linux that last part stops at the top-level document.** wry reports where
+a message came from by URL, and what it puts in that URL differs by platform:
+on macOS it is the frame that sent the message, so a foreign `<iframe>` is
+refused like a foreign page. On Windows a frame's message never reaches the
+runtime at all - WebView2 delivers it to that frame's own event, which wry
+does not listen to - so a foreign `<iframe>` gets nothing there either, though
+neither does one of the application's own. WebKitGTK's script-message handler
+has no frame, and wry substitutes the top-level document's URL instead - so a
+call posted by an `<iframe>` from another origin is attributed to the
+application's own page and allowed. The bridge is injected into the top-level
+document only, but the platform object underneath it,
+`window.webkit.messageHandlers.ipc`, is reachable from every frame in the
+page. The runtime cannot tell the two apart until wry passes the frame
+through, so an application that embeds third-party frames on Linux should put
+`frame-src 'self'` (or `child-src 'self'`) in front of them, or keep those
+frames on the application's own origin. This has not been exercised on a Linux
+run.
+
+Links to other sites leave for the user's browser or mail client instead of
+taking the window with them: a web page or a `mailto:` link, whether it is a
+plain `<a href>`, has `target="_blank"`, or comes from `window.open`. Links
+within the application are followed as usual, and so is a click the
+application's own handler already called `preventDefault()` on - a router
+keeps its links. A link aimed at a named frame, or carrying `download`, is
+left to the webview. A popup for anything else is refused: a window of the
+application's own is `createWindow`, which gives it the bridge, a label and a
+place in `window.list()`.
 
 ## What this does not protect against
 

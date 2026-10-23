@@ -2,7 +2,9 @@
 
 ## Getting set up
 
-Node 20.19 or newer, pnpm, and Rust 1.99. The Rust version is pinned in
+Node 22.23.4 or newer, pnpm, and Rust 1.99 - 24.x needs 24.22.1+ and 26.x
+needs 26.12.1+, the releases with the Brotli decoder fix. Node 20 is
+end-of-life and no longer supported. The Rust version is pinned in
 [`rust-toolchain.toml`](rust-toolchain.toml), so `rustup` installs and selects
 it for you the first time you build here - there is nothing to choose. A cargo
 that does not come from rustup ignores that file, so check `cargo --version`
@@ -78,7 +80,14 @@ scripts/linux/run shell      # a prompt inside the container
 
 The container brings its own virtual display and window manager. The window
 manager is not optional: maximising is something a window manager does, and
-without one a window never changes size.
+without one a window never changes size. It also starts GNOME Keyring in a
+D-Bus session, so the secrets test runs against a real Secret Service.
+
+CI's Linux job runs the integration suite the same way - Xvfb, openbox and the
+keyring - so a Linux-only failure shows up on the pull request rather than on
+somebody's desktop. On a Linux machine of your own the suite skips unless
+`VANTAIL_FORCE_INTEGRATION=1` is set, since a shell there may have a display
+but no window manager.
 
 ## Building the runtime for other platforms
 

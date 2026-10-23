@@ -41,7 +41,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 22.23.4
 
       # The webview is the OS's own, and on Linux that means WebKitGTK. macOS
       # and Windows have theirs already.

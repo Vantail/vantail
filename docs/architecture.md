@@ -6,7 +6,7 @@ JavaScript reach the operating system and get back?**
 ## The path of a call
 
 ```ts
-await filesystem.readText("/Users/jeroen/notes.txt");
+await filesystem.readText("/Users/me/notes.txt");
 ```
 
 1. **`@vantail/api`** turns that into a request and hands it to the bridge.
@@ -15,7 +15,7 @@ await filesystem.readText("/Users/jeroen/notes.txt");
    {
      "id": "01HZ...",
      "method": "filesystem.readText",
-     "params": { "path": "/Users/jeroen/notes.txt" }
+     "params": { "path": "/Users/me/notes.txt" }
    }
    ```
 
@@ -77,6 +77,21 @@ That last one means the bridge makes calls of its own. They go out through the
 same `postMessage` with ids it recognises, and their replies are dropped rather
 than pushed into the backlog - a page that never loads the SDK would otherwise
 accumulate them for the life of the window.
+
+The same goes for a click on a link to another site: the bridge cancels it and
+asks for `bridge.openLink`, which hands the URL to the browser. That namespace
+is the bridge's own and not part of `@vantail/api`. It is a message rather than
+`window.open` because WebKit blocks a popup that no gesture opened, and the
+runtime refuses anything a link click could not have produced - the
+application's own origin, or a scheme other than http(s) and `mailto:`.
+
+The bridge is only for the application's own origin. The platform injects it
+into, and passes IPC on from, whatever a window loads, so both ends check: the
+script installs nothing on a page from another origin, and the IPC handler
+drops any message whose sender - as the webview reports it, the frame itself
+on macOS - is not the application. Pushes from the runtime are not evaluated
+into such a page either. See
+[permissions](permissions.md#only-the-applications-own-pages).
 
 ## Windows
 
@@ -207,6 +222,23 @@ vantail.config.ts --(@vantail/shared/load)--> validated config
 
 The runtime finds its config next to the executable, in `resources/`, or at
 `../Resources/` for a macOS bundle - so a packaged app needs no arguments.
+
+That makes two parsers for one format: the Zod schema the CLI validates with,
+and serde in the runtime. Both refuse a key they do not know, at every depth,
+so a misspelt setting is an error rather than something that silently does
+nothing. `vantail-runtime --check --config <path>` runs everything the runtime
+would refuse a config for - the parse and compiling the permissions - and
+exits without opening a window, and `scripts/test/config-contract.test.js`
+uses it to hold the two together: each case goes through `parseConfig`, then
+`buildRuntimeConfig`, then `--check`, and both verdicts have to match. The
+cases must use every key the schema knows, so a key added on one side only
+fails the test until the other side has it too.
+
+A few rules live in the schema alone, on purpose: a malformed colour, a
+negative corner radius, an unknown predefined menu item or accelerator. The
+runtime's job is to start, so it drops the bad part and says so on stderr
+rather than refusing to open over something cosmetic. The test lists these
+and checks each is still tolerated, so the list cannot drift either.
 
 ## The bundle
 

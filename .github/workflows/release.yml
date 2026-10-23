@@ -56,7 +56,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 22.23.4
           # pnpm is not installed in this job, and nothing here needs it.
           package-manager-cache: false
 
@@ -336,7 +336,7 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 22.23.4
           cache: pnpm
 
       # Trusted publishing needs npm 11.5.1 or newer, and Node 22 still ships

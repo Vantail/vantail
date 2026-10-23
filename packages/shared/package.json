@@ -1,6 +1,6 @@
 {
   "name": "@vantail/shared",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "description": "Shared types, error codes and config schema for Vantail.",
   "license": "MIT",
   "repository": {
@@ -10,6 +10,9 @@
   },
   "homepage": "https://github.com/Vantail/vantail",
   "type": "module",
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
+  },
   "files": [
     "dist"
   ],

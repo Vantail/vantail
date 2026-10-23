@@ -18,6 +18,7 @@ import {
 import { findConfigFile, loadConfig } from "@vantail/shared/load";
 
 import { log, style } from "../log.js";
+import { NODE_REQUIREMENT, supportedNode } from "../node-version.js";
 import { runtimeVariantFor } from "../runtime-config.js";
 
 interface Check {
@@ -59,13 +60,13 @@ export async function doctor(options: DoctorOptions): Promise<number> {
 }
 
 function nodeCheck(): Check {
-  const [major = 0, minor = 0] = process.versions.node.split(".").map(Number);
-  const ok = major > 20 || (major === 20 && minor >= 19);
+  const version = process.versions.node;
+  const ok = supportedNode(version);
   return {
     name: "node",
     ok,
-    detail: process.versions.node,
-    ...(ok ? {} : { hint: "Vantail needs Node 20.19 or newer" }),
+    detail: version,
+    ...(ok ? {} : { hint: `Vantail needs ${NODE_REQUIREMENT}` }),
   };
 }
 

@@ -30,6 +30,154 @@ pub fn app_url(path: &str) -> String {
     }
 }
 
+/// The pages that may talk to the runtime: the application's own, and in
+/// development the dev server's.
+///
+/// A window can end up showing a page the application did not write - a link
+/// followed, a redirect, a mistyped URL. The bridge is injected into whatever
+/// loads and wry passes on IPC from whatever loads, so without this the
+/// application's permissions would quietly extend to that page. Calls from
+/// anywhere else are refused, and nothing the runtime pushes reaches it.
+///
+/// Trust is by origin rather than by URL, so routing and query strings inside
+/// the application are unaffected.
+#[derive(Clone, Debug)]
+pub struct Origins {
+    trusted: Vec<Origin>,
+}
+
+impl Origins {
+    pub fn new(rt: &Runtime) -> Self {
+        Self::with_dev(rt.config.dev.as_ref().map(|dev| dev.url.as_str()))
+    }
+
+    fn with_dev(dev: Option<&str>) -> Self {
+        let app = app_url("");
+        let trusted = std::iter::once(app.as_str())
+            .chain(dev)
+            .filter_map(Origin::parse)
+            .collect();
+        Self { trusted }
+    }
+
+    /// Whether the page at `url` is one of the application's own.
+    pub fn allows(&self, url: &str) -> bool {
+        Origin::parse(url).is_some_and(|origin| self.trusted.contains(&origin))
+    }
+
+    /// The trusted origins as a page sees itself: `location.protocol + '//' +
+    /// location.host`. Not `location.origin`, which is `"null"` for a scheme
+    /// the URL standard does not know, `vantail:` included.
+    fn as_seen_by_page(&self) -> Vec<String> {
+        self.trusted
+            .iter()
+            .map(|origin| {
+                let default = match origin.scheme.as_str() {
+                    "http" => Some(80),
+                    "https" => Some(443),
+                    _ => None,
+                };
+                match origin.port.filter(|port| Some(*port) != default) {
+                    Some(port) => format!("{}://{}:{port}", origin.scheme, origin.host),
+                    None => format!("{}://{}", origin.scheme, origin.host),
+                }
+            })
+            .collect()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Origin {
+    scheme: String,
+    host: String,
+    port: Option<u16>,
+}
+
+impl Origin {
+    fn parse(url: &str) -> Option<Self> {
+        let uri: wry::http::Uri = url.parse().ok()?;
+        let scheme = uri.scheme_str()?.to_ascii_lowercase();
+        let host = uri.host()?.to_ascii_lowercase();
+        // `http://localhost` and `http://localhost:80` are the same page.
+        let port = uri.port_u16().or(match scheme.as_str() {
+            "http" => Some(80),
+            "https" => Some(443),
+            _ => None,
+        });
+        Some(Self { scheme, host, port })
+    }
+}
+
+/// Whether a popup's URL is something to hand to the system instead: a web
+/// page or a mail link, which a browser would have opened itself.
+pub fn opens_externally(url: &str) -> bool {
+    let scheme = url
+        .split_once(':')
+        .map(|(scheme, _)| scheme.to_ascii_lowercase());
+    matches!(scheme.as_deref(), Some("http" | "https" | "mailto"))
+}
+
+/// Hand a URL to the user's browser or mail client.
+///
+/// `VANTAIL_OPEN_STUB=<file>` appends the URL to that file instead. That is
+/// what the integration tests set: a test run should not open a browser, and
+/// what they check is which URLs would have left, not that a browser came up.
+pub fn open_externally(url: &str) {
+    if let Some(stub) = std::env::var_os("VANTAIL_OPEN_STUB") {
+        use std::io::Write;
+        let written = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&stub)
+            .and_then(|mut file| writeln!(file, "{url}"));
+        if let Err(error) = written {
+            eprintln!("vantail: could not record {url} in VANTAIL_OPEN_STUB: {error}");
+        }
+        return;
+    }
+    if let Err(error) = open::that_detached(url) {
+        eprintln!("vantail: could not open {url}: {error}");
+    }
+}
+
+/// `bridge.*`: what the injected bridge asks for on the page's behalf. Not
+/// part of `@vantail/api`.
+///
+/// `bridge.openLink` is a link to another site, clicked in the page: it goes
+/// to the browser instead of taking the application's window with it. No
+/// permission, for the same reason a browser asks none - it is what clicking
+/// a link does - and only for what `target="_blank"` could already reach:
+/// a web page or a mail link that is not the application's own.
+pub fn dispatch(rt: &Runtime, method: &str, params: serde_json::Value) -> crate::error::ApiResult {
+    #[derive(serde::Deserialize)]
+    struct OpenLink {
+        url: String,
+    }
+
+    match method {
+        "bridge.openLink" => {
+            let OpenLink { url } = crate::ipc::Request::params(method, params)?;
+            leaves_for_the_system(&Origins::new(rt), &url)?;
+            open_externally(&url);
+            Ok(serde_json::Value::Null)
+        }
+        _ => Err(crate::error::ApiError::unknown_method(method)),
+    }
+}
+
+/// Whether `bridge.openLink` may hand `url` over. The page can call it
+/// directly, so what the bridge would never send is refused here as well.
+fn leaves_for_the_system(origins: &Origins, url: &str) -> Result<(), crate::error::ApiError> {
+    if opens_externally(url) && !origins.allows(url) {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::new(
+            crate::error::code::INVALID_ARGUMENT,
+            format!("`{url}` is not a link to another site"),
+        ))
+    }
+}
+
 /// Put a window's title bar metrics into a page that is already running.
 ///
 /// The same three variables the bridge sets at startup, and the same object
@@ -82,9 +230,11 @@ html, body { overflow: hidden; overscroll-behavior: none; }\n\
 pub fn init_script(
     rt: &Runtime,
     label: &str,
+    origins: &Origins,
     title_bar: crate::chrome::titlebar::Metrics,
     scroll: bool,
 ) -> String {
+    let own = json!(origins.as_seen_by_page());
     let app = json!({
         "name": rt.config.app.name,
         "version": rt.config.app.version,
@@ -99,6 +249,9 @@ pub fn init_script(
     format!(
         r#"(function () {{
   if (window.__VANTAIL__) return;
+  // Somebody else's page, reached by a link or a redirect. The runtime would
+  // refuse its calls anyway; this keeps the application's details out of it.
+  if ({own}.indexOf(location.protocol + '//' + location.host) < 0) return;
 
   var listeners = new Set();
   var backlog = [];
@@ -222,10 +375,10 @@ pub fn init_script(
   // opts out anything else - put it on `<body>` to opt out of the lot - and so
   // does calling `preventDefault()` on the event, which is how an application
   // that would rather do this itself keeps the bridge out of the way.
-  function ask(method) {{
+  function ask(method, params) {{
     var id = 'vantail:' + (seq++);
     ours.add(id);
-    window.ipc.postMessage(JSON.stringify({{ id: id, method: method, params: {{}} }}));
+    window.ipc.postMessage(JSON.stringify({{ id: id, method: method, params: params || {{}} }}));
   }}
 
   var KEEPS_THE_POINTER =
@@ -255,6 +408,36 @@ pub fn init_script(
   // it for a bar that is not there.
   document.addEventListener('dblclick', function (event) {{
     if (movesTheWindow(event)) ask('window.toggleMaximize');
+  }});
+
+  // A link to another site, followed in place, would take the application's
+  // whole window with it, and nothing on that page leads back. It goes to the
+  // browser instead - the same place a `target="_blank"` link goes.
+  //
+  // On `window`, after the bubble has passed `document`, so a router that
+  // handled the click itself has called `preventDefault()` by then. Links the
+  // page aims somewhere on purpose - another frame, a download - are left
+  // alone, and so is everything within the application's own origin.
+  window.addEventListener('click', function (event) {{
+    if (event.defaultPrevented || event.button !== 0) return;
+    var target = event.target;
+    if (!target || typeof target.closest !== 'function') return;
+    var link = target.closest('a[href]');
+    if (!link || link.hasAttribute('download')) return;
+    var aim = (link.getAttribute('target') || '').toLowerCase();
+    if (aim && aim !== '_self' && aim !== '_top' && aim !== '_parent') return;
+
+    var url;
+    try {{
+      url = new URL(link.href);
+    }} catch (error) {{
+      return;
+    }}
+    if (['http:', 'https:', 'mailto:'].indexOf(url.protocol) < 0) return;
+    if ({own}.indexOf(url.protocol + '//' + url.host) >= 0) return;
+
+    event.preventDefault();
+    ask('bridge.openLink', {{ url: url.href }});
   }});
 }})();"#,
         runtime_version = json!(env!("CARGO_PKG_VERSION")),
@@ -464,5 +647,115 @@ mod tests {
             .get(header::CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
             .is_some_and(|value| value.starts_with("text/html")));
+    }
+
+    #[test]
+    fn the_applications_own_pages_are_trusted_wherever_they_route() {
+        let origins = Origins::with_dev(None);
+        assert!(origins.allows(&app_url("index.html")));
+        assert!(origins.allows(&app_url("settings/profile?tab=2#top")));
+    }
+
+    #[test]
+    fn a_page_from_anywhere_else_is_refused() {
+        let origins = Origins::with_dev(None);
+        for url in [
+            "https://example.com/",
+            "http://example.com/",
+            // Look-alikes of the application's own origin.
+            "http://vantail.localhost.example.com/",
+            "https://vantail.localhost/",
+            "vantail://example.com/",
+            "http://localhost/",
+        ] {
+            assert!(!origins.allows(url), "{url} was trusted");
+        }
+    }
+
+    #[test]
+    fn the_dev_server_is_trusted_only_in_development() {
+        let dev = Origins::with_dev(Some("http://localhost:5173"));
+        assert!(dev.allows("http://localhost:5173/"));
+        assert!(dev.allows("http://LOCALHOST:5173/src/main.tsx"));
+        assert!(!dev.allows("http://localhost:5174/"));
+        assert!(!dev.allows("http://127.0.0.1:5173/"));
+
+        let packaged = Origins::with_dev(None);
+        assert!(!packaged.allows("http://localhost:5173/"));
+    }
+
+    #[test]
+    fn a_default_port_is_the_same_origin_as_none() {
+        let origins = Origins::with_dev(Some("http://localhost"));
+        assert!(origins.allows("http://localhost:80/"));
+        assert!(!origins.allows("https://localhost/"));
+    }
+
+    #[test]
+    fn a_page_with_no_origin_is_not_the_application() {
+        let origins = Origins::with_dev(Some("http://127.0.0.1:5173"));
+        for url in [
+            // Between loads.
+            "about:blank",
+            "",
+            "not a url",
+            // Scriptable, and with no host for the comparison: a page can
+            // navigate itself to one of these and keep running. Nothing may
+            // be pushed into it, so it is not the application's own.
+            "data:text/html,<script>alert(1)</script>",
+            "blob:http://127.0.0.1:5173/1b6a2f7c",
+        ] {
+            assert!(!origins.allows(url), "{url} was trusted");
+        }
+        // Its creator's origin is still trusted; it is the blob document,
+        // which has no host of its own, that is nobody the runtime knows.
+        assert!(origins.allows("http://127.0.0.1:5173/evil"));
+    }
+
+    #[test]
+    fn the_bridge_sees_the_origins_the_way_the_page_spells_them() {
+        let origins = Origins::with_dev(Some("http://LocalHost:5173/"));
+        let app = if cfg!(target_os = "windows") {
+            "http://vantail.localhost"
+        } else {
+            "vantail://localhost"
+        };
+        assert_eq!(
+            origins.as_seen_by_page(),
+            vec![app.to_string(), "http://localhost:5173".to_string()]
+        );
+        // A default port is left out, as `location.host` leaves it out.
+        let plain = Origins::with_dev(Some("https://dev.example:443"));
+        assert_eq!(plain.as_seen_by_page()[1], "https://dev.example");
+    }
+
+    #[test]
+    fn a_link_out_is_only_ever_another_site() {
+        let origins = Origins::with_dev(Some("http://localhost:5173"));
+        assert!(leaves_for_the_system(&origins, "https://example.com/docs").is_ok());
+        assert!(leaves_for_the_system(&origins, "mailto:someone@example.com").is_ok());
+        for url in [
+            // The application's own pages stay in the window.
+            &app_url("settings.html"),
+            "http://localhost:5173/settings",
+            // Nothing a browser would not open from a link.
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "vantail://localhost/",
+        ] {
+            let refused = leaves_for_the_system(&origins, url).expect_err(url);
+            assert_eq!(refused.code, crate::error::code::INVALID_ARGUMENT);
+        }
+    }
+
+    #[test]
+    fn only_web_pages_and_mail_links_leave_for_the_system() {
+        assert!(opens_externally("https://example.com/"));
+        assert!(opens_externally("HTTP://example.com/"));
+        assert!(opens_externally("mailto:someone@example.com"));
+        assert!(!opens_externally("file:///etc/passwd"));
+        assert!(!opens_externally("javascript:alert(1)"));
+        assert!(!opens_externally("vantail://localhost/"));
+        assert!(!opens_externally("about:blank"));
     }
 }
