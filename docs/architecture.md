@@ -6,7 +6,7 @@ JavaScript reach the operating system and get back?**
 ## The path of a call
 
 ```ts
-await filesystem.readText("/Users/jeroen/notes.txt");
+await filesystem.readText("/Users/me/notes.txt");
 ```
 
 1. **`@vantail/api`** turns that into a request and hands it to the bridge.
@@ -15,7 +15,7 @@ await filesystem.readText("/Users/jeroen/notes.txt");
    {
      "id": "01HZ...",
      "method": "filesystem.readText",
-     "params": { "path": "/Users/jeroen/notes.txt" }
+     "params": { "path": "/Users/me/notes.txt" }
    }
    ```
 
@@ -77,6 +77,14 @@ That last one means the bridge makes calls of its own. They go out through the
 same `postMessage` with ids it recognises, and their replies are dropped rather
 than pushed into the backlog - a page that never loads the SDK would otherwise
 accumulate them for the life of the window.
+
+The bridge is only for the application's own origin. The platform injects it
+into, and passes IPC on from, whatever a window loads, so both ends check: the
+script installs nothing on a page from another origin, and the IPC handler
+drops any message whose sender - as the webview reports it, the frame itself
+on macOS - is not the application. Pushes from the runtime are not evaluated
+into such a page either. See
+[permissions](permissions.md#only-the-applications-own-pages).
 
 ## Windows
 

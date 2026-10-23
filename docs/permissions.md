@@ -118,14 +118,14 @@ matches on macOS, where `/tmp` is `/private/tmp`.
 ## How a path is checked
 
 ```text
-"/Users/jeroen/docs/../notes.txt"
+"/Users/me/docs/../notes.txt"
         |
         +- make absolute
         +- resolve "." and ".." lexically
         +- canonicalise the part that exists  (follows symlinks)
         +- re-append the part that does not
         v
-"/Users/jeroen/notes.txt"
+"/Users/me/notes.txt"
         |
         +- granted by a dialog this session?  --> allow
         +- matched by `deny`?                 --> deny
@@ -143,7 +143,7 @@ A denial is a `VantailError`:
 ```json
 {
   "code": "PERMISSION_DENIED",
-  "message": "`filesystem.read` is not allowed for /etc/passwd. Allowed: /Users/jeroen/Documents/**",
+  "message": "`filesystem.read` is not allowed for /etc/passwd. Allowed: /Users/me/Documents/**",
   "data": { "path": "/etc/passwd", "access": "filesystem.read" }
 }
 ```
@@ -569,6 +569,26 @@ nothing a compromised page could turn into silent exfiltration to paper.
 What *is* still scoped is the file: `pdfPath` goes through
 `permissions.filesystem` read scope like any other read, because printing
 reads the file into the renderer.
+
+## Only the application's own pages
+
+Everything on this page is granted to the application's own pages - the ones
+served from `distDir`, or in development from the dev server - and to no
+other page, whatever it is shown in. A window can still end up on somebody
+else's site: a plain link followed, a redirect, a mistyped URL. That page gets
+no bridge, the runtime ignores any call it makes by hand, and nothing the
+runtime pushes - shared state, `app.emit` payloads, deep links - is delivered
+to it. Navigate back to the application and everything works again.
+
+The check is by origin, so routing and query strings within the application
+are unaffected. An `<iframe>` of another site inside the application's page is
+another origin too, and gets nothing.
+
+A link with `target="_blank"`, or `window.open`, opens a web page or a
+`mailto:` link in the user's browser or mail client rather than in a window of
+the application's. Anything else is refused: a window of the application's
+own is `createWindow`, which gives it the bridge, a label and a place in
+`window.list()`.
 
 ## What this does not protect against
 

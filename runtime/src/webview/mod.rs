@@ -30,6 +30,102 @@ pub fn app_url(path: &str) -> String {
     }
 }
 
+/// The pages that may talk to the runtime: the application's own, and in
+/// development the dev server's.
+///
+/// A window can end up showing a page the application did not write - a link
+/// followed, a redirect, a mistyped URL. The bridge is injected into whatever
+/// loads and wry passes on IPC from whatever loads, so without this the
+/// application's permissions would quietly extend to that page. Calls from
+/// anywhere else are refused, and nothing the runtime pushes reaches it.
+///
+/// Trust is by origin rather than by URL, so routing and query strings inside
+/// the application are unaffected.
+#[derive(Clone, Debug)]
+pub struct Origins {
+    trusted: Vec<Origin>,
+}
+
+impl Origins {
+    pub fn new(rt: &Runtime) -> Self {
+        Self::with_dev(rt.config.dev.as_ref().map(|dev| dev.url.as_str()))
+    }
+
+    fn with_dev(dev: Option<&str>) -> Self {
+        let app = app_url("");
+        let trusted = std::iter::once(app.as_str())
+            .chain(dev)
+            .filter_map(Origin::parse)
+            .collect();
+        Self { trusted }
+    }
+
+    /// Whether the page at `url` is one of the application's own.
+    pub fn allows(&self, url: &str) -> bool {
+        Origin::parse(url).is_some_and(|origin| self.trusted.contains(&origin))
+    }
+
+    /// Whether `url` is a page from somewhere else.
+    ///
+    /// Not quite `!allows`: a URL with no origin at all - `about:blank`
+    /// between loads - is nobody's page, and a message delivered there goes
+    /// nowhere.
+    pub fn is_foreign(&self, url: &str) -> bool {
+        Origin::parse(url).is_some_and(|origin| !self.trusted.contains(&origin))
+    }
+
+    /// The trusted origins as a page sees itself: `location.protocol + '//' +
+    /// location.host`. Not `location.origin`, which is `"null"` for a scheme
+    /// the URL standard does not know, `vantail:` included.
+    fn as_seen_by_page(&self) -> Vec<String> {
+        self.trusted
+            .iter()
+            .map(|origin| {
+                let default = match origin.scheme.as_str() {
+                    "http" => Some(80),
+                    "https" => Some(443),
+                    _ => None,
+                };
+                match origin.port.filter(|port| Some(*port) != default) {
+                    Some(port) => format!("{}://{}:{port}", origin.scheme, origin.host),
+                    None => format!("{}://{}", origin.scheme, origin.host),
+                }
+            })
+            .collect()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Origin {
+    scheme: String,
+    host: String,
+    port: Option<u16>,
+}
+
+impl Origin {
+    fn parse(url: &str) -> Option<Self> {
+        let uri: wry::http::Uri = url.parse().ok()?;
+        let scheme = uri.scheme_str()?.to_ascii_lowercase();
+        let host = uri.host()?.to_ascii_lowercase();
+        // `http://localhost` and `http://localhost:80` are the same page.
+        let port = uri.port_u16().or(match scheme.as_str() {
+            "http" => Some(80),
+            "https" => Some(443),
+            _ => None,
+        });
+        Some(Self { scheme, host, port })
+    }
+}
+
+/// Whether a popup's URL is something to hand to the system instead: a web
+/// page or a mail link, which a browser would have opened itself.
+pub fn opens_externally(url: &str) -> bool {
+    let scheme = url
+        .split_once(':')
+        .map(|(scheme, _)| scheme.to_ascii_lowercase());
+    matches!(scheme.as_deref(), Some("http" | "https" | "mailto"))
+}
+
 /// Put a window's title bar metrics into a page that is already running.
 ///
 /// The same three variables the bridge sets at startup, and the same object
@@ -82,9 +178,11 @@ html, body { overflow: hidden; overscroll-behavior: none; }\n\
 pub fn init_script(
     rt: &Runtime,
     label: &str,
+    origins: &Origins,
     title_bar: crate::chrome::titlebar::Metrics,
     scroll: bool,
 ) -> String {
+    let own = json!(origins.as_seen_by_page());
     let app = json!({
         "name": rt.config.app.name,
         "version": rt.config.app.version,
@@ -99,6 +197,9 @@ pub fn init_script(
     format!(
         r#"(function () {{
   if (window.__VANTAIL__) return;
+  // Somebody else's page, reached by a link or a redirect. The runtime would
+  // refuse its calls anyway; this keeps the application's details out of it.
+  if ({own}.indexOf(location.protocol + '//' + location.host) < 0) return;
 
   var listeners = new Set();
   var backlog = [];
@@ -464,5 +565,86 @@ mod tests {
             .get(header::CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
             .is_some_and(|value| value.starts_with("text/html")));
+    }
+
+    #[test]
+    fn the_applications_own_pages_are_trusted_wherever_they_route() {
+        let origins = Origins::with_dev(None);
+        assert!(origins.allows(&app_url("index.html")));
+        assert!(origins.allows(&app_url("settings/profile?tab=2#top")));
+        assert!(!origins.is_foreign(&app_url("index.html")));
+    }
+
+    #[test]
+    fn a_page_from_anywhere_else_is_foreign() {
+        let origins = Origins::with_dev(None);
+        for url in [
+            "https://example.com/",
+            "http://example.com/",
+            // Look-alikes of the application's own origin.
+            "http://vantail.localhost.example.com/",
+            "https://vantail.localhost/",
+            "vantail://example.com/",
+            "http://localhost/",
+        ] {
+            assert!(!origins.allows(url), "{url} was trusted");
+            assert!(origins.is_foreign(url), "{url} was not foreign");
+        }
+    }
+
+    #[test]
+    fn the_dev_server_is_trusted_only_in_development() {
+        let dev = Origins::with_dev(Some("http://localhost:5173"));
+        assert!(dev.allows("http://localhost:5173/"));
+        assert!(dev.allows("http://LOCALHOST:5173/src/main.tsx"));
+        assert!(!dev.allows("http://localhost:5174/"));
+        assert!(!dev.allows("http://127.0.0.1:5173/"));
+
+        let packaged = Origins::with_dev(None);
+        assert!(!packaged.allows("http://localhost:5173/"));
+    }
+
+    #[test]
+    fn a_default_port_is_the_same_origin_as_none() {
+        let origins = Origins::with_dev(Some("http://localhost"));
+        assert!(origins.allows("http://localhost:80/"));
+        assert!(!origins.allows("https://localhost/"));
+    }
+
+    #[test]
+    fn a_page_with_no_origin_is_neither_trusted_nor_foreign() {
+        let origins = Origins::with_dev(None);
+        for url in ["about:blank", "", "not a url", "data:text/html,hi"] {
+            assert!(!origins.allows(url), "{url} was trusted");
+            assert!(!origins.is_foreign(url), "{url} was foreign");
+        }
+    }
+
+    #[test]
+    fn the_bridge_sees_the_origins_the_way_the_page_spells_them() {
+        let origins = Origins::with_dev(Some("http://LocalHost:5173/"));
+        let app = if cfg!(target_os = "windows") {
+            "http://vantail.localhost"
+        } else {
+            "vantail://localhost"
+        };
+        assert_eq!(
+            origins.as_seen_by_page(),
+            vec![app.to_string(), "http://localhost:5173".to_string()]
+        );
+        // A default port is left out, as `location.host` leaves it out.
+        let plain = Origins::with_dev(Some("https://dev.example:443"));
+        assert_eq!(plain.as_seen_by_page()[1], "https://dev.example");
+    }
+
+    #[test]
+    fn only_web_pages_and_mail_links_leave_for_the_system() {
+        assert!(opens_externally("https://example.com/"));
+        assert!(opens_externally("HTTP://example.com/"));
+        assert!(opens_externally("mailto:someone@example.com"));
+        assert!(!opens_externally("file:///etc/passwd"));
+        assert!(!opens_externally("javascript:alert(1)"));
+        assert!(!opens_externally("vantail://localhost/"));
+        assert!(!opens_externally("about:blank"));
     }
 }

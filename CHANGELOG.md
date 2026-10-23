@@ -4,6 +4,33 @@ Notable changes per release.
 
 ## Unreleased
 
+### Security
+
+- **A page from another site no longer gets the application's
+  permissions.** A window that followed a link, a redirect or a mistyped URL
+  to somebody else's page kept the bridge and the IPC channel, and the
+  runtime answered that page's calls exactly as it answered the
+  application's: whatever `filesystem`, `shell`, `secrets` or `network`
+  scope the application held, that page held too, and it received shared
+  state and `app.emit` broadcasts. Reproduced on Windows: a page served from
+  another origin wrote a file through `filesystem.writeText` with nothing
+  but `window.ipc.postMessage`.
+
+  The runtime now trusts the application's own origin only - `distDir`, or
+  the dev server in development. Another origin gets no bridge, its calls
+  are dropped before they reach the router, and nothing is pushed to it.
+  Routing and query strings within the application are unaffected. See
+  [permissions](docs/permissions.md#only-the-applications-own-pages).
+
+### Changed
+
+- **`target="_blank"` links and `window.open` open in the user's browser.**
+  They used to get a bare window of the platform's making, with no bridge,
+  no title and nothing the application could manage. A web page or a
+  `mailto:` link now goes to the browser or mail client; anything else,
+  including one of the application's own pages, is refused - that is what
+  `createWindow` is for.
+
 ### Fixed
 
 - **Certificates chaining through the distrusted emSign intermediates are
