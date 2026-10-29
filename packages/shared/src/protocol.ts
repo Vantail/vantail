@@ -62,6 +62,10 @@ export const ErrorCode = {
   INTERNAL: "INTERNAL",
   /** The caller abandoned the request before it answered. */
   CANCELLED: "CANCELLED",
+  /** A request redirected more often than its `maxRedirects` allows. */
+  TOO_MANY_REDIRECTS: "TOO_MANY_REDIRECTS",
+  /** A request with `redirect: "error"` was answered with a redirect. */
+  REDIRECT_REFUSED: "REDIRECT_REFUSED",
   /** A `sharedState.set` value that cannot be represented as JSON. */
   SHARED_STATE_NOT_SERIALIZABLE: "SHARED_STATE_NOT_SERIALIZABLE",
   /** A `sharedState.set` for a key no `write` pattern covers. */

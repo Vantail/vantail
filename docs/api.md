@@ -1226,6 +1226,7 @@ given - see
 | `bytes`        | Sent as raw bytes. Wins over `body`                               |
 | `timeoutMs`    | Default 30000                                                     |
 | `maxRedirects` | Default 5. Every hop is permission-checked                        |
+| `redirect`     | `"follow"` (default), `"manual"` or `"error"`, as in `fetch`      |
 | `signal`       | An `AbortSignal`, the way `fetch` takes one                       |
 
 The response carries:
@@ -1238,11 +1239,46 @@ The response carries:
 | `headerPairs` | Every header line in order, repeats intact                         |
 | `body`        | Text, parsed JSON or bytes, depending which call you made          |
 | `bodyBytes`   | The body's size in bytes, after any content decoding               |
-| `redirects`   | Every hop followed, with the credentials each one dropped          |
+| `redirects`   | Every hop followed: its `headerPairs`, and the credentials it dropped |
 | `timing`      | `ttfbMs`, `headMs`, `downloadMs`, `totalMs`                        |
 
 A non-2xx status is an answer, not an exception - only a transport failure
-rejects.
+rejects, and a redirect the request was told not to take.
+
+### Redirects
+
+A 3xx with a `Location` is followed by default, up to `maxRedirects`, and
+every hop is checked against `permissions.network` before it is requested.
+Each hop followed is in `redirects`, with all of its header lines - so a
+`Set-Cookie` sent on a redirect is still readable afterwards. Going over
+`maxRedirects` rejects with `TOO_MANY_REDIRECTS`, and the hops followed so far
+are in the error's `data.redirects`.
+
+`redirect: "manual"` stops at the first redirect and answers with it - which
+is what testing an endpoint that redirects needs:
+
+```ts
+const login = await network.request({
+  url: `${api}/login`,
+  method: "POST",
+  body: form,
+  redirect: "manual",
+});
+
+login.status; // 302
+login.headers.location; // "/dashboard"
+const cookies = login.headerPairs.filter(([name]) => name === "set-cookie");
+```
+
+Nothing further is requested, so nothing further is authorised. The webview's
+own `fetch` cannot do this: there a manual redirect comes back opaque, with no
+status and no headers. `redirect: "error"` rejects any redirect with
+`REDIRECT_REFUSED`. A 3xx without a `Location`, such as a 304, is an ordinary
+answer whatever `redirect` says.
+
+The runtime keeps no cookies. A cookie set on a redirect is not sent on the
+hop it leads to - read it from `redirects` or, with `"manual"`, from the
+response, and send it yourself.
 
 **A response is buffered whole, and is capped at 64 MB.** It crosses to the
 webview as base64 inside JSON, so there has to be a ceiling; a body one byte
@@ -1846,6 +1882,8 @@ try {
 | `INVALID_UTF8`      | A text call on a file that is not text                 |
 | `UNSUPPORTED`       | Not available on this platform or in this build        |
 | `CANCELLED`         | The call was abandoned - see `network`'s `signal`      |
+| `TOO_MANY_REDIRECTS` | A request redirected more often than `maxRedirects` allows |
+| `REDIRECT_REFUSED`  | A request with `redirect: "error"` was redirected      |
 | `INTERNAL`          | A bug in Vantail                                       |
 | `SHARED_STATE_KEY_DENIED` | A `sharedState.set` for a key no `write` pattern covers |
 | `SHARED_STATE_NOT_SERIALIZABLE` | A `sharedState.set` value that is not JSON |

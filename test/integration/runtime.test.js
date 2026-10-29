@@ -79,6 +79,30 @@ describe(
           response.writeHead(302, { location: "/status" });
           return response.end();
         }
+        if (request.url === "/double") {
+          // Two hops, for running out of `maxRedirects`.
+          response.writeHead(302, { location: "/hop" });
+          return response.end();
+        }
+        if (request.url === "/login") {
+          // What an API tester checks: a login that answers 302 and sets its
+          // session cookie on the redirect itself.
+          response.writeHead(302, {
+            location: "/landing",
+            "set-cookie": "session=abc; Path=/; HttpOnly",
+          });
+          return response.end();
+        }
+        if (request.url === "/landing") {
+          // Says whether the cookie from /login came along with the hop.
+          response.writeHead(200, { "content-type": "text/plain" });
+          return response.end(`cookie: ${request.headers.cookie ?? "none"}`);
+        }
+        if (request.url === "/not-modified") {
+          // A 3xx that is not a redirect: it has no Location.
+          response.writeHead(304);
+          return response.end();
+        }
         if (request.url === "/cookies") {
           // Two Set-Cookie headers, the first with a comma and a space inside
           // its own Expires date. Joining them cannot be undone.
@@ -453,6 +477,43 @@ describe(
       assert.equal(results.hopRedirects[0].location, "/status");
       // Same host, so nothing had to be dropped.
       assert.deepEqual(results.hopRedirects[0].droppedHeaders, []);
+    });
+
+    it("can stop at a redirect and answer with it", () => {
+      assert.deepEqual(results.manual, {
+        status: 302,
+        ok: false,
+        url: "/login",
+        location: "/landing",
+        cookies: ["session=abc; Path=/; HttpOnly"],
+        redirects: 0,
+      });
+      assert.equal(results.manualBinary, 302);
+      assert.equal(results.manualStream, 302);
+      // No Location, so not a redirect - an answer in every mode.
+      assert.equal(results.manualNotModified, 304);
+    });
+
+    it("keeps the headers of every hop it followed, and no cookies", () => {
+      assert.equal(results.followed.status, 200);
+      // The Set-Cookie sent on the redirect, readable after following it.
+      assert.deepEqual(results.followed.hopCookies, ["session=abc; Path=/; HttpOnly"]);
+      // The runtime is not a cookie jar: the hop the redirect led to got none.
+      assert.equal(results.followed.body, "cookie: none");
+    });
+
+    it("refuses a redirect it was told to, and says when there were too many", () => {
+      assert.deepEqual(results.refused, {
+        code: "REDIRECT_REFUSED",
+        status: 302,
+        location: "/landing",
+      });
+      assert.equal(results.notModifiedUnderError, 304);
+      assert.deepEqual(results.tooMany, {
+        code: "TOO_MANY_REDIRECTS",
+        hops: ["302 /hop", "302 /status"],
+      });
+      assert.equal(results.zeroFollowCode, "TOO_MANY_REDIRECTS");
     });
 
     it("delivers a response as it arrives", () => {
@@ -1129,6 +1190,58 @@ try {
   const hopped = await network.request({ url: device + "/hop" });
   results.hopStatus = hopped.status;
   results.hopRedirects = hopped.redirects;
+
+  // redirect: "manual" - the 3xx itself is the answer, from every call that
+  // goes through the runtime's redirect handling.
+  const cookiesOf = (pairs) =>
+    pairs.filter(([name]) => name === "set-cookie").map(([, value]) => value);
+  const manual = await network.request({ url: device + "/login", redirect: "manual" });
+  results.manual = {
+    status: manual.status,
+    ok: manual.ok,
+    url: manual.url.replace(device, ""),
+    location: manual.headers.location,
+    cookies: cookiesOf(manual.headerPairs),
+    redirects: manual.redirects.length,
+  };
+  results.manualBinary = (
+    await network.binary({ url: device + "/login", redirect: "manual" })
+  ).status;
+  const manualStream = await network.stream({ url: device + "/login", redirect: "manual" });
+  results.manualStream = manualStream.status;
+  await manualStream.cancel();
+  results.manualNotModified = (
+    await network.request({ url: device + "/not-modified", redirect: "manual" })
+  ).status;
+
+  // "follow" keeps each hop's own headers, and carries no cookie onward.
+  const followed = await network.request({ url: device + "/login" });
+  results.followed = {
+    status: followed.status,
+    body: followed.body,
+    hopCookies: cookiesOf(followed.redirects[0].headerPairs),
+  };
+
+  // "error", and running out of hops: their own codes, with what happened.
+  const refused = await failure(network.request({ url: device + "/login", redirect: "error" }));
+  results.refused = {
+    code: refused.code,
+    status: refused.data?.status,
+    location: refused.data?.location,
+  };
+  results.notModifiedUnderError = (
+    await network.request({ url: device + "/not-modified", redirect: "error" })
+  ).status;
+  const tooMany = await failure(network.request({ url: device + "/double", maxRedirects: 1 }));
+  results.tooMany = {
+    code: tooMany.code,
+    hops: (tooMany.data?.redirects ?? []).map((hop) => hop.status + " " + hop.location),
+  };
+  // maxRedirects: 0 on its own still means "follow none, then fail" - stopping
+  // at a redirect is what redirect: "manual" is for.
+  results.zeroFollowCode = (
+    await failure(network.request({ url: device + "/login", maxRedirects: 0 }))
+  ).code;
 
   const stream = await network.stream({ url: device + "/stream" });
   results.streamStatus = stream.status;
