@@ -42,3 +42,8 @@ unwrap_used = "deny"
 too_many_lines = "deny"
 excessive_nesting = "deny"
 too_many_arguments = "deny"
+# Failure handled where it happens: no index that can panic - `get` says
+# what happens when it is not there - and no `expect`. A lock is taken
+# through `crate::lock::lock`. Tests are exempt; see clippy.toml.
+indexing_slicing = "deny"
+expect_used = "deny"

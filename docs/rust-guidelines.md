@@ -41,12 +41,32 @@ unsafe fn apply_shape(layer: *mut AnyObject, radii: Radii) {
 }
 ```
 
-### No `unwrap()`
+### Failure handled where it happens
 
-`clippy::unwrap_used`. A panic should be a decision someone wrote down, not a
-default. Handle the `None` or the `Err`; if it truly cannot happen, `expect`
-with a message saying why. Tests may unwrap - a test that panics is a test that
-fails, which is what it is for - so `clippy.toml` exempts them.
+No `unwrap()`, no `expect()`, and no indexing or slicing that can panic
+(`clippy::unwrap_used`, `clippy::expect_used`, `clippy::indexing_slicing`). A
+release build aborts on a panic, so one in any thread takes the whole
+application down. Handle the `None` or the `Err` where it arises, and say in
+the code what happens then:
+
+- **An index** becomes `.get()`, with the missing case handled. A slice
+  pattern (`[value, alpha]`) reads better than two indexes.
+- **The bytes a read filled** are `crate::read::filled(&buffer, count)`, not
+  `&buffer[..count]`.
+- **A lock** is `crate::lock::lock(&mutex)`, which takes the lock even if
+  another thread panicked holding it, instead of `.lock().expect(...)`.
+- **A value created on first use** is taken out of its slot and put back with
+  `Option::insert`, so there is no "just created" case to assert.
+- **Something that would mean the platform changed under us** - an OS
+  constant that is missing, say - fails closed instead of panicking.
+
+Something that truly cannot happen, and cannot be written so that it does not
+need saying, keeps its `expect` under an `#[allow(clippy::expect_used)]` with
+the reason beside it. `WindowConfig::default` is the one: it parses `{}` so the
+defaults live only in the serde attributes.
+
+Tests may unwrap, expect and index - a test that panics is a test that fails,
+which is what it is for - so `clippy.toml` exempts them.
 
 ### Short functions, shallow nesting, few arguments
 
@@ -93,19 +113,15 @@ These are not checked, but are expected in review.
 
 ## Planned
 
-Each of these lands as its own change, with the code brought into line first
-and the lint switched on in the same commit.
+Each of these lands as its own change: the code brought into line first, then
+the lint switched on once nothing trips it.
 
-1. **Failure handled explicitly.** No slice indexing that can panic
-   (`indexing_slicing`) - use `.get()` and handle the `None`. No `expect`
-   (`expect_used`); the one place it is genuinely the right answer, taking a
-   lock, goes through a single documented helper.
-2. **Plain control flow.** `for` loops instead of iterator chains
+1. **Plain control flow.** `for` loops instead of iterator chains
    (`map`, `filter`, `collect`, `any`, `find`, ... through `disallowed-methods`),
    and `match` or `if let` instead of `Option` and `Result` chains such as
    `.and_then(...).unwrap_or_else(...)`. `map_err` followed by `?` stays: it
    is the plain way to say "fail with this error".
-3. **Formatting at 80 columns.** Last, in one change, when no other branch is
+2. **Formatting at 80 columns.** Last, in one change, when no other branch is
    open, and listed in `.git-blame-ignore-revs` so `git blame` looks past it.
 
 Two things were considered and left out:

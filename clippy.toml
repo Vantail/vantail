@@ -1,7 +1,10 @@
 # Settings for the lints enabled in the root Cargo.toml.
 
-# A test that unwraps is a test that fails loudly, which is what it is for.
+# A test that unwraps, expects or indexes is a test that fails loudly, which
+# is what it is for.
 allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-indexing-slicing-in-tests = true
 
 # Past these a function is usually doing more than one thing, and reads more
 # easily as several.
