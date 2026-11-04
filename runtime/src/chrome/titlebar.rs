@@ -128,7 +128,10 @@ fn parts(
     .into_iter()
     .filter_map(|kind| ns.standardWindowButton(kind))
     .collect();
+    // Safety: `superview` is a plain getter, and the buttons belong to `ns`,
+    // a live window read on the main thread.
     let inner = unsafe { buttons.first()?.superview() }?;
+    // Safety: the same getter, one level further up.
     Some((unsafe { inner.superview() }?, buttons))
 }
 
@@ -246,6 +249,9 @@ mod hook {
     impl Hook {
         pub fn new(mtm: MainThreadMarker, ivars: Ivars, frame: NSRect) -> Retained<Self> {
             let this = Self::alloc(mtm).set_ivars(ivars);
+            // Safety: `Hook` is declared above as a subclass of `NSView`, so
+            // the superclass initialiser is `NSView`'s `initWithFrame:`, sent
+            // once to an instance that was just allocated.
             unsafe { objc2::msg_send![super(this), initWithFrame: frame] }
         }
     }
@@ -267,6 +273,7 @@ pub fn keep(window: &tao::window::Window, keeper: &Keeper) -> Watch {
     use objc2::MainThreadMarker;
     use objc2_app_kit::NSAutoresizingMaskOptions;
 
+    // Safety: windows are built on the event loop's thread, the main one.
     let Some(ns) = (unsafe { ns_of(window) }) else {
         return Watch(None);
     };
@@ -300,6 +307,12 @@ pub fn keep(_window: &tao::window::Window, _keeper: &Keeper) -> Watch {
     Watch
 }
 
+/// The `NSWindow` behind a tao window.
+///
+/// # Safety
+///
+/// Call on the main thread, which owns the window. The reference borrows from
+/// `window`, so it cannot outlive it.
 #[cfg(target_os = "macos")]
 unsafe fn ns_of(window: &tao::window::Window) -> Option<&objc2_app_kit::NSWindow> {
     use tao::platform::macos::WindowExtMacOS;
@@ -307,7 +320,9 @@ unsafe fn ns_of(window: &tao::window::Window) -> Option<&objc2_app_kit::NSWindow
     if p.is_null() {
         None
     } else {
-        Some(&*p)
+        // Safety: a non-null pointer tao hands out for a live window, and the
+        // reference returned borrows from that window.
+        Some(unsafe { &*p })
     }
 }
 
@@ -347,6 +362,8 @@ pub struct Native {
 pub fn set_buttons_hidden(window: &tao::window::Window, hidden: bool) {
     use objc2_app_kit::NSWindowButton;
 
+    // Safety: window methods are dispatched on the event loop's thread, the
+    // main one.
     let Some(ns) = (unsafe { ns_of(window) }) else {
         return;
     };
@@ -419,6 +436,7 @@ pub fn fit(
     // same lock.
     keeper.set(Some(shape));
 
+    // Safety: the title bar is shaped on the event loop's thread, the main one.
     let Some(ns) = (unsafe { ns_of(window) }) else {
         return shape.height;
     };
@@ -476,6 +494,9 @@ pub fn native(window: &tao::window::Window) -> Native {
         (Some(close), Some(zoom)) => {
             // The container is what the frames are relative to, so the gap
             // above the buttons has to be read against it.
+            //
+            // Safety: `superview` is a plain getter, on a button of the window
+            // the pointer above was checked for.
             let container = unsafe { close.superview() }
                 .map(|view| view.frame().size.height)
                 .unwrap_or_default();

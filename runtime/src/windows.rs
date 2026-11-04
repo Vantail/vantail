@@ -855,6 +855,11 @@ fn round_corners(
         // the web view rather than the window.
         let _ = window;
 
+        // Safety: the web view's window is live for this call, which runs on
+        // the event loop's thread, the main one. `layer` is checked for null
+        // before anything is sent to it, which also makes it the live layer
+        // `apply_shape` needs, and the colour is released only once the layer
+        // holds its own reference.
         unsafe {
             let ns_window = webview.ns_window();
             let Some(content) = ns_window.contentView() else {
@@ -943,6 +948,9 @@ fn apply_region(window: &Window, radii: crate::config::Radii) {
 
     let hwnd = HWND(window.hwnd() as *mut std::ffi::c_void);
 
+    // Safety: `hwnd` is the handle of a live window, used on the thread that
+    // owns it. Every region made below is either handed to the window or
+    // deleted.
     unsafe {
         // Windows 11 rounds a window's corners itself, and would round the
         // ones this leaves square. Asking for none of that is what makes the
@@ -1044,6 +1052,8 @@ fn apply_region(window: &Window, radii: crate::config::Radii) {
 #[cfg(target_os = "windows")]
 fn rect_rgn(x1: i32, y1: i32, x2: i32, y2: i32) -> windows::Win32::Graphics::Gdi::HRGN {
     use windows::Win32::Graphics::Gdi::CreateRectRgn;
+    // Safety: `CreateRectRgn` takes only integers, so there is nothing to
+    // uphold. The region it returns is the caller's to hand over or delete.
     unsafe { CreateRectRgn(x1.min(x2), y1.min(y2), x1.max(x2) + 1, y1.max(y2) + 1) }
 }
 
@@ -1052,10 +1062,15 @@ fn rect_rgn(x1: i32, y1: i32, x2: i32, y2: i32) -> windows::Win32::Graphics::Gdi
 /// Rebuilt from the layer's current bounds every time, because a path is fixed
 /// geometry: unlike `cornerRadius` it does not follow the layer when the
 /// window resizes.
+///
+/// # Safety
+///
+/// `layer` must be a live `CALayer`, and this must run on the main thread.
 #[cfg(target_os = "macos")]
 unsafe fn apply_shape(layer: *mut objc2::runtime::AnyObject, radii: crate::config::Radii) {
     use objc2_foundation::NSRect;
 
+    // Safety: `layer` is a live `CALayer`, as the caller guarantees.
     let bounds: NSRect = unsafe { objc2::msg_send![layer, bounds] };
     let (w, h) = (bounds.size.width, bounds.size.height);
     if w <= 0.0 || h <= 0.0 {
@@ -1069,6 +1084,9 @@ unsafe fn apply_shape(layer: *mut objc2::runtime::AnyObject, radii: crate::confi
     let bl = radii.bottom_left.min(cap);
     let br = radii.bottom_right.min(cap);
 
+    // Safety: `path` is checked for null, and released only after the shape
+    // layer has taken its own reference. `shape` comes from its class's own
+    // constructor, and `layer` is live, as the caller guarantees.
     unsafe {
         let path = CGPathCreateMutable();
         if path.is_null() {

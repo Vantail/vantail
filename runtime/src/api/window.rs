@@ -159,6 +159,9 @@ fn zoom_in_one_step(entry: &mut crate::windows::WindowEntry, maximized: bool) ->
             return false;
         }
 
+        // Safety: the pointer was checked for null above and belongs to the
+        // window this entry owns, which outlives the call. Window methods are
+        // dispatched on the event loop's thread, the main one.
         unsafe {
             let ns_window = &*ns_window;
 

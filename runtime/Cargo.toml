@@ -8,6 +8,10 @@ rust-version.workspace = true
 license.workspace = true
 description = "The Vantail native runtime: a thin native layer for JavaScript applications."
 
+# The workspace's lints; see the root Cargo.toml.
+[lints]
+workspace = true
+
 [[bin]]
 name = "vantail-runtime"
 path = "src/main.rs"

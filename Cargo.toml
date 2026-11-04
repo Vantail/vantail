@@ -19,3 +19,20 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# Lints for every crate in the workspace; a member opts in with
+# `[lints] workspace = true`. Each one is here to keep the code easy to read
+# and review, and docs/rust-guidelines.md says why. A lint is added once the
+# code already passes it, so this table only ever gets stricter.
+[workspace.lints.rust]
+# Each unsafe operation inside an `unsafe fn` still needs its own block, and
+# so its own `Safety` comment, rather than the whole body being unsafe.
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+# `unsafe` stays - the window chrome, menus, printing and permission prompts
+# are calls into the OS - but every block says why it is sound.
+undocumented_unsafe_blocks = "deny"
+# A panic should be a decision someone wrote down, not a default. Tests are
+# exempt; see clippy.toml.
+unwrap_used = "deny"

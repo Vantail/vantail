@@ -57,6 +57,11 @@ earns its place by explaining a constraint that is not visible: a platform
 that behaves differently, an ordering that matters, a simpler approach that
 was tried and did not work.
 
+**Rust is written to be read.** Short functions, shallow nesting, failure
+handled where it happens, and a `Safety` comment on every `unsafe` block. The
+rules and the lints that check them are in
+[docs/rust-guidelines.md](docs/rust-guidelines.md).
+
 **Permissions are deny-by-default.** A new capability starts unavailable and
 has to be asked for in the config. Anything that widens what an application
 can reach without the config saying so is a bug, however convenient.
