@@ -169,7 +169,7 @@ fn run() -> Result<(), String> {
 /// Whether another copy of the application is already running and has been
 /// handed this launch, in which case this one has nothing left to do.
 fn handed_over(loaded: &LoadedConfig, event_loop: &EventLoop<UserEvent>) -> bool {
-    match instance::claim(&loaded.config.app.identifier, std::env::args().collect()) {
+    match instance::claim(&loaded.config.app.identifier, launch_args()) {
         Ok(instance::Claim::HandedOver) => true,
         Ok(instance::Claim::Primary(listener)) => {
             instance::listen(listener, event_loop.create_proxy());
@@ -202,8 +202,7 @@ impl App {
     fn start(rt: Arc<Runtime>, event_loop: &EventLoop<UserEvent>) -> Result<Self, String> {
         // Windows and Linux deliver a link by starting the application with it
         // on the command line, which includes the very first launch.
-        for url in deeplink::from_args(&rt.config.protocols, &std::env::args().collect::<Vec<_>>())
-        {
+        for url in deeplink::from_args(&rt.config.protocols, &launch_args()) {
             let _ = rt.links.accept(url);
         }
         let pool = Pool::new(worker_count())?;
@@ -312,10 +311,15 @@ impl App {
         // Cmd-W, Cmd-Q, Cmd-C and friends do nothing at all. So an application
         // that sets none gets the standard one. `menu: []` is how you ask for
         // no menu on purpose.
-        let default_menu = (cfg!(target_os = "macos") && self.rt.config.menu.is_none())
-            .then(|| chrome::menu::default_app_menu(&self.rt.config.app.name));
-        let Some(items) = self.rt.config.menu.as_deref().or(default_menu.as_deref()) else {
-            return;
+        let default_menu = if cfg!(target_os = "macos") && self.rt.config.menu.is_none() {
+            Some(chrome::menu::default_app_menu(&self.rt.config.app.name))
+        } else {
+            None
+        };
+        let items = match (self.rt.config.menu.as_deref(), default_menu.as_deref()) {
+            (Some(items), _) => items,
+            (None, Some(items)) => items,
+            (None, None) => return,
         };
 
         match self.chrome.set_app_menu(items) {
@@ -413,8 +417,11 @@ impl App {
     }
 
     fn tray_event(&self, event: &'static str, payload: serde_json::Value) {
-        let left =
-            event == "tray.click" && payload.get("button").and_then(|b| b.as_str()) == Some("left");
+        let button = match payload.get("button") {
+            Some(button) => button.as_str(),
+            None => None,
+        };
+        let left = event == "tray.click" && button == Some("left");
         if left {
             activate_from_tray(&self.windows, &self.chrome);
         }
@@ -425,11 +432,7 @@ impl App {
     fn window_event(&mut self, window_id: WindowId, event: WindowEvent<'_>) -> ControlFlow {
         // A window we have already dropped can still deliver a final event;
         // there is nothing left to tell anyone about it.
-        let Some(label) = self
-            .windows
-            .by_id(window_id)
-            .map(|entry| entry.label.clone())
-        else {
+        let Some(entry) = self.windows.by_id(window_id) else {
             // A print window is never listed; closing it ends its job.
             #[cfg(target_os = "windows")]
             if matches!(event, WindowEvent::CloseRequested) {
@@ -437,6 +440,7 @@ impl App {
             }
             return ControlFlow::Wait;
         };
+        let label = entry.label.clone();
 
         match event {
             WindowEvent::CloseRequested | WindowEvent::Destroyed => {
@@ -454,11 +458,10 @@ impl App {
         // An application that lives in the tray needs its window to go away
         // without its JavaScript going with it, so the close button is not
         // always a close.
-        let behavior = self
-            .windows
-            .by_id(window_id)
-            .map(|entry| entry.close_behavior)
-            .unwrap_or_default();
+        let behavior = match self.windows.by_id(window_id) {
+            Some(entry) => entry.close_behavior,
+            None => crate::config::CloseBehavior::default(),
+        };
         let action = api::window::close_action(behavior);
 
         if action == api::window::CloseAction::Hide {
@@ -598,10 +601,13 @@ fn activate_from_tray(windows: &WindowManager, chrome: &Chrome) {
     use crate::chrome::{tray_activation, TrayActivation, WindowState};
 
     let target = windows.get(chrome.tray_window());
-    let state = target.map(|entry| WindowState {
-        visible: entry.window.is_visible(),
-        focused: entry.focused,
-    });
+    let state = match target {
+        Some(entry) => Some(WindowState {
+            visible: entry.window.is_visible(),
+            focused: entry.focused,
+        }),
+        None => None,
+    };
 
     match tray_activation(chrome.tray_left_click(), state) {
         TrayActivation::ShowAndFocus => {
@@ -687,9 +693,31 @@ fn install_chrome_handlers(event_loop: &EventLoop<UserEvent>) {
 /// Enough workers to keep a handful of file operations in flight without
 /// turning into a thread farm on a small machine.
 fn worker_count() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| n.get().clamp(2, 8))
-        .unwrap_or(4)
+    match std::thread::available_parallelism() {
+        Ok(cores) => cores.get().clamp(2, 8),
+        Err(_) => 4,
+    }
+}
+
+/// The command line this process was started with, program name first.
+fn launch_args() -> Vec<String> {
+    let mut args = Vec::new();
+    for arg in std::env::args() {
+        args.push(arg);
+    }
+    args
+}
+
+/// The config to load: the one named on the command line, then
+/// `$VANTAIL_CONFIG`, then the first one `discover` finds.
+fn config_path(given: Option<PathBuf>) -> Option<PathBuf> {
+    if given.is_some() {
+        return given;
+    }
+    if let Some(path) = std::env::var_os("VANTAIL_CONFIG") {
+        return Some(PathBuf::from(path));
+    }
+    LoadedConfig::discover()
 }
 
 struct Args {
@@ -735,13 +763,10 @@ fn parse_args() -> Result<Option<Args>, String> {
         }
     }
 
-    let config = config
-        .or_else(|| std::env::var_os("VANTAIL_CONFIG").map(PathBuf::from))
-        .or_else(LoadedConfig::discover)
-        .ok_or_else(|| {
-            "No vantail.json found. Pass --config <path>, or run this through `vantail dev`."
-                .to_string()
-        })?;
+    let config = config_path(config).ok_or_else(|| {
+        "No vantail.json found. Pass --config <path>, or run this through `vantail dev`."
+            .to_string()
+    })?;
 
     Ok(Some(Args { config, check }))
 }

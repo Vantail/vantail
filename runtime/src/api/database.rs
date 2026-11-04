@@ -296,8 +296,10 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, id: &str, method: &str, params: Value) ->
         id: id.to_string(),
         window: ctx.source.to_string(),
     };
-    let queued =
-        job_for(rt, method, params, reply).and_then(|(id, job)| rt.databases.hand(id, job));
+    let queued = match job_for(rt, method, params, reply) {
+        Ok((id, job)) => rt.databases.hand(id, job),
+        Err(error) => Err(error),
+    };
     match queued {
         // The thread has it, and will answer the window itself.
         Ok(()) => None,
@@ -462,11 +464,12 @@ fn open(rt: &Arc<Runtime>, method: &str, params: Value) -> ApiResult {
     // an error from `open` rather than from the first query. Opening is quick
     // even when it creates the file; everything slow happens later, on that
     // thread.
-    let result = opened.recv().unwrap_or_else(|_| {
-        Err(ApiError::internal(
+    let result = match opened.recv() {
+        Ok(result) => result,
+        Err(_) => Err(ApiError::internal(
             "The database thread stopped before it opened anything",
-        ))
-    });
+        )),
+    };
     if let Err(error) = result {
         rt.databases.remove(id);
         return Err(error);
@@ -759,10 +762,10 @@ fn begin(connection: &Connection, id: u32, transaction: &mut Option<OpenTransact
 }
 
 fn commit(connection: &Connection, transaction: &mut Option<OpenTransaction>) -> ApiResult {
-    let result = connection
-        .execute_batch("COMMIT")
-        .map(|()| Value::Null)
-        .map_err(|e| failed("Could not commit", &e));
+    let result = match connection.execute_batch("COMMIT") {
+        Ok(()) => Ok(Value::Null),
+        Err(error) => Err(failed("Could not commit", &error)),
+    };
     // Committed or not, the transaction is over: leaving it open after a
     // failed COMMIT would wedge the connection.
     *transaction = None;
@@ -770,10 +773,10 @@ fn commit(connection: &Connection, transaction: &mut Option<OpenTransaction>) ->
 }
 
 fn roll_back(connection: &Connection, transaction: &mut Option<OpenTransaction>) -> ApiResult {
-    let result = connection
-        .execute_batch("ROLLBACK")
-        .map(|()| Value::Null)
-        .map_err(|e| failed("Could not roll back", &e));
+    let result = match connection.execute_batch("ROLLBACK") {
+        Ok(()) => Ok(Value::Null),
+        Err(error) => Err(failed("Could not roll back", &error)),
+    };
     *transaction = None;
     result
 }
@@ -787,7 +790,10 @@ fn query(connection: &Connection, sql: &str, params: &[Value], bigint: bool) -> 
         .prepare(sql)
         .map_err(|e| failed("Could not prepare the statement", &e))?;
 
-    let columns: Vec<String> = statement.column_names().map(str::to_string).collect();
+    let mut columns: Vec<String> = Vec::new();
+    for name in statement.column_names() {
+        columns.push(name.to_string());
+    }
 
     let bound = bind(params)?;
     let mut rows = statement
@@ -881,20 +887,22 @@ fn apply_key(connection: &Connection, key: &str, path: &Path) -> Result<(), ApiE
         .pragma_update(None, "key", format!("x'{key}'"))
         .map_err(|e| failed("Could not key the database", &e))?;
 
-    connection
-        .prepare("select count(*) from sqlite_schema")
-        .and_then(|mut statement| statement.query_row([], |row| row.get::<_, i64>(0)))
-        .map(|_| ())
-        .map_err(|_| {
-            ApiError::new(
-                crate::error::code::PERMISSION_DENIED,
-                format!(
-                    "`{}` did not decrypt with that key. Either the key is wrong, or the file \
-                     is a plain unencrypted database.",
-                    path.display()
-                ),
-            )
-        })
+    // Reading the schema is what fails when the key does not fit.
+    let readable = match connection.prepare("select count(*) from sqlite_schema") {
+        Ok(mut statement) => statement.query_row([], |row| row.get::<_, i64>(0)).is_ok(),
+        Err(_) => false,
+    };
+    if readable {
+        return Ok(());
+    }
+    Err(ApiError::new(
+        crate::error::code::PERMISSION_DENIED,
+        format!(
+            "`{}` did not decrypt with that key. Either the key is wrong, or the file \
+             is a plain unencrypted database.",
+            path.display()
+        ),
+    ))
 }
 
 /// The same call in a build without SQLCipher, which cannot honour it.
@@ -924,7 +932,7 @@ fn read_key(rt: &Runtime, secret: &str) -> Result<String, ApiError> {
 
     // Stored as hex, so what comes back is the key rather than a passphrase
     // that happened to survive a round trip through the credential store.
-    if stored.len() != KEY_BYTES * 2 || !stored.bytes().all(|b| b.is_ascii_hexdigit()) {
+    if stored.len() != KEY_BYTES * 2 || !is_hex(&stored) {
         return Err(ApiError::invalid_params(format!(
             "`{secret}` does not hold a database key. `database.createKey` writes one."
         )));
@@ -952,7 +960,10 @@ fn create_key(rt: &Runtime, secret: &str) -> ApiResult {
     getrandom::fill(&mut bytes)
         .map_err(|e| ApiError::internal(format!("Could not generate a key: {e}")))?;
 
-    let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+    let mut hex = String::with_capacity(KEY_BYTES * 2);
+    for byte in bytes {
+        hex.push_str(&format!("{byte:02x}"));
+    }
     crate::api::secrets::write(rt, secret, &hex)?;
     Ok(Value::Null)
 }
@@ -963,7 +974,20 @@ fn create_key(rt: &Runtime, secret: &str) -> ApiResult {
 
 /// Turn the JSON a caller sent into something SQLite can bind.
 fn bind(params: &[Value]) -> Result<Vec<SqlValue>, ApiError> {
-    params.iter().map(one).collect()
+    let mut bound = Vec::with_capacity(params.len());
+    for param in params {
+        bound.push(one(param)?);
+    }
+    Ok(bound)
+}
+
+fn is_hex(text: &str) -> bool {
+    for byte in text.bytes() {
+        if !byte.is_ascii_hexdigit() {
+            return false;
+        }
+    }
+    true
 }
 
 fn one(value: &Value) -> Result<SqlValue, ApiError> {
@@ -1275,7 +1299,7 @@ mod tests {
         // And so is opening it as a plain database.
         assert!(connect(&path, false, None).was_refused());
 
-        std::fs::remove_dir_all(&dir).ok();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Opening an encrypted file without a key either fails outright or opens
@@ -1305,7 +1329,7 @@ mod tests {
         let path = dir.join("ledger.sqlite");
         let error = connect(&path, false, Some(&"0".repeat(64))).expect_err("no sqlcipher");
         assert_eq!(error.code, crate::error::code::UNSUPPORTED);
-        std::fs::remove_dir_all(&dir).ok();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -1345,6 +1369,6 @@ mod tests {
             .unwrap();
         assert_eq!(value, "kept");
 
-        std::fs::remove_dir_all(&directory).ok();
+        let _ = std::fs::remove_dir_all(&directory);
     }
 }
