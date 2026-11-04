@@ -304,17 +304,12 @@ fn perform(rt: &Arc<Runtime>, params: Value, cancelled: &AtomicBool) -> ApiResul
     let params: RequestParams = Request::params("network.request", params)?;
     let binary = wants_bytes(params.response_type.as_deref())?;
 
-    let negotiated = negotiate(rt, &params, cancelled)?;
-    let Negotiated {
-        url,
-        head,
-        mut body,
-        redirects,
-        started,
-    } = negotiated;
+    let mut negotiated = negotiate(rt, &params, cancelled)?;
 
     let download = Instant::now();
-    let bytes = body
+    let url = &negotiated.url;
+    let bytes = negotiated
+        .body
         .with_config()
         .limit(MAX_RESPONSE_BYTES as u64)
         .read_to_vec()
@@ -325,15 +320,7 @@ fn perform(rt: &Arc<Runtime>, params: Value, cancelled: &AtomicBool) -> ApiResul
             )
         })?;
 
-    Ok(render(
-        &url,
-        head,
-        bytes,
-        binary,
-        redirects,
-        started,
-        download.elapsed(),
-    ))
+    Ok(render(negotiated, bytes, binary, download.elapsed()))
 }
 
 /// Negotiate the request, then hand every chunk to the window as it arrives.
@@ -344,20 +331,11 @@ fn run_stream(
     params: Value,
     cancelled: Arc<AtomicBool>,
 ) {
-    let opened = (|| {
-        let params: RequestParams = Request::params("network.stream", params)?;
-        let binary = wants_bytes(params.response_type.as_deref())?;
-        Ok::<_, ApiError>((negotiate(&rt, &params, &cancelled)?, binary))
-    })();
-
-    let ((negotiated, binary), stream_id) = match opened {
-        Ok((negotiated, binary)) => {
-            let id = rt.requests.open_stream(Arc::clone(&cancelled));
-            ((negotiated, binary), id)
-        }
+    let (negotiated, binary) = match negotiate_stream(&rt, params, &cancelled) {
+        Ok(started) => started,
         Err(error) => {
-            // The head never arrived. Answer the original call with why, if
-            // a cancel has not already answered it.
+            // The head never arrived. Answer the original call with why, if a
+            // cancel has not already answered it.
             if let Some(entry) = rt.requests.claim(&request_id) {
                 rt.send(
                     Some(entry.window),
@@ -367,6 +345,7 @@ fn run_stream(
             return;
         }
     };
+    let stream_id = rt.requests.open_stream(Arc::clone(&cancelled));
 
     let Negotiated {
         url,
@@ -391,42 +370,18 @@ fn run_stream(
         )),
     );
 
-    let mut reader = body.into_reader();
-    let mut buffer = vec![0_u8; CHUNK];
-    let mut carry: Vec<u8> = Vec::new();
-    let mut failure: Option<String> = None;
-
-    loop {
-        if cancelled.load(Ordering::SeqCst) {
-            break;
-        }
-        match reader.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(read) => {
-                let data = if binary {
-                    BASE64.encode(&buffer[..read])
-                } else {
-                    decode_text(&mut carry, &buffer[..read])
-                };
-                // A chunk that was nothing but the start of a character the
-                // next chunk finishes has nothing to deliver yet.
-                if data.is_empty() {
-                    continue;
-                }
-                rt.send(
-                    Some(window.clone()),
-                    Outgoing::Event(Event::new(
-                        "network.chunk",
-                        json!({ "id": stream_id, "data": data }),
-                    )),
-                );
-            }
-            Err(error) => {
-                failure = Some(format!("Could not read the stream from `{url}`: {error}"));
-                break;
-            }
-        }
-    }
+    let forwarded = forward_chunks(
+        &rt,
+        &window,
+        stream_id,
+        binary,
+        body.into_reader(),
+        &cancelled,
+    );
+    let failure = match forwarded {
+        Ok(()) => None,
+        Err(error) => Some(format!("Could not read the stream from `{url}`: {error}")),
+    };
 
     let was_cancelled = cancelled.load(Ordering::SeqCst);
     rt.requests.close_stream(stream_id);
@@ -443,6 +398,58 @@ fn run_stream(
     );
 }
 
+/// Negotiate a stream's request, as far as its response head. Answers with
+/// whether the chunks are to be sent as bytes.
+fn negotiate_stream(
+    rt: &Arc<Runtime>,
+    params: Value,
+    cancelled: &AtomicBool,
+) -> Result<(Negotiated, bool), ApiError> {
+    let params: RequestParams = Request::params("network.stream", params)?;
+    let binary = wants_bytes(params.response_type.as_deref())?;
+    let negotiated = negotiate(rt, &params, cancelled)?;
+    Ok((negotiated, binary))
+}
+
+/// Hand the body to the window a chunk at a time, until it ends, fails to
+/// read, or the stream is cancelled.
+fn forward_chunks(
+    rt: &Runtime,
+    window: &str,
+    stream_id: u32,
+    binary: bool,
+    mut reader: impl Read,
+    cancelled: &AtomicBool,
+) -> std::io::Result<()> {
+    let mut buffer = vec![0_u8; CHUNK];
+    let mut carry: Vec<u8> = Vec::new();
+
+    while !cancelled.load(Ordering::SeqCst) {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            return Ok(());
+        }
+        let data = if binary {
+            BASE64.encode(&buffer[..read])
+        } else {
+            decode_text(&mut carry, &buffer[..read])
+        };
+        // A chunk that was nothing but the start of a character the next
+        // chunk finishes has nothing to deliver yet.
+        if data.is_empty() {
+            continue;
+        }
+        rt.send(
+            Some(window.to_string()),
+            Outgoing::Event(Event::new(
+                "network.chunk",
+                json!({ "id": stream_id, "data": data }),
+            )),
+        );
+    }
+    Ok(())
+}
+
 /// The request, its redirects, and the response head - stopping before the
 /// body is read, so a buffered call and a stream can share all of it.
 struct Negotiated {
@@ -453,22 +460,51 @@ struct Negotiated {
     started: Instant,
 }
 
+/// The request as it goes out on the current hop. A redirect changes it for
+/// the next one.
+struct Outbound {
+    method: String,
+    url: String,
+    headers: BTreeMap<String, String>,
+    body: Vec<u8>,
+}
+
+impl Outbound {
+    fn new(params: &RequestParams) -> Result<Self, ApiError> {
+        let body = match (&params.body_base64, &params.body) {
+            (Some(encoded), _) => BASE64.decode(encoded.as_bytes()).map_err(|e| {
+                ApiError::invalid_params(format!("`bodyBase64` is not valid base64: {e}"))
+            })?,
+            (None, Some(text)) => text.as_bytes().to_vec(),
+            (None, None) => Vec::new(),
+        };
+        Ok(Outbound {
+            method: params.method.to_ascii_uppercase(),
+            url: params.url.clone(),
+            headers: params.headers.clone(),
+            body,
+        })
+    }
+
+    /// Point the request where a redirect sent it.
+    fn follow(&mut self, status: http::StatusCode, location: String) {
+        // 303, and 301/302 in practice, turn everything into a GET.
+        if status.as_u16() != 307 && status.as_u16() != 308 {
+            self.method = "GET".to_string();
+            self.body.clear();
+            self.headers
+                .retain(|name, _| !name.eq_ignore_ascii_case("content-type"));
+        }
+        self.url = location;
+    }
+}
+
 fn negotiate(
     rt: &Arc<Runtime>,
     params: &RequestParams,
     cancelled: &AtomicBool,
 ) -> Result<Negotiated, ApiError> {
-    let mut body = match (&params.body_base64, &params.body) {
-        (Some(encoded), _) => BASE64.decode(encoded.as_bytes()).map_err(|e| {
-            ApiError::invalid_params(format!("`bodyBase64` is not valid base64: {e}"))
-        })?,
-        (None, Some(text)) => text.as_bytes().to_vec(),
-        (None, None) => Vec::new(),
-    };
-
-    let mut method = params.method.to_ascii_uppercase();
-    let mut url = params.url.clone();
-    let mut headers = params.headers.clone();
+    let mut request = Outbound::new(params)?;
     let timeout = Duration::from_millis(params.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS));
     let allowed_hops = params.max_redirects.unwrap_or(DEFAULT_MAX_REDIRECTS);
 
@@ -486,62 +522,27 @@ fn negotiate(
 
         // Every hop, not just the first. This is the whole reason redirects
         // are followed here rather than by the HTTP client.
-        let endpoint = authorise(rt, &url)?;
+        let endpoint = authorise(rt, &request.url)?;
 
-        let mut dropped: Vec<String> = Vec::new();
-        if let Some(previous) = &previous {
-            if previous.host != endpoint.host {
-                // Browsers drop credentials when a redirect crosses origins,
-                // and so does this: a redirect must not be able to hand an
-                // API token to somebody else.
-                headers.retain(|name, _| {
-                    let lower = name.to_ascii_lowercase();
-                    let keep = lower != "authorization"
-                        && lower != "cookie"
-                        && lower != "proxy-authorization";
-                    if !keep {
-                        dropped.push(lower);
-                    }
-                    keep
-                });
-            }
-        }
-        // Reported on the hop that caused it, so the answer to "which one
-        // dropped my auth header" is in the record rather than inferred.
-        if let Some(last) = redirects.last_mut() {
-            if !dropped.is_empty() {
-                last["droppedHeaders"] = json!(dropped);
-            }
-        }
-
-        let insecure = rt.permissions.network.allows_invalid_certificate(&endpoint);
-        // Both are looked up per hop rather than once: a redirect to another
-        // host must get that host's certificate and that host's proxy, not
-        // the ones the first hop happened to match.
-        let certificate = match rt.permissions.network.client_certificate(&endpoint) {
-            Some(paths) => Some(client_certificate(paths)?),
-            None => None,
+        let crossed_hosts = match &previous {
+            Some(previous) => previous.host != endpoint.host,
+            None => false,
         };
-        let proxy = rt.permissions.network.proxy(&endpoint).map(str::to_string);
+        if crossed_hosts {
+            let dropped = drop_credentials(&mut request.headers);
+            record_dropped(&mut redirects, dropped);
+        }
 
-        let (head, received) = open(
-            &method,
-            &url,
-            &headers,
-            &body,
-            timeout,
-            insecure,
-            certificate,
-            proxy.as_deref(),
-        )?;
+        let (head, received) = send_hop(rt, &endpoint, &request, timeout)?;
 
         let status = head.status;
         // A 3xx without a `Location` - a 304, say - is not a redirect, and is
         // an answer like any other status.
-        let Some(location) = redirect_target(&head, &url).filter(|_| status.is_redirection())
+        let Some(location) =
+            redirect_target(&head, &request.url).filter(|_| status.is_redirection())
         else {
             return Ok(Negotiated {
-                url,
+                url: request.url,
                 head,
                 body: received,
                 redirects,
@@ -557,63 +558,115 @@ fn negotiate(
             // no further host to authorise either.
             Redirect::Manual => {
                 return Ok(Negotiated {
-                    url,
+                    url: request.url,
                     head,
                     body: received,
                     redirects,
                     started,
                 })
             }
-            Redirect::Error => {
-                return Err(ApiError::new(
-                    crate::error::code::REDIRECT_REFUSED,
-                    format!(
-                        "`{url}` answered {} with a redirect to `{sent_location}`, and \
-                         `redirect: \"error\"` refuses to follow one",
-                        status.as_u16()
-                    ),
-                )
-                .with_data(json!({
-                    "status": status.as_u16(),
-                    "url": url,
-                    "location": sent_location,
-                    "headerPairs": &head.pairs,
-                })))
-            }
+            Redirect::Error => return Err(redirect_refused(&request.url, &head, &sent_location)),
             Redirect::Follow => {}
         }
 
-        redirects.push(json!({
-            "status": status.as_u16(),
-            "url": url,
-            "location": sent_location,
-            // Everything the hop said, not just where it pointed: a
-            // `Set-Cookie` on a redirect - a login answering 302 - is often
-            // the very thing the caller is after.
-            "headerPairs": &head.pairs,
-            "droppedHeaders": Vec::<String>::new(),
-        }));
-        // 303, and 301/302 in practice, turn everything into a GET.
-        if status.as_u16() != 307 && status.as_u16() != 308 {
-            method = "GET".to_string();
-            body.clear();
-            headers.retain(|name, _| !name.eq_ignore_ascii_case("content-type"));
-        }
+        redirects.push(followed(&request.url, &head, &sent_location));
+        request.follow(status, location);
         previous = Some(endpoint);
-        url = location;
     }
 
-    // Out of hops. Not a transport failure, so not `IO_ERROR`: the redirects
-    // followed so far, the last of them the one that was not, go with it.
-    Err(ApiError::new(
+    Err(too_many_redirects(&params.url, allowed_hops, redirects))
+}
+
+/// Browsers drop credentials when a redirect crosses origins, and so does
+/// this: a redirect must not be able to hand an API token to somebody else.
+/// Answers with the names of the headers it dropped.
+fn drop_credentials(headers: &mut BTreeMap<String, String>) -> Vec<String> {
+    let mut dropped: Vec<String> = Vec::new();
+    headers.retain(|name, _| {
+        let lower = name.to_ascii_lowercase();
+        let keep = lower != "authorization" && lower != "cookie" && lower != "proxy-authorization";
+        if !keep {
+            dropped.push(lower);
+        }
+        keep
+    });
+    dropped
+}
+
+/// Reported on the hop that caused it, so the answer to "which one dropped my
+/// auth header" is in the record rather than inferred.
+fn record_dropped(redirects: &mut [Value], dropped: Vec<String>) {
+    if dropped.is_empty() {
+        return;
+    }
+    if let Some(last) = redirects.last_mut() {
+        last["droppedHeaders"] = json!(dropped);
+    }
+}
+
+/// Send one hop of the request, with whatever the config says about the
+/// host it goes to.
+fn send_hop(
+    rt: &Runtime,
+    endpoint: &Endpoint,
+    request: &Outbound,
+    timeout: Duration,
+) -> Result<(Head, ureq::Body), ApiError> {
+    let insecure = rt.permissions.network.allows_invalid_certificate(endpoint);
+    // Both are looked up per hop rather than once: a redirect to another host
+    // must get that host's certificate and that host's proxy, not the ones the
+    // first hop happened to match.
+    let certificate = match rt.permissions.network.client_certificate(endpoint) {
+        Some(paths) => Some(client_certificate(paths)?),
+        None => None,
+    };
+    let proxy = rt.permissions.network.proxy(endpoint).map(str::to_string);
+    open(request, timeout, insecure, certificate, proxy.as_deref())
+}
+
+/// What a followed redirect said, for `redirects[]`.
+fn followed(url: &str, head: &Head, location: &str) -> Value {
+    json!({
+        "status": head.status.as_u16(),
+        "url": url,
+        "location": location,
+        // Everything the hop said, not just where it pointed: a `Set-Cookie`
+        // on a redirect - a login answering 302 - is often the very thing the
+        // caller is after.
+        "headerPairs": &head.pairs,
+        "droppedHeaders": Vec::<String>::new(),
+    })
+}
+
+/// `redirect: "error"`, and the server redirected.
+fn redirect_refused(url: &str, head: &Head, location: &str) -> ApiError {
+    let status = head.status.as_u16();
+    ApiError::new(
+        crate::error::code::REDIRECT_REFUSED,
+        format!(
+            "`{url}` answered {status} with a redirect to `{location}`, and \
+             `redirect: \"error\"` refuses to follow one"
+        ),
+    )
+    .with_data(json!({
+        "status": status,
+        "url": url,
+        "location": location,
+        "headerPairs": &head.pairs,
+    }))
+}
+
+/// Out of hops. Not a transport failure, so not `IO_ERROR`: the redirects
+/// followed so far, the last of them the one that was not, go with it.
+fn too_many_redirects(url: &str, allowed_hops: u32, redirects: Vec<Value>) -> ApiError {
+    ApiError::new(
         crate::error::code::TOO_MANY_REDIRECTS,
         format!(
-            "`{}` redirected more than {allowed_hops} {}",
-            params.url,
+            "`{url}` redirected more than {allowed_hops} {}",
             if allowed_hops == 1 { "time" } else { "times" }
         ),
     )
-    .with_data(json!({ "redirects": redirects })))
+    .with_data(json!({ "redirects": redirects }))
 }
 
 /// One prompt at a time.
@@ -767,17 +820,44 @@ fn client_certificate(paths: &CertificatePaths) -> Result<ureq::tls::ClientCert,
 }
 
 /// Send one request and read its head, leaving the body unread.
-#[allow(clippy::too_many_arguments)]
 fn open(
-    method: &str,
-    url: &str,
-    headers: &BTreeMap<String, String>,
-    body: &[u8],
+    request: &Outbound,
     timeout: Duration,
     insecure: bool,
     certificate: Option<ureq::tls::ClientCert>,
     proxy: Option<&str>,
 ) -> Result<(Head, ureq::Body), ApiError> {
+    let agent = agent(timeout, insecure, certificate, proxy)?;
+
+    let mut builder = http::Request::builder()
+        .method(request.method.as_str())
+        .uri(request.url.as_str());
+    for (name, value) in &request.headers {
+        builder = builder.header(name, value);
+    }
+
+    let built = builder.body(request.body.clone()).map_err(|e| {
+        // A bad method, a bad URL, or a header value with a newline in it.
+        ApiError::invalid_params(format!("Could not build the request: {e}"))
+    })?;
+
+    let started = Instant::now();
+    let response = agent
+        .run(built)
+        .map_err(|e| ApiError::new(crate::error::code::IO_ERROR, describe(&request.url, &e)))?;
+    // `run` returns once the head is readable; the body is still streaming.
+    let elapsed = started.elapsed();
+
+    Ok(read_head(response, elapsed))
+}
+
+/// An HTTP client for one hop, set up the way that hop's host needs.
+fn agent(
+    timeout: Duration,
+    insecure: bool,
+    certificate: Option<ureq::tls::ClientCert>,
+    proxy: Option<&str>,
+) -> Result<ureq::Agent, ApiError> {
     let tls = ureq::tls::TlsConfig::builder()
         .disable_verification(insecure)
         .client_cert(certificate)
@@ -802,25 +882,11 @@ fn open(
         config = config.proxy(Some(proxy));
     }
 
-    let agent: ureq::Agent = config.build().into();
+    Ok(config.build().into())
+}
 
-    let mut builder = http::Request::builder().method(method).uri(url);
-    for (name, value) in headers {
-        builder = builder.header(name, value);
-    }
-
-    let request = builder.body(body.to_vec()).map_err(|e| {
-        // A bad method, a bad URL, or a header value with a newline in it.
-        ApiError::invalid_params(format!("Could not build the request: {e}"))
-    })?;
-
-    let started = Instant::now();
-    let response = agent
-        .run(request)
-        .map_err(|e| ApiError::new(crate::error::code::IO_ERROR, describe(url, &e)))?;
-    // `run` returns once the head is readable; the body is still streaming.
-    let elapsed = started.elapsed();
-
+/// The response's head, and its body still unread.
+fn read_head(response: http::Response<ureq::Body>, elapsed: Duration) -> (Head, ureq::Body) {
     let status = response.status();
     let mut collected = BTreeMap::new();
     let mut pairs = Vec::new();
@@ -840,15 +906,13 @@ fn open(
             .or_insert(text);
     }
 
-    Ok((
-        Head {
-            status,
-            headers: collected,
-            pairs,
-            elapsed,
-        },
-        response.into_body(),
-    ))
+    let head = Head {
+        status,
+        headers: collected,
+        pairs,
+        elapsed,
+    };
+    (head, response.into_body())
 }
 
 fn redirect_target(head: &Head, base: &str) -> Option<String> {
@@ -925,15 +989,16 @@ fn decode_text(carry: &mut Vec<u8>, chunk: &[u8]) -> String {
 // Rendering
 // ---------------------------------------------------------------------------
 
-fn render(
-    url: &str,
-    head: Head,
-    body: Vec<u8>,
-    binary: bool,
-    redirects: Vec<Value>,
-    started: Instant,
-    download: Duration,
-) -> Value {
+fn render(negotiated: Negotiated, body: Vec<u8>, binary: bool, download: Duration) -> Value {
+    // The body has been read into `body` by now; what is left is the head and
+    // the record of how it was reached.
+    let Negotiated {
+        url,
+        head,
+        redirects,
+        started,
+        ..
+    } = negotiated;
     let bytes = body.len();
     let (body, encoding) = if binary {
         (BASE64.encode(&body), "base64")
@@ -949,7 +1014,7 @@ fn render(
     // everything except reading that response's body.
     let ttfb = total.saturating_sub(download);
 
-    let mut value = head_json(0, url, &head, redirects, started);
+    let mut value = head_json(0, &url, &head, redirects, started);
     let object = value.as_object_mut().expect("head renders as an object");
     object.remove("id");
     object.insert("body".into(), json!(body));
