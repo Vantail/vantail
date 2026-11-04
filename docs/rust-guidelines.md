@@ -48,6 +48,40 @@ default. Handle the `None` or the `Err`; if it truly cannot happen, `expect`
 with a message saying why. Tests may unwrap - a test that panics is a test that
 fails, which is what it is for - so `clippy.toml` exempts them.
 
+### Short functions, shallow nesting, few arguments
+
+At most 60 lines a function, 4 levels of nesting and 6 arguments
+(`clippy::too_many_lines`, `clippy::excessive_nesting`,
+`clippy::too_many_arguments`; the limits are in `clippy.toml`). Past those a
+function is usually doing more than one thing. The ways the runtime stays
+under them:
+
+- **A dispatcher is a table.** One line per method in the `match`, naming the
+  function that does the work. What used to be a comment on the arm is the
+  doc comment on that function.
+- **A long sequence becomes named steps**, called in the same order, so the
+  function that calls them reads as a list of what happens.
+- **Values that travel together become a struct** - a database `Target`, an
+  `Outbound` request - rather than a longer argument list.
+- **Return early** with `let ... else` or `if ... { return }` instead of
+  nesting the rest of the function inside a condition.
+
+A function that is right to be long says so: the bridge's JavaScript is one
+template whose parts share variables, so `init_script` carries an
+`#[allow(clippy::too_many_lines)]` with the reason beside it.
+
+## Platform-only code
+
+Clippy only sees the code for the platform it runs on, and CI lints on Linux.
+Code behind `#[cfg(target_os = "windows")]` or `"macos"` is not linted there,
+so check it where it compiles. Windows can be checked from another machine,
+without the C dependencies that need a Windows compiler:
+
+```bash
+rustup target add x86_64-pc-windows-msvc
+cargo clippy --target x86_64-pc-windows-msvc --no-default-features --all-targets
+```
+
 ## Conventions
 
 These are not checked, but are expected in review.
@@ -62,21 +96,16 @@ These are not checked, but are expected in review.
 Each of these lands as its own change, with the code brought into line first
 and the lint switched on in the same commit.
 
-1. **Short functions, shallow nesting.** At most 60 lines a function
-   (`too_many_lines`), 4 levels of nesting (`excessive_nesting`) and 6
-   arguments (`too_many_arguments`). This is where most of the effort of
-   reading the runtime goes today: the event loop and the window dispatcher
-   are each over 200 lines.
-2. **Failure handled explicitly.** No slice indexing that can panic
+1. **Failure handled explicitly.** No slice indexing that can panic
    (`indexing_slicing`) - use `.get()` and handle the `None`. No `expect`
    (`expect_used`); the one place it is genuinely the right answer, taking a
    lock, goes through a single documented helper.
-3. **Plain control flow.** `for` loops instead of iterator chains
+2. **Plain control flow.** `for` loops instead of iterator chains
    (`map`, `filter`, `collect`, `any`, `find`, ... through `disallowed-methods`),
    and `match` or `if let` instead of `Option` and `Result` chains such as
    `.and_then(...).unwrap_or_else(...)`. `map_err` followed by `?` stays: it
    is the plain way to say "fail with this error".
-4. **Formatting at 80 columns.** Last, in one change, when no other branch is
+3. **Formatting at 80 columns.** Last, in one change, when no other branch is
    open, and listed in `.git-blame-ignore-revs` so `git blame` looks past it.
 
 Two things were considered and left out:

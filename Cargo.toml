@@ -36,3 +36,9 @@ undocumented_unsafe_blocks = "deny"
 # A panic should be a decision someone wrote down, not a default. Tests are
 # exempt; see clippy.toml.
 unwrap_used = "deny"
+# Short functions, shallow nesting, few arguments; the limits are in
+# clippy.toml. A function that is long for a good reason - one template, say -
+# says so in an allow beside it.
+too_many_lines = "deny"
+excessive_nesting = "deny"
+too_many_arguments = "deny"

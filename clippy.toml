@@ -2,3 +2,9 @@
 
 # A test that unwraps is a test that fails loudly, which is what it is for.
 allow-unwrap-in-tests = true
+
+# Past these a function is usually doing more than one thing, and reads more
+# easily as several.
+too-many-lines-threshold = 60
+excessive-nesting-threshold = 4
+too-many-arguments-threshold = 6
