@@ -268,40 +268,67 @@ fn append(
             label,
             enabled,
             items: children,
-        } => {
-            let submenu = Submenu::new(label, *enabled);
-            for child in children {
-                append(&submenu, child, items, skipped)?;
-            }
-            menu.add(&submenu)?;
-            // Submenus are addressable by label, since they carry no id of
-            // their own and enabling a whole menu is a real thing to want.
-            items.insert(label.clone(), ItemHandle::Submenu(submenu));
-            Ok(())
-        }
+        } => append_submenu(menu, label, *enabled, children, items, skipped),
 
         MenuSpec::Predefined { item, label } => {
-            // Everything else muda can do natively. Quit is ours.
-            if item == "quit" {
-                let item = MenuItem::with_id(
-                    QUIT_ID,
-                    quit_label(label.as_deref(), APP_NAME.get().map(String::as_str)),
-                    true,
-                    parse(&Some("CmdOrCtrl+Q".to_string()))?,
-                );
-                menu.add(&item)?;
-                items.insert(QUIT_ID.to_string(), ItemHandle::Normal(item));
-                return Ok(());
-            }
-            match predefined(item, label.as_deref()) {
-                Ok(built) => menu.add(&built),
-                Err(error) => {
-                    skipped.push(error);
-                    Ok(())
-                }
-            }
+            append_predefined(menu, item, label.as_deref(), items, skipped)
         }
     }
+}
+
+fn append_submenu(
+    menu: &dyn Container,
+    label: &str,
+    enabled: bool,
+    children: &[MenuSpec],
+    items: &mut HashMap<String, ItemHandle>,
+    skipped: &mut Vec<String>,
+) -> Result<(), String> {
+    let submenu = Submenu::new(label, enabled);
+    for child in children {
+        append(&submenu, child, items, skipped)?;
+    }
+    menu.add(&submenu)?;
+    // Submenus are addressable by label, since they carry no id of their own
+    // and enabling a whole menu is a real thing to want.
+    items.insert(label.to_string(), ItemHandle::Submenu(submenu));
+    Ok(())
+}
+
+/// Everything else muda can do natively. Quit is ours.
+fn append_predefined(
+    menu: &dyn Container,
+    item: &str,
+    label: Option<&str>,
+    items: &mut HashMap<String, ItemHandle>,
+    skipped: &mut Vec<String>,
+) -> Result<(), String> {
+    if item == "quit" {
+        return append_quit(menu, label, items);
+    }
+    match predefined(item, label) {
+        Ok(built) => menu.add(&built),
+        Err(error) => {
+            skipped.push(error);
+            Ok(())
+        }
+    }
+}
+
+fn append_quit(
+    menu: &dyn Container,
+    label: Option<&str>,
+    items: &mut HashMap<String, ItemHandle>,
+) -> Result<(), String> {
+    let item = MenuItem::with_id(
+        QUIT_ID,
+        quit_label(label, APP_NAME.get().map(String::as_str)),
+        true,
+        parse(&Some("CmdOrCtrl+Q".to_string()))?,
+    );
+    menu.add(&item)?;
+    items.insert(QUIT_ID.to_string(), ItemHandle::Normal(item));
+    Ok(())
 }
 
 /// `Menu` and `Submenu` both take items but share no trait that says so.
