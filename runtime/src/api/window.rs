@@ -8,13 +8,13 @@
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tao::dpi::{LogicalPosition, LogicalSize};
-use tao::window::Fullscreen;
+use tao::window::{Fullscreen, Window};
 
 use crate::config::{CloseBehavior, WindowConfig};
 use crate::error::{ApiError, ApiResult};
 use crate::ipc::{Event, Outgoing, Request};
 use crate::state::MainCtx;
-use crate::windows;
+use crate::windows::{self, WindowEntry};
 
 #[derive(Deserialize, Default)]
 #[serde(default)]
@@ -109,20 +109,6 @@ fn size_limit(width: Option<f64>, height: Option<f64>) -> Option<LogicalSize<f64
     }
 }
 
-/// Maximise or restore, keeping size limits out of the way while maximised.
-///
-/// A maximised window has to be exactly the size the window system chose. On
-/// Wayland that is not a preference: the compositor sends a configure, and a
-/// surface that then commits a different geometry is killed for violating
-/// xdg-shell -
-///
-///   xdg_surface geometry (468 x 328) does not match the configured
-///   maximized state (1400 x 968)
-///
-/// which takes the whole application with it. A maximum smaller than the
-/// screen does not constrain maximising there anyway, so dropping the limits
-/// while maximised costs nothing and removes the way to be killed. They go
-/// back on when the window is restored.
 /// Maximise or restore without AppKit's zoom animation.
 ///
 /// `zoom:` animates the frame over about 200ms, and a web view lays out
@@ -133,7 +119,7 @@ fn size_limit(width: Option<f64>, height: Option<f64>) -> Option<LogicalSize<f64
 ///
 /// `false` means this did not handle it and the caller should fall back: no
 /// screen to measure, or a restore with nothing remembered to restore to.
-fn zoom_in_one_step(entry: &mut crate::windows::WindowEntry, maximized: bool) -> bool {
+fn zoom_in_one_step(entry: &mut WindowEntry, maximized: bool) -> bool {
     // Asked for the platform animation, so there is nothing to avoid.
     if entry.animate_zoom {
         return false;
@@ -193,7 +179,21 @@ fn zoom_in_one_step(entry: &mut crate::windows::WindowEntry, maximized: bool) ->
     }
 }
 
-fn set_maximized(entry: &mut crate::windows::WindowEntry, maximized: bool) {
+/// Maximise or restore, keeping size limits out of the way while maximised.
+///
+/// A maximised window has to be exactly the size the window system chose. On
+/// Wayland that is not a preference: the compositor sends a configure, and a
+/// surface that then commits a different geometry is killed for violating
+/// xdg-shell -
+///
+///   xdg_surface geometry (468 x 328) does not match the configured
+///   maximized state (1400 x 968)
+///
+/// which takes the whole application with it. A maximum smaller than the
+/// screen does not constrain maximising there anyway, so dropping the limits
+/// while maximised costs nothing and removes the way to be killed. They go
+/// back on when the window is restored.
+fn set_maximized(entry: &mut WindowEntry, maximized: bool) -> ApiResult {
     if maximized {
         entry.window.set_min_inner_size(NO_LIMIT);
         entry.window.set_max_inner_size(NO_LIMIT);
@@ -210,6 +210,7 @@ fn set_maximized(entry: &mut crate::windows::WindowEntry, maximized: bool) {
         entry.window.set_min_inner_size(entry.min_size);
         entry.window.set_max_inner_size(entry.max_size);
     }
+    Ok(Value::Null)
 }
 
 /// Spelled out because `None` alone leaves the size type ambiguous.
@@ -249,254 +250,290 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
     match method {
         "window.create" => return create(ctx, params),
         "window.list" => return Ok(json!(ctx.windows.labels())),
-        "window.exists" => {
-            let target: Target = serde_json::from_value(params).unwrap_or_default();
-            let label = target.label.unwrap_or_else(|| ctx.source.to_string());
-            return Ok(json!(ctx.windows.get(&label).is_some()));
-        }
+        "window.exists" => return exists(ctx, params),
         "window.close" => return close(ctx, params),
         _ => {}
     }
 
     let label = target_label(ctx, &params);
-    let entry = ctx.windows.require_mut(&label)?;
-    let window = &entry.window;
 
+    // The menu bar lives in the title bar's frame on Windows, so changing the
+    // style reaches past the one window.
+    if method == "window.setTitleBarStyle" {
+        return set_title_bar_style(ctx, &label, params);
+    }
+
+    let entry = ctx.windows.require_mut(&label)?;
+    one_window(entry, method, params)
+}
+
+/// The calls that act on one window and nothing else.
+fn one_window(entry: &mut WindowEntry, method: &str, params: Value) -> ApiResult {
+    let window = &entry.window;
     match method {
-        "window.setTitle" => {
-            let Title { title } = Request::params(method, params)?;
-            window.set_title(&title);
-            Ok(Value::Null)
-        }
+        "window.setTitle" => set_title(window, params),
         "window.title" => Ok(json!(window.title())),
 
-        "window.minimize" => {
-            window.set_minimized(true);
-            Ok(Value::Null)
-        }
-        "window.unminimize" => {
-            window.set_minimized(false);
-            Ok(Value::Null)
-        }
-        "window.maximize" => {
-            set_maximized(entry, true);
-            Ok(Value::Null)
-        }
-        "window.unmaximize" => {
-            set_maximized(entry, false);
-            Ok(Value::Null)
-        }
-        "window.toggleMaximize" => {
-            let now = !entry.window.is_maximized();
-            set_maximized(entry, now);
-            Ok(json!(now))
-        }
+        "window.minimize" => set_minimized(window, true),
+        "window.unminimize" => set_minimized(window, false),
+        "window.maximize" => set_maximized(entry, true),
+        "window.unmaximize" => set_maximized(entry, false),
+        "window.toggleMaximize" => toggle_maximized(entry),
         "window.isMaximized" => Ok(json!(window.is_maximized())),
 
-        "window.setSize" => {
-            let Size { width, height } = Request::params(method, params)?;
-            window.set_inner_size(LogicalSize::new(width, height));
-            // Record it now so a `size()` immediately after `setSize()` is
-            // right, rather than waiting for the resize event to catch up.
-            entry.size = LogicalSize::new(width, height);
-            Ok(Value::Null)
-        }
+        "window.setSize" => set_size(entry, params),
         "window.size" => Ok(json!({ "width": entry.size.width, "height": entry.size.height })),
+        "window.setMinSize" => set_min_size(entry, params),
+        "window.setMaxSize" => set_max_size(entry, params),
+        "window.setSkipTaskbar" => set_skip_taskbar(window, params),
+        "window.setPosition" => set_position(window, params),
+        "window.position" => position(window),
+        "window.center" => center(window),
 
-        // `null` for either dimension removes that limit.
-        "window.setMinSize" => {
-            let Limit { width, height } = Request::params(method, params)?;
-            let limit = size_limit(width, height);
-            entry.min_size = limit;
-            if !entry.window.is_maximized() {
-                entry.window.set_min_inner_size(limit);
-            }
-            Ok(Value::Null)
-        }
-        "window.setMaxSize" => {
-            let Limit { width, height } = Request::params(method, params)?;
-            let limit = size_limit(width, height);
-            entry.max_size = limit;
-            if !entry.window.is_maximized() {
-                entry.window.set_max_inner_size(limit);
-            }
-            Ok(Value::Null)
-        }
-
-        "window.setSkipTaskbar" => {
-            let Toggle { value } = Request::params(method, params)?;
-            skip_taskbar(window, value)
-        }
-
-        "window.setPosition" => {
-            let Position { x, y } = Request::params(method, params)?;
-            window.set_outer_position(LogicalPosition::new(x, y));
-            Ok(Value::Null)
-        }
-        "window.position" => {
-            let position = window
-                .outer_position()
-                .map_err(|e| ApiError::unsupported(format!("Window position is unavailable: {e}")))?
-                .to_logical::<f64>(window.scale_factor());
-            Ok(json!({ "x": position.x, "y": position.y }))
-        }
-
-        "window.center" => {
-            windows::center(window);
-            Ok(Value::Null)
-        }
-
-        "window.setFullscreen" => {
-            let Flag { value } = Request::params(method, params)?;
-            window.set_fullscreen(value.then_some(Fullscreen::Borderless(None)));
-            Ok(Value::Null)
-        }
+        "window.setFullscreen" => set_fullscreen(window, params),
         "window.isFullscreen" => Ok(json!(window.fullscreen().is_some())),
+        "window.setResizable" => set_resizable(window, params),
+        "window.setCloseBehavior" => set_close_behavior(entry, params),
+        "window.closeBehavior" => Ok(json!(close_behavior_name(entry.close_behavior))),
+        "window.setAlwaysOnTop" => set_always_on_top(window, params),
 
-        "window.setResizable" => {
-            let Flag { value } = Request::params(method, params)?;
-            window.set_resizable(value);
-            Ok(Value::Null)
-        }
-        "window.setCloseBehavior" => {
-            let Behaviour { behavior } = Request::params(method, params)?;
-            entry.close_behavior = behavior;
-            Ok(Value::Null)
-        }
-        "window.closeBehavior" => Ok(json!(match entry.close_behavior {
-            CloseBehavior::Close => "close",
-            CloseBehavior::Hide => "hide",
-            CloseBehavior::Ask => "ask",
-        })),
-
-        "window.setAlwaysOnTop" => {
-            let Flag { value } = Request::params(method, params)?;
-            window.set_always_on_top(value);
-            Ok(Value::Null)
-        }
-
-        "window.show" => {
-            window.set_visible(true);
-            Ok(Value::Null)
-        }
-        "window.hide" => {
-            window.set_visible(false);
-            Ok(Value::Null)
-        }
+        "window.show" => set_visible(window, true),
+        "window.hide" => set_visible(window, false),
         "window.isVisible" => Ok(json!(window.is_visible())),
-        "window.focus" => {
-            window.set_focus();
-            Ok(Value::Null)
-        }
+        "window.focus" => focus(window),
+        "window.startDragging" => start_dragging(window),
 
-        // A window with no title bar has nothing to drag it by, so the
-        // application's own toolbar has to do it. `-webkit-app-region: drag`
-        // is a Chromium extension and does nothing in a WKWebView, so this is
-        // the portable way: call it from `pointerdown` and the platform takes
-        // over the drag from there.
-        "window.startDragging" => {
-            window
-                .drag_window()
-                .map_err(|e| ApiError::unsupported(format!("Could not drag the window: {e}")))?;
-            Ok(Value::Null)
-        }
+        "window.setTitleBarHeight" => set_title_bar_height(entry, params),
+        "window.titleBarStyle" => Ok(json!(title_bar_style_name(entry.title_bar_style))),
+        "window.setTrafficLightPosition" => set_traffic_light_position(entry, params),
+        "window.centerTrafficLights" => Ok(json!(entry.set_traffic_lights(None))),
+        "window.setTitleBarButtons" => set_title_bar_buttons(entry, params),
+        "window.titleBarButtons" => Ok(json!(title_bar_buttons_name(entry.buttons_hidden))),
 
-        // Switching between an ordinary title bar and one the application
-        // draws in, on a window that is already open. Answers with the room
-        // the new arrangement leaves, since that is what a caller needs next.
-        "window.setTitleBarStyle" => {
-            let Style { style } = Request::params(method, params)?;
-            let label = entry.label.clone();
-            let entry = ctx.windows.require_mut(&label)?;
-            // What the page has now. On Windows this call adds or removes the
-            // window's frame, and the frame - with the menu bar in it - comes
-            // out of the window rather than out of the page: without this the
-            // page would gain a title bar's worth of room for hiding one, and
-            // a different amount back for showing it again.
-            #[cfg(target_os = "windows")]
-            let before = (!entry.window.is_maximized()).then(|| entry.window.inner_size());
-
-            let metrics = entry.set_title_bar_style(style);
-
-            // The menu bar lives in the frame, so a window that has just lost
-            // one has to lose the menu with it, and one that has just got it
-            // back wants the menu back too.
-            let entry = ctx.windows.require_mut(&label)?;
-            ctx.chrome.attach(&entry.window);
-
-            #[cfg(target_os = "windows")]
-            if let Some(size) = before {
-                entry.window.set_inner_size(size);
-            }
-
-            Ok(json!(metrics))
-        }
-        // A taller bar than the platform's, with the lights re-centred in it.
-        // `null` puts it back to whatever the platform uses.
-        "window.setTitleBarHeight" => {
-            let Height { height } = Request::params(method, params)?;
-            let label = entry.label.clone();
-            let entry = ctx.windows.require_mut(&label)?;
-            Ok(json!(entry.set_title_bar_height(height)))
-        }
-
-        "window.titleBarStyle" => Ok(json!(match entry.title_bar_style {
-            crate::config::TitleBarStyle::Hidden => "hidden",
-            crate::config::TitleBarStyle::Default => "default",
-        })),
-
-        // Where the traffic lights sit, for a toolbar taller than the bar it
-        // replaced. macOS only, because nowhere else has them.
-        "window.setTrafficLightPosition" => {
-            if cfg!(not(target_os = "macos")) {
-                return Err(ApiError::unsupported(
-                    "Only macOS has traffic lights to position",
-                ));
-            }
-            let Nudge { x, y } = Request::params(method, params)?;
-            let label = entry.label.clone();
-            let entry = ctx.windows.require_mut(&label)?;
-            Ok(json!(entry.set_traffic_lights(Some((x, y)))))
-        }
-
-        // Hand the window buttons to the application, or take them back.
-        // Answers with the metrics, whose `insetLeft` is then zero - the same
-        // signal the platforms without any already give.
-        "window.setTitleBarButtons" => {
-            let Buttons { buttons } = Request::params(method, params)?;
-            let label = entry.label.clone();
-            let entry = ctx.windows.require_mut(&label)?;
-            Ok(json!(entry.set_buttons_hidden(
-                buttons == crate::config::TitleBarButtons::Hidden
-            )))
-        }
-        "window.titleBarButtons" => Ok(json!(if entry.buttons_hidden {
-            "hidden"
-        } else {
-            "system"
-        })),
-
-        // Back to the middle of the bar, which is where they belong unless
-        // an application has a reason otherwise.
-        "window.centerTrafficLights" => {
-            let label = entry.label.clone();
-            let entry = ctx.windows.require_mut(&label)?;
-            Ok(json!(entry.set_traffic_lights(None)))
-        }
-
-        "window.openDevtools" => {
-            #[cfg(feature = "devtools")]
-            {
-                entry.webview.open_devtools();
-                return Ok(Value::Null);
-            }
-            #[allow(unreachable_code)]
-            Err(ApiError::unsupported(
-                "Devtools are not available in this build",
-            ))
-        }
+        "window.openDevtools" => open_devtools(entry),
 
         _ => Err(ApiError::unknown_method(method)),
+    }
+}
+
+fn exists(ctx: &MainCtx<'_>, params: Value) -> ApiResult {
+    let target: Target = serde_json::from_value(params).unwrap_or_default();
+    let label = target.label.unwrap_or_else(|| ctx.source.to_string());
+    Ok(json!(ctx.windows.get(&label).is_some()))
+}
+
+fn set_title(window: &Window, params: Value) -> ApiResult {
+    let Title { title } = Request::params("window.setTitle", params)?;
+    window.set_title(&title);
+    Ok(Value::Null)
+}
+
+fn set_minimized(window: &Window, minimized: bool) -> ApiResult {
+    window.set_minimized(minimized);
+    Ok(Value::Null)
+}
+
+/// Answers with whether the window is now maximised.
+fn toggle_maximized(entry: &mut WindowEntry) -> ApiResult {
+    let now = !entry.window.is_maximized();
+    set_maximized(entry, now)?;
+    Ok(json!(now))
+}
+
+fn set_size(entry: &mut WindowEntry, params: Value) -> ApiResult {
+    let Size { width, height } = Request::params("window.setSize", params)?;
+    entry.window.set_inner_size(LogicalSize::new(width, height));
+    // Record it now so a `size()` immediately after `setSize()` is right,
+    // rather than waiting for the resize event to catch up.
+    entry.size = LogicalSize::new(width, height);
+    Ok(Value::Null)
+}
+
+/// `null` for either dimension removes the limit.
+fn set_min_size(entry: &mut WindowEntry, params: Value) -> ApiResult {
+    let Limit { width, height } = Request::params("window.setMinSize", params)?;
+    let limit = size_limit(width, height);
+    entry.min_size = limit;
+    if !entry.window.is_maximized() {
+        entry.window.set_min_inner_size(limit);
+    }
+    Ok(Value::Null)
+}
+
+/// `null` for either dimension removes the limit.
+fn set_max_size(entry: &mut WindowEntry, params: Value) -> ApiResult {
+    let Limit { width, height } = Request::params("window.setMaxSize", params)?;
+    let limit = size_limit(width, height);
+    entry.max_size = limit;
+    if !entry.window.is_maximized() {
+        entry.window.set_max_inner_size(limit);
+    }
+    Ok(Value::Null)
+}
+
+fn set_skip_taskbar(window: &Window, params: Value) -> ApiResult {
+    let Toggle { value } = Request::params("window.setSkipTaskbar", params)?;
+    skip_taskbar(window, value)
+}
+
+fn set_position(window: &Window, params: Value) -> ApiResult {
+    let Position { x, y } = Request::params("window.setPosition", params)?;
+    window.set_outer_position(LogicalPosition::new(x, y));
+    Ok(Value::Null)
+}
+
+fn position(window: &Window) -> ApiResult {
+    let position = window
+        .outer_position()
+        .map_err(|e| ApiError::unsupported(format!("Window position is unavailable: {e}")))?
+        .to_logical::<f64>(window.scale_factor());
+    Ok(json!({ "x": position.x, "y": position.y }))
+}
+
+fn center(window: &Window) -> ApiResult {
+    windows::center(window);
+    Ok(Value::Null)
+}
+
+fn set_fullscreen(window: &Window, params: Value) -> ApiResult {
+    let Flag { value } = Request::params("window.setFullscreen", params)?;
+    window.set_fullscreen(value.then_some(Fullscreen::Borderless(None)));
+    Ok(Value::Null)
+}
+
+fn set_resizable(window: &Window, params: Value) -> ApiResult {
+    let Flag { value } = Request::params("window.setResizable", params)?;
+    window.set_resizable(value);
+    Ok(Value::Null)
+}
+
+fn set_close_behavior(entry: &mut WindowEntry, params: Value) -> ApiResult {
+    let Behaviour { behavior } = Request::params("window.setCloseBehavior", params)?;
+    entry.close_behavior = behavior;
+    Ok(Value::Null)
+}
+
+fn close_behavior_name(behavior: CloseBehavior) -> &'static str {
+    match behavior {
+        CloseBehavior::Close => "close",
+        CloseBehavior::Hide => "hide",
+        CloseBehavior::Ask => "ask",
+    }
+}
+
+fn set_always_on_top(window: &Window, params: Value) -> ApiResult {
+    let Flag { value } = Request::params("window.setAlwaysOnTop", params)?;
+    window.set_always_on_top(value);
+    Ok(Value::Null)
+}
+
+fn set_visible(window: &Window, visible: bool) -> ApiResult {
+    window.set_visible(visible);
+    Ok(Value::Null)
+}
+
+fn focus(window: &Window) -> ApiResult {
+    window.set_focus();
+    Ok(Value::Null)
+}
+
+/// A window with no title bar has nothing to drag it by, so the application's
+/// own toolbar has to do it. `-webkit-app-region: drag` is a Chromium
+/// extension and does nothing in a WKWebView, so this is the portable way:
+/// call it from `pointerdown` and the platform takes over the drag from there.
+fn start_dragging(window: &Window) -> ApiResult {
+    window
+        .drag_window()
+        .map_err(|e| ApiError::unsupported(format!("Could not drag the window: {e}")))?;
+    Ok(Value::Null)
+}
+
+/// Switch between an ordinary title bar and one the application draws in, on
+/// a window that is already open. Answers with the room the new arrangement
+/// leaves, since that is what a caller needs next.
+fn set_title_bar_style(ctx: &mut MainCtx<'_>, label: &str, params: Value) -> ApiResult {
+    let Style { style } = Request::params("window.setTitleBarStyle", params)?;
+    let entry = ctx.windows.require_mut(label)?;
+    // What the page has now. On Windows this call adds or removes the
+    // window's frame, and the frame - with the menu bar in it - comes out of
+    // the window rather than out of the page: without this the page would
+    // gain a title bar's worth of room for hiding one, and a different amount
+    // back for showing it again.
+    #[cfg(target_os = "windows")]
+    let before = (!entry.window.is_maximized()).then(|| entry.window.inner_size());
+
+    let metrics = entry.set_title_bar_style(style);
+
+    // The menu bar lives in the frame, so a window that has just lost one has
+    // to lose the menu with it, and one that has just got it back wants the
+    // menu back too.
+    ctx.chrome.attach(&entry.window);
+
+    #[cfg(target_os = "windows")]
+    if let Some(size) = before {
+        entry.window.set_inner_size(size);
+    }
+
+    Ok(json!(metrics))
+}
+
+/// A taller bar than the platform's, with the lights re-centred in it.
+/// `null` puts it back to whatever the platform uses.
+fn set_title_bar_height(entry: &mut WindowEntry, params: Value) -> ApiResult {
+    let Height { height } = Request::params("window.setTitleBarHeight", params)?;
+    Ok(json!(entry.set_title_bar_height(height)))
+}
+
+fn title_bar_style_name(style: crate::config::TitleBarStyle) -> &'static str {
+    match style {
+        crate::config::TitleBarStyle::Hidden => "hidden",
+        crate::config::TitleBarStyle::Default => "default",
+    }
+}
+
+/// Where the traffic lights sit, for a toolbar taller than the bar it
+/// replaced. macOS only, because nowhere else has them. Moving them back to
+/// the middle of the bar is `window.centerTrafficLights`.
+fn set_traffic_light_position(entry: &mut WindowEntry, params: Value) -> ApiResult {
+    if cfg!(not(target_os = "macos")) {
+        return Err(ApiError::unsupported(
+            "Only macOS has traffic lights to position",
+        ));
+    }
+    let Nudge { x, y } = Request::params("window.setTrafficLightPosition", params)?;
+    Ok(json!(entry.set_traffic_lights(Some((x, y)))))
+}
+
+/// Hand the window buttons to the application, or take them back. Answers
+/// with the metrics, whose `insetLeft` is then zero - the same signal the
+/// platforms without any already give.
+fn set_title_bar_buttons(entry: &mut WindowEntry, params: Value) -> ApiResult {
+    let Buttons { buttons } = Request::params("window.setTitleBarButtons", params)?;
+    let hidden = buttons == crate::config::TitleBarButtons::Hidden;
+    Ok(json!(entry.set_buttons_hidden(hidden)))
+}
+
+fn title_bar_buttons_name(hidden: bool) -> &'static str {
+    if hidden {
+        "hidden"
+    } else {
+        "system"
+    }
+}
+
+fn open_devtools(entry: &WindowEntry) -> ApiResult {
+    #[cfg(feature = "devtools")]
+    {
+        entry.webview.open_devtools();
+        Ok(Value::Null)
+    }
+
+    #[cfg(not(feature = "devtools"))]
+    {
+        let _ = entry;
+        Err(ApiError::unsupported(
+            "Devtools are not available in this build",
+        ))
     }
 }
 
