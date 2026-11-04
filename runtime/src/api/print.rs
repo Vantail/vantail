@@ -186,25 +186,7 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, id: &str, method: &str, params: Value) ->
 fn document(ctx: &mut MainCtx<'_>, id: &str, params: Value) -> Result<(), ApiError> {
     let params: DocumentParams = Request::params("print.document", params)?;
     let source = split_source(&params)?;
-
-    let (phase, url) = match &source {
-        Source::Html(html) => (Phase::Html, html_data_url(html)),
-        Source::PdfPath(raw) => {
-            // Printing reads the file into the renderer, so this is a read like
-            // any other: the standing scope applies, and dialog/drop grants apply.
-            let resolved = ctx
-                .rt
-                .permissions
-                .check_path(&RawPath::new(raw.clone()), Access::Read)?;
-            if !resolved.is_file() {
-                return Err(ApiError::new(
-                    code::NOT_FOUND,
-                    format!("No PDF file at {}", resolved.display()),
-                ));
-            }
-            (Phase::Pdf, file_url(&resolved))
-        }
-    };
+    let (phase, url) = what_to_load(ctx.rt, &source)?;
 
     let stub = std::env::var_os("VANTAIL_PRINT_STUB").is_some();
 
@@ -222,8 +204,6 @@ fn document(ctx: &mut MainCtx<'_>, id: &str, params: Value) -> Result<(), ApiErr
     let handler_state = state.clone();
     let job = state.alloc();
     let rt = Arc::clone(ctx.rt);
-    let request_id = id.to_string();
-    let reply_to = ctx.source.to_string();
 
     let builder = wry::WebViewBuilder::new()
         .with_url(&url)
@@ -235,24 +215,7 @@ fn document(ctx: &mut MainCtx<'_>, id: &str, params: Value) -> Result<(), ApiErr
                 on_ready(&rt, &handler_state, job);
             }
         });
-
-    // Linux builds the webview on tao's GTK container: from the window itself
-    // it takes the X11 handle, which does not exist under Wayland.
-    #[cfg(target_os = "linux")]
-    let webview = {
-        use tao::platform::unix::WindowExtUnix;
-        use wry::WebViewBuilderExtUnix;
-        let container = window
-            .default_vbox()
-            .ok_or_else(|| ApiError::internal("The print window has no GTK container"))?;
-        builder
-            .build_gtk(container)
-            .map_err(|e| ApiError::internal(format!("Could not create the print view: {e}")))?
-    };
-    #[cfg(not(target_os = "linux"))]
-    let webview = builder
-        .build(&window)
-        .map_err(|e| ApiError::internal(format!("Could not create the print view: {e}")))?;
+    let webview = attach_print_view(builder, &window)?;
 
     state.insert(
         job,
@@ -260,8 +223,8 @@ fn document(ctx: &mut MainCtx<'_>, id: &str, params: Value) -> Result<(), ApiErr
             webview,
             window,
             phase,
-            request_id,
-            source: reply_to,
+            request_id: id.to_string(),
+            source: ctx.source.to_string(),
             stub,
             pdf_temp: None,
         },
@@ -270,17 +233,70 @@ fn document(ctx: &mut MainCtx<'_>, id: &str, params: Value) -> Result<(), ApiErr
     // A load that never finishes must not hang the caller's promise forever.
     // The watchdog only wins while the job is still rendering: the job is
     // taken before its dialog opens, so a person gets as long as they need.
-    let proxy = ctx.proxy();
-    std::thread::Builder::new()
+    start_watchdog(ctx.proxy(), job)
+}
+
+/// The URL the print view loads, and the phase its job starts in.
+fn what_to_load(rt: &Runtime, source: &Source) -> Result<(Phase, String), ApiError> {
+    match source {
+        Source::Html(html) => Ok((Phase::Html, html_data_url(html))),
+        Source::PdfPath(raw) => {
+            // Printing reads the file into the renderer, so this is a read like
+            // any other: the standing scope applies, and dialog/drop grants apply.
+            let resolved = rt
+                .permissions
+                .check_path(&RawPath::new(raw.clone()), Access::Read)?;
+            if !resolved.is_file() {
+                return Err(ApiError::new(
+                    code::NOT_FOUND,
+                    format!("No PDF file at {}", resolved.display()),
+                ));
+            }
+            Ok((Phase::Pdf, file_url(&resolved)))
+        }
+    }
+}
+
+fn attach_print_view(
+    builder: wry::WebViewBuilder<'_>,
+    window: &tao::window::Window,
+) -> Result<wry::WebView, ApiError> {
+    // Linux builds the webview on tao's GTK container: from the window itself
+    // it takes the X11 handle, which does not exist under Wayland.
+    #[cfg(target_os = "linux")]
+    {
+        use tao::platform::unix::WindowExtUnix;
+        use wry::WebViewBuilderExtUnix;
+        let container = window
+            .default_vbox()
+            .ok_or_else(|| ApiError::internal("The print window has no GTK container"))?;
+        builder
+            .build_gtk(container)
+            .map_err(|e| ApiError::internal(format!("Could not create the print view: {e}")))
+    }
+    #[cfg(not(target_os = "linux"))]
+    builder
+        .build(window)
+        .map_err(|e| ApiError::internal(format!("Could not create the print view: {e}")))
+}
+
+fn start_watchdog(
+    proxy: tao::event_loop::EventLoopProxy<UserEvent>,
+    job: u64,
+) -> Result<(), ApiError> {
+    let spawned = std::thread::Builder::new()
         .name(format!("vantail-print-watchdog-{job}"))
         .spawn(move || {
             std::thread::sleep(JOB_TIMEOUT);
             // The loop is gone during shutdown; the answer has nowhere to go.
             let _ = proxy.send_event(UserEvent::PrintTimeout { job });
-        })
-        .map_err(|e| ApiError::internal(format!("Could not watch the print job: {e}")))?;
-
-    Ok(())
+        });
+    match spawned {
+        Ok(_) => Ok(()),
+        Err(e) => Err(ApiError::internal(format!(
+            "Could not watch the print job: {e}"
+        ))),
+    }
 }
 
 /// A hidden view finished loading: advance the job.
