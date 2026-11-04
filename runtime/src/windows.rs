@@ -268,11 +268,11 @@ impl WindowEntry {
     /// "is this another site?" instead let those through, because a hostless
     /// URL was nobody's site.
     pub fn deliver(&self, outgoing: &Outgoing) {
-        if !self
-            .webview
-            .url()
-            .is_ok_and(|url| self.origins.allows(&url))
-        {
+        let on_own_page = match self.webview.url() {
+            Ok(url) => self.origins.allows(&url),
+            Err(_) => false,
+        };
+        if !on_own_page {
             return;
         }
         if let Err(error) = self.webview.evaluate_script(&outgoing.to_script()) {
@@ -298,11 +298,21 @@ impl WindowManager {
     }
 
     pub fn get(&self, label: &str) -> Option<&WindowEntry> {
-        self.entries.iter().find(|entry| entry.label == label)
+        for entry in &self.entries {
+            if entry.label == label {
+                return Some(entry);
+            }
+        }
+        None
     }
 
     pub fn get_mut(&mut self, label: &str) -> Option<&mut WindowEntry> {
-        self.entries.iter_mut().find(|entry| entry.label == label)
+        for entry in &mut self.entries {
+            if entry.label == label {
+                return Some(entry);
+            }
+        }
+        None
     }
 
     /// Look a window up, or explain which labels do exist.
@@ -336,18 +346,29 @@ impl WindowManager {
     }
 
     pub fn by_id(&self, id: WindowId) -> Option<&WindowEntry> {
-        self.entries.iter().find(|entry| entry.id() == id)
+        for entry in &self.entries {
+            if entry.id() == id {
+                return Some(entry);
+            }
+        }
+        None
     }
 
     pub fn by_id_mut(&mut self, id: WindowId) -> Option<&mut WindowEntry> {
-        self.entries.iter_mut().find(|entry| entry.id() == id)
+        for entry in &mut self.entries {
+            if entry.id() == id {
+                return Some(entry);
+            }
+        }
+        None
     }
 
     pub fn labels(&self) -> Vec<String> {
-        self.entries
-            .iter()
-            .map(|entry| entry.label.clone())
-            .collect()
+        let mut labels = Vec::with_capacity(self.entries.len());
+        for entry in &self.entries {
+            labels.push(entry.label.clone());
+        }
+        labels
     }
 
     pub fn is_empty(&self) -> bool {
@@ -397,10 +418,7 @@ impl WindowManager {
         let origins = webview::Origins::new(rt);
         let look = Presentation {
             title_bar: bar.metrics,
-            background: config
-                .background_color
-                .as_deref()
-                .and_then(crate::config::parse_color),
+            background: background_colour(config),
             scroll: config.scroll,
             corners: corner_radii(config),
         };
@@ -422,7 +440,7 @@ impl WindowManager {
             close_behavior: config.close_behavior,
             title_bar_style: config.title_bar_style,
             title_bar_height: config.title_bar_height,
-            traffic_lights: config.traffic_light_position.map(|i| (i.x, i.y)),
+            traffic_lights: traffic_lights(config),
             buttons_hidden: config.title_bar_buttons == TitleBarButtons::Hidden,
             native_title_bar: bar.native,
             platform_bar: bar.platform,
@@ -522,8 +540,23 @@ fn fit_title_bar(
     } else {
         None
     };
-    let lights = config.traffic_light_position.map(|i| (i.x, i.y));
-    titlebar::fit(window, requested, platform, lights, shape)
+    titlebar::fit(window, requested, platform, traffic_lights(config), shape)
+}
+
+/// Where the config puts the traffic lights, if anywhere.
+fn traffic_lights(config: &WindowConfig) -> Option<(f64, Option<f64>)> {
+    match config.traffic_light_position {
+        Some(position) => Some((position.x, position.y)),
+        None => None,
+    }
+}
+
+/// The background colour the config names, if it names one that parses.
+fn background_colour(config: &WindowConfig) -> Option<(u8, u8, u8, u8)> {
+    match config.background_color.as_deref() {
+        Some(colour) => crate::config::parse_color(colour),
+        None => None,
+    }
 }
 
 /// macOS: show or hide the title text in the bar.
@@ -550,7 +583,10 @@ fn set_title_visible(window: &Window, visible: bool) {
 /// The URL a window should load: the dev server in development, the custom
 /// protocol otherwise. `path` is relative to the application root.
 pub fn resolve_url(rt: &Runtime, path: Option<&str>) -> String {
-    let path = path.unwrap_or("index.html").trim_start_matches('/');
+    let path = match path {
+        Some(path) => path.trim_start_matches('/'),
+        None => "index.html",
+    };
     let path = if path.is_empty() { "index.html" } else { path };
 
     match &rt.config.dev {
@@ -581,10 +617,10 @@ fn build_window(
     target: &EventLoopWindowTarget<UserEvent>,
     config: &WindowConfig,
 ) -> Result<Window, String> {
-    let title = config
-        .title
-        .clone()
-        .unwrap_or_else(|| rt.config.app.name.clone());
+    let title = match &config.title {
+        Some(title) => title.clone(),
+        None => rt.config.app.name.clone(),
+    };
 
     let decorations = has_decorations(config);
 
@@ -639,12 +675,12 @@ fn build_window(
     // still catching up with a resize - the page has not painted that strip
     // yet, so the colour under it is the one on screen. wry paints the *view*;
     // this is the window beneath it, and both want the same colour.
-    let builder = match config
-        .background_color
-        .as_deref()
-        .and_then(crate::config::parse_color)
-        .filter(|_| !config.transparent)
-    {
+    let colour = if config.transparent {
+        None
+    } else {
+        background_colour(config)
+    };
+    let builder = match colour {
         Some(colour) => builder.with_background_color(colour),
         None => builder,
     };
@@ -698,7 +734,10 @@ fn window_icon(rt: &Runtime) -> Option<tao::window::Icon> {
     };
 
     match crate::chrome::icon::load_png(&resolved) {
-        Ok(image) => tao::window::Icon::from_rgba(image.bytes, image.width, image.height).ok(),
+        Ok(image) => match tao::window::Icon::from_rgba(image.bytes, image.width, image.height) {
+            Ok(icon) => Some(icon),
+            Err(_) => None,
+        },
         Err(error) => {
             // A missing icon is cosmetic; refusing to open the window is not.
             eprintln!("vantail: could not load the window icon: {}", error.message);
@@ -744,7 +783,10 @@ fn build_webview(
     look: Presentation,
 ) -> Result<WebView, String> {
     let resources = webview::Resources::new(&rt.resource_dir);
-    let devtools = rt.config.devtools.unwrap_or_else(|| rt.is_dev());
+    let devtools = match rt.config.devtools {
+        Some(devtools) => devtools,
+        None => rt.is_dev(),
+    };
     let calls_proxy = rt.proxy();
     let load_proxy = rt.proxy();
     let source = label.to_string();
@@ -790,7 +832,12 @@ fn build_webview(
     // Only where the window is not transparent: a colour behind a window meant
     // to show what is behind it is not a background, it is the end of the
     // effect.
-    let builder = match look.background.filter(|_| !rt.config.window.transparent) {
+    let colour = if rt.config.window.transparent {
+        None
+    } else {
+        look.background
+    };
+    let builder = match colour {
         Some(colour) => builder.with_background_color(colour),
         None => builder,
     };
@@ -1301,10 +1348,13 @@ fn recalculate_frame(window: &Window) {
 /// inside them leaves a notch where the two shapes disagree, so the setting
 /// only applies without a frame.
 fn corner_radii(config: &crate::config::WindowConfig) -> Option<crate::config::Radii> {
-    config
-        .border_radius
-        .filter(|_| !has_decorations(config))
-        .and_then(crate::config::BorderRadius::radii)
+    if has_decorations(config) {
+        return None;
+    }
+    match config.border_radius {
+        Some(radius) => radius.radii(),
+        None => None,
+    }
 }
 
 /// Whether the window keeps a frame of its own.
@@ -1350,6 +1400,14 @@ fn attach(builder: WebViewBuilder<'_>, window: &Window) -> Result<WebView, Strin
         .map_err(|e| format!("Could not create the webview: {e}"))
 }
 
+fn path_strings(paths: &[std::path::PathBuf]) -> Vec<String> {
+    let mut strings = Vec::with_capacity(paths.len());
+    for path in paths {
+        strings.push(path.to_string_lossy().into_owned());
+    }
+    strings
+}
+
 /// Report a drag onto a window, and make what it carries openable.
 ///
 /// Returning `true` means the runtime handled it and the page never sees the
@@ -1365,7 +1423,7 @@ fn drag_drop(rt: &Arc<Runtime>, label: &str, event: wry::DragDropEvent) -> bool 
         wry::DragDropEvent::Enter { paths, position } => (
             "drop.entered",
             serde_json::json!({
-                "paths": paths.iter().map(|p| p.to_string_lossy()).collect::<Vec<_>>(),
+                "paths": path_strings(&paths),
                 "position": { "x": position.0, "y": position.1 },
             }),
         ),
@@ -1379,7 +1437,7 @@ fn drag_drop(rt: &Arc<Runtime>, label: &str, event: wry::DragDropEvent) -> bool 
             (
                 "drop.dropped",
                 serde_json::json!({
-                    "paths": paths.iter().map(|p| p.to_string_lossy()).collect::<Vec<_>>(),
+                    "paths": path_strings(&paths),
                     "position": { "x": position.0, "y": position.1 },
                 }),
             )

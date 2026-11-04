@@ -116,11 +116,15 @@ pub struct SharedStateConfig {
 /// here is `.` rather than `/`, because keys are dotted paths, not file
 /// paths. See `docs/permissions.md`.
 pub fn shared_key_matches(pattern: &str, key: &str) -> bool {
-    match_segments(&split_pattern(pattern), &key.split('.').collect::<Vec<_>>())
+    match_segments(&dotted_segments(pattern), &dotted_segments(key))
 }
 
-fn split_pattern(pattern: &str) -> Vec<&str> {
-    pattern.split('.').collect()
+fn dotted_segments(text: &str) -> Vec<&str> {
+    let mut segments = Vec::new();
+    for segment in text.split('.') {
+        segments.push(segment);
+    }
+    segments
 }
 
 fn match_segments(pattern: &[&str], key: &[&str]) -> bool {
@@ -215,13 +219,16 @@ pub struct HidRule {
 
 impl HidRule {
     fn matches(&self, vendor_id: u16, product_id: u16, usage_page: u16) -> bool {
-        self.vendor_id == vendor_id
-            && self
-                .product_id
-                .is_none_or(|expected| expected == product_id)
-            && self
-                .usage_page
-                .is_none_or(|expected| expected == usage_page)
+        // A product id or usage page the rule leaves out matches any.
+        let product_matches = match self.product_id {
+            Some(expected) => expected == product_id,
+            None => true,
+        };
+        let usage_matches = match self.usage_page {
+            Some(expected) => expected == usage_page,
+            None => true,
+        };
+        self.vendor_id == vendor_id && product_matches && usage_matches
     }
 }
 
@@ -481,11 +488,11 @@ impl Vars {
         push("$VIDEO", dirs::video_dir());
         push("$AUDIO", dirs::audio_dir());
         push("$TEMP", Some(std::env::temp_dir()));
-        push("$CWD", std::env::current_dir().ok());
+        push("$CWD", current_dir());
         push("$RESOURCE", Some(resource_dir.to_path_buf()));
-        push("$APPDATA", dirs::data_dir().map(|d| d.join(identifier)));
-        push("$APPCONFIG", dirs::config_dir().map(|d| d.join(identifier)));
-        push("$APPCACHE", dirs::cache_dir().map(|d| d.join(identifier)));
+        push("$APPDATA", app_dir(dirs::data_dir(), identifier));
+        push("$APPCONFIG", app_dir(dirs::config_dir(), identifier));
+        push("$APPCACHE", app_dir(dirs::cache_dir(), identifier));
 
         Self { entries }
     }
@@ -501,10 +508,28 @@ impl Vars {
     }
 }
 
+/// The current directory, if the process has one it can see.
+fn current_dir() -> Option<PathBuf> {
+    match std::env::current_dir() {
+        Ok(dir) => Some(dir),
+        Err(_) => None,
+    }
+}
+
+/// The application's own directory inside a platform one, where the platform
+/// has it.
+fn app_dir(base: Option<PathBuf>, identifier: &str) -> Option<PathBuf> {
+    match base {
+        Some(base) => Some(base.join(identifier)),
+        None => None,
+    }
+}
+
 fn canonical_or_self(path: &Path) -> PathBuf {
-    path.canonicalize()
-        .map(|resolved| strip_verbatim(&resolved))
-        .unwrap_or_else(|_| path.to_path_buf())
+    match path.canonicalize() {
+        Ok(resolved) => strip_verbatim(&resolved),
+        Err(_) => path.to_path_buf(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -528,16 +553,11 @@ impl PathScope {
             PathScopeConfig::Detailed { allow, deny } => (false, allow.clone(), deny.clone()),
         };
 
-        let expanded: Vec<String> = allow_patterns.iter().map(|p| vars.expand(p)).collect();
+        let expanded = expand_all(&allow_patterns, vars);
         Ok(Self {
             allow_all,
             allow: build_globset(&expanded)?,
-            deny: build_globset(
-                &deny_patterns
-                    .iter()
-                    .map(|p| vars.expand(p))
-                    .collect::<Vec<_>>(),
-            )?,
+            deny: build_globset(&expand_all(&deny_patterns, vars))?,
             patterns: expanded,
         })
     }
@@ -579,11 +599,30 @@ fn build_globset(patterns: &[String]) -> Result<GlobSet, String> {
 /// so a scope written as `/tmp/**` would otherwise never match anything on
 /// macOS, where `/tmp` resolves to `/private/tmp`. Only the leading literal
 /// portion is touched; the glob part is left exactly as written.
+/// Every pattern with its `$VARS` filled in.
+fn expand_all(patterns: &[String], vars: &Vars) -> Vec<String> {
+    let mut expanded = Vec::with_capacity(patterns.len());
+    for pattern in patterns {
+        expanded.push(vars.expand(pattern));
+    }
+    expanded
+}
+
 fn canonicalize_prefix(pattern: &str) -> String {
-    let first_meta = pattern.find(['*', '?', '[', '{']).unwrap_or(pattern.len());
-    let split = pattern[..first_meta]
-        .rfind('/')
-        .map_or(0, |index| index + 1);
+    // The literal part runs up to the first glob character, and the prefix to
+    // resolve is that part up to its last `/`.
+    let literal_end = match pattern.find(['*', '?', '[', '{']) {
+        Some(index) => index,
+        None => pattern.len(),
+    };
+    let literal = match pattern.get(..literal_end) {
+        Some(literal) => literal,
+        None => pattern,
+    };
+    let split = match literal.rfind('/') {
+        Some(index) => index + 1,
+        None => 0,
+    };
     if split == 0 {
         return pattern.to_string();
     }
@@ -617,7 +656,10 @@ fn canonicalize_prefix(pattern: &str) -> String {
 /// Windows verbatim prefix that `canonicalize` adds.
 fn display_pattern(path: &Path) -> String {
     let text = path.to_string_lossy();
-    let trimmed = text.strip_prefix(r"\\?\").unwrap_or(&text);
+    let trimmed = match text.strip_prefix(r"\\?\") {
+        Some(rest) => rest,
+        None => &text,
+    };
     trimmed.replace('\\', "/")
 }
 
@@ -742,18 +784,20 @@ impl Access {
 
 fn compile_shell(rules: &[ShellRule], vars: &Vars) -> Result<Vec<CompiledRule>, String> {
     let mut shell = Vec::with_capacity(rules.len());
+    let no_cwd = PathScopeConfig::All(false);
     for rule in rules {
+        let args = match &rule.args {
+            Some(args) => Some(compile_args(args)?),
+            None => None,
+        };
+        let cwd = match &rule.cwd {
+            Some(cwd) => cwd,
+            None => &no_cwd,
+        };
         shell.push(CompiledRule {
             program: rule.program.clone(),
-            args: rule
-                .args
-                .as_ref()
-                .map(|args| compile_args(args))
-                .transpose()?,
-            cwd: PathScope::compile(
-                rule.cwd.as_ref().unwrap_or(&PathScopeConfig::All(false)),
-                vars,
-            )?,
+            args,
+            cwd: PathScope::compile(cwd, vars)?,
         });
     }
     Ok(shell)
@@ -879,17 +923,33 @@ impl Permissions {
         };
         // A granted directory covers everything under it, so an open-directory
         // dialog behaves the way a user expects.
-        set.iter()
-            .any(|granted| path == granted || path.starts_with(granted))
+        for granted in set {
+            if path == granted || path.starts_with(granted) {
+                return true;
+            }
+        }
+        false
     }
 
     /// Check a program and its arguments against the allow list.
     ///
     /// Returns the matching rule so the caller can also validate the working
     /// directory against the scope that rule carries.
+    fn shell_rule(&self, program: &str) -> Option<&CompiledRule> {
+        for rule in &self.shell {
+            if rule.program == program {
+                return Some(rule);
+            }
+        }
+        None
+    }
+
     pub fn check_program(&self, program: &str, args: &[String]) -> Result<&CompiledRule, ApiError> {
-        let Some(rule) = self.shell.iter().find(|rule| rule.program == program) else {
-            let known: Vec<&str> = self.shell.iter().map(|r| r.program.as_str()).collect();
+        let Some(rule) = self.shell_rule(program) else {
+            let mut known: Vec<&str> = Vec::new();
+            for rule in &self.shell {
+                known.push(rule.program.as_str());
+            }
             return Err(ApiError::denied(format!(
                 "`{program}` is not in `permissions.shell.allow`. Allowed: {}",
                 if known.is_empty() {
@@ -957,9 +1017,7 @@ impl Permissions {
     pub fn allows_device(&self, vendor_id: u16, product_id: u16, usage_page: u16) -> bool {
         match &self.hid {
             HidConfig::All(all) => *all,
-            HidConfig::Devices(rules) => rules
-                .iter()
-                .any(|rule| rule.matches(vendor_id, product_id, usage_page)),
+            HidConfig::Devices(rules) => any_rule_matches(rules, vendor_id, product_id, usage_page),
         }
     }
 
@@ -1005,7 +1063,7 @@ impl Permissions {
                 key.len()
             )));
         }
-        if key.chars().any(|c| c.is_control()) {
+        if has_control_character(key) {
             return Err(ApiError::invalid_params(
                 "A shared-state key cannot contain control characters",
             ));
@@ -1021,12 +1079,10 @@ impl Permissions {
     /// Whether `sharedState.set` may write this key: the key must match at
     /// least one `write` pattern.
     pub fn check_shared_write(&self, key: &str) -> Result<(), ApiError> {
-        if self
-            .shared_state_write
-            .iter()
-            .any(|p| shared_key_matches(p, key))
-        {
-            return Ok(());
+        for pattern in &self.shared_state_write {
+            if shared_key_matches(pattern, key) {
+                return Ok(());
+            }
         }
         Err(ApiError::new(
             crate::error::code::SHARED_STATE_KEY_DENIED,
@@ -1085,14 +1141,35 @@ impl Permissions {
 }
 
 fn compile_args(args: &[ArgRule]) -> Result<Vec<CompiledArg>, String> {
-    args.iter()
-        .map(|arg| match arg {
-            ArgRule::Exact(value) => Ok(CompiledArg::Exact(value.clone())),
+    let mut compiled = Vec::with_capacity(args.len());
+    for arg in args {
+        let rule = match arg {
+            ArgRule::Exact(value) => CompiledArg::Exact(value.clone()),
             ArgRule::Pattern { pattern } => {
-                build_text_globset(std::slice::from_ref(pattern)).map(CompiledArg::Pattern)
+                CompiledArg::Pattern(build_text_globset(std::slice::from_ref(pattern))?)
             }
-        })
-        .collect()
+        };
+        compiled.push(rule);
+    }
+    Ok(compiled)
+}
+
+fn any_rule_matches(rules: &[HidRule], vendor_id: u16, product_id: u16, usage_page: u16) -> bool {
+    for rule in rules {
+        if rule.matches(vendor_id, product_id, usage_page) {
+            return true;
+        }
+    }
+    false
+}
+
+fn has_control_character(text: &str) -> bool {
+    for character in text.chars() {
+        if character.is_control() {
+            return true;
+        }
+    }
+    false
 }
 
 fn describe_hid(config: &HidConfig) -> String {
@@ -1100,14 +1177,20 @@ fn describe_hid(config: &HidConfig) -> String {
         HidConfig::All(true) => "every device".to_string(),
         HidConfig::All(false) => "nothing".to_string(),
         HidConfig::Devices(rules) if rules.is_empty() => "nothing".to_string(),
-        HidConfig::Devices(rules) => rules
-            .iter()
-            .map(|rule| match rule.product_id {
-                Some(product) => format!("{:#06x}:{product:#06x}", rule.vendor_id),
-                None => format!("{:#06x}:*", rule.vendor_id),
-            })
-            .collect::<Vec<_>>()
-            .join(", "),
+        HidConfig::Devices(rules) => {
+            let mut described = Vec::with_capacity(rules.len());
+            for rule in rules {
+                described.push(describe_hid_rule(rule));
+            }
+            described.join(", ")
+        }
+    }
+}
+
+fn describe_hid_rule(rule: &HidRule) -> String {
+    match rule.product_id {
+        Some(product) => format!("{:#06x}:{product:#06x}", rule.vendor_id),
+        None => format!("{:#06x}:*", rule.vendor_id),
     }
 }
 
@@ -1175,9 +1258,10 @@ pub fn normalize(path: &Path) -> Result<PathBuf, ApiError> {
         }
     }
 
-    let canonical = existing
-        .canonicalize()
-        .unwrap_or_else(|_| existing.to_path_buf());
+    let canonical = match existing.canonicalize() {
+        Ok(canonical) => canonical,
+        Err(_) => existing.to_path_buf(),
+    };
     let mut resolved = strip_verbatim(&canonical);
     for name in tail.iter().rev() {
         resolved.push(name);
@@ -1703,11 +1787,19 @@ mod shared_state_tests {
     use super::tests_support::*;
     use super::*;
 
+    fn owned(texts: Vec<&str>) -> Vec<String> {
+        let mut owned = Vec::with_capacity(texts.len());
+        for text in texts {
+            owned.push(text.to_string());
+        }
+        owned
+    }
+
     fn shared_state(read: bool, write: Vec<&str>, persist: bool) -> Permissions {
         permissions_with(PermissionsConfig {
             shared_state: SharedStateConfig {
                 read,
-                write: write.into_iter().map(str::to_string).collect(),
+                write: owned(write),
                 persist,
             },
             ..PermissionsConfig::default()

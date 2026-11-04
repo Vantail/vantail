@@ -47,3 +47,9 @@ too_many_arguments = "deny"
 # through `crate::lock::lock`. Tests are exempt; see clippy.toml.
 indexing_slicing = "deny"
 expect_used = "deny"
+# These suggest turning a written-out `match` or loop back into the chain
+# that clippy.toml's `disallowed-methods` rules out, so they are off. Each
+# one names the combinator it would ask for.
+manual_find = "allow"
+manual_map = "allow"
+manual_ok_err = "allow"
