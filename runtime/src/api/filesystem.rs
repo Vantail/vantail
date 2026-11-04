@@ -67,150 +67,163 @@ const BASE64: base64::engine::general_purpose::GeneralPurpose =
 
 pub fn dispatch(rt: &Runtime, method: &str, params: Value) -> ApiResult {
     match method {
-        "filesystem.readText" => {
-            let PathParams { path } = Request::params(method, params)?;
-            let path = rt.permissions.check_path(&path, Access::Read)?;
-            std::fs::read_to_string(&path)
-                .map(Value::from)
-                .map_err(|e| ApiError::io(&format!("Could not read {}", path.display()), e))
-        }
-
-        "filesystem.writeText" => {
-            let WriteParams {
-                path,
-                contents,
-                create_dirs,
-            } = Request::params(method, params)?;
-            let path = rt.permissions.check_path(&path, Access::Write)?;
-            if create_dirs {
-                if let Some(parent) = path.parent() {
-                    std::fs::create_dir_all(parent).map_err(|e| {
-                        ApiError::io(&format!("Could not create {}", parent.display()), e)
-                    })?;
-                }
-            }
-            std::fs::write(&path, contents)
-                .map(|_| Value::Null)
-                .map_err(|e| ApiError::io(&format!("Could not write {}", path.display()), e))
-        }
-
-        "filesystem.appendText" => {
-            use std::io::Write;
-            let WriteParams { path, contents, .. } = Request::params(method, params)?;
-            let path = rt.permissions.check_path(&path, Access::Write)?;
-            let mut file = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&path)
-                .map_err(|e| ApiError::io(&format!("Could not open {}", path.display()), e))?;
-            file.write_all(contents.as_bytes())
-                .map(|_| Value::Null)
-                .map_err(|e| ApiError::io(&format!("Could not append to {}", path.display()), e))
-        }
-
-        "filesystem.readBinary" => {
-            let PathParams { path } = Request::params(method, params)?;
-            let path = rt.permissions.check_path(&path, Access::Read)?;
-
-            let size = std::fs::metadata(&path)
-                .map_err(|e| ApiError::io(&format!("Could not read {}", path.display()), e))?
-                .len();
-            if size > MAX_BINARY_BYTES {
-                return Err(too_large(&path, size));
-            }
-
-            let bytes = std::fs::read(&path)
-                .map_err(|e| ApiError::io(&format!("Could not read {}", path.display()), e))?;
-            Ok(json!(BASE64.encode(bytes)))
-        }
-
-        "filesystem.writeBinary" => {
-            let WriteBinaryParams {
-                path,
-                data,
-                create_dirs,
-            } = Request::params(method, params)?;
-            let bytes = BASE64.decode(data.as_bytes()).map_err(|e| {
-                ApiError::invalid_params(format!("`data` is not valid base64: {e}"))
-            })?;
-
-            let path = rt.permissions.check_path(&path, Access::Write)?;
-            if bytes.len() as u64 > MAX_BINARY_BYTES {
-                return Err(too_large(&path, bytes.len() as u64));
-            }
-            if create_dirs {
-                if let Some(parent) = path.parent() {
-                    std::fs::create_dir_all(parent).map_err(|e| {
-                        ApiError::io(&format!("Could not create {}", parent.display()), e)
-                    })?;
-                }
-            }
-            std::fs::write(&path, bytes)
-                .map(|_| Value::Null)
-                .map_err(|e| ApiError::io(&format!("Could not write {}", path.display()), e))
-        }
-
-        "filesystem.readDir" => {
-            let PathParams { path } = Request::params(method, params)?;
-            let path = rt.permissions.check_path(&path, Access::Read)?;
-            read_dir(&path)
-        }
-
-        "filesystem.exists" => {
-            let PathParams { path } = Request::params(method, params)?;
-            // Existence is information, so it needs the same permission a read
-            // would need. Otherwise this becomes a way to probe the disk.
-            let path = rt.permissions.check_path(&path, Access::Read)?;
-            Ok(json!(path.exists()))
-        }
-
-        "filesystem.stat" => {
-            let PathParams { path } = Request::params(method, params)?;
-            let path = rt.permissions.check_path(&path, Access::Read)?;
-            let metadata = std::fs::symlink_metadata(&path)
-                .map_err(|e| ApiError::io(&format!("Could not stat {}", path.display()), e))?;
-            Ok(describe(&path, &metadata))
-        }
-
-        "filesystem.mkdir" => {
-            let RecursiveParams { path, recursive } = Request::params(method, params)?;
-            let path = rt.permissions.check_path(&path, Access::Write)?;
-            let created = if recursive {
-                std::fs::create_dir_all(&path)
-            } else {
-                std::fs::create_dir(&path)
-            };
-            created
-                .map(|_| Value::Null)
-                .map_err(|e| ApiError::io(&format!("Could not create {}", path.display()), e))
-        }
-
-        "filesystem.remove" => {
-            let RecursiveParams { path, recursive } = Request::params(method, params)?;
-            let path = rt.permissions.check_path(&path, Access::Write)?;
-            remove(&path, recursive)
-        }
-
-        "filesystem.copy" => {
-            let FromToParams { from, to } = Request::params(method, params)?;
-            // Copying reads the source and writes the destination.
-            let (from, to) = check_pair(&rt.permissions, &from, &to, Access::Read)?;
-            std::fs::copy(&from, &to)
-                .map(|_| Value::Null)
-                .map_err(|e| ApiError::io(&format!("Could not copy {}", from.display()), e))
-        }
-
-        "filesystem.rename" => {
-            let FromToParams { from, to } = Request::params(method, params)?;
-            // Renaming removes the original, so the source needs write too.
-            let (from, to) = check_pair(&rt.permissions, &from, &to, Access::Write)?;
-            std::fs::rename(&from, &to)
-                .map(|_| Value::Null)
-                .map_err(|e| ApiError::io(&format!("Could not rename {}", from.display()), e))
-        }
-
+        "filesystem.readText" => read_text(rt, params),
+        "filesystem.writeText" => write_text(rt, params),
+        "filesystem.appendText" => append_text(rt, params),
+        "filesystem.readBinary" => read_binary(rt, params),
+        "filesystem.writeBinary" => write_binary(rt, params),
+        "filesystem.readDir" => list_dir(rt, params),
+        "filesystem.exists" => exists(rt, params),
+        "filesystem.stat" => stat(rt, params),
+        "filesystem.mkdir" => make_dir(rt, params),
+        "filesystem.remove" => remove_path(rt, params),
+        "filesystem.copy" => copy(rt, params),
+        "filesystem.rename" => rename(rt, params),
         _ => Err(ApiError::unknown_method(method)),
     }
+}
+
+fn read_text(rt: &Runtime, params: Value) -> ApiResult {
+    let PathParams { path } = Request::params("filesystem.readText", params)?;
+    let path = rt.permissions.check_path(&path, Access::Read)?;
+    std::fs::read_to_string(&path)
+        .map(Value::from)
+        .map_err(|e| ApiError::io(&format!("Could not read {}", path.display()), e))
+}
+
+fn write_text(rt: &Runtime, params: Value) -> ApiResult {
+    let WriteParams {
+        path,
+        contents,
+        create_dirs,
+    } = Request::params("filesystem.writeText", params)?;
+    let path = rt.permissions.check_path(&path, Access::Write)?;
+    if create_dirs {
+        create_parent(&path)?;
+    }
+    std::fs::write(&path, contents)
+        .map(|_| Value::Null)
+        .map_err(|e| ApiError::io(&format!("Could not write {}", path.display()), e))
+}
+
+fn append_text(rt: &Runtime, params: Value) -> ApiResult {
+    use std::io::Write;
+    let WriteParams { path, contents, .. } = Request::params("filesystem.appendText", params)?;
+    let path = rt.permissions.check_path(&path, Access::Write)?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| ApiError::io(&format!("Could not open {}", path.display()), e))?;
+    file.write_all(contents.as_bytes())
+        .map(|_| Value::Null)
+        .map_err(|e| ApiError::io(&format!("Could not append to {}", path.display()), e))
+}
+
+fn read_binary(rt: &Runtime, params: Value) -> ApiResult {
+    let PathParams { path } = Request::params("filesystem.readBinary", params)?;
+    let path = rt.permissions.check_path(&path, Access::Read)?;
+
+    let size = std::fs::metadata(&path)
+        .map_err(|e| ApiError::io(&format!("Could not read {}", path.display()), e))?
+        .len();
+    if size > MAX_BINARY_BYTES {
+        return Err(too_large(&path, size));
+    }
+
+    let bytes = std::fs::read(&path)
+        .map_err(|e| ApiError::io(&format!("Could not read {}", path.display()), e))?;
+    Ok(json!(BASE64.encode(bytes)))
+}
+
+fn write_binary(rt: &Runtime, params: Value) -> ApiResult {
+    let WriteBinaryParams {
+        path,
+        data,
+        create_dirs,
+    } = Request::params("filesystem.writeBinary", params)?;
+    let bytes = BASE64
+        .decode(data.as_bytes())
+        .map_err(|e| ApiError::invalid_params(format!("`data` is not valid base64: {e}")))?;
+
+    let path = rt.permissions.check_path(&path, Access::Write)?;
+    if bytes.len() as u64 > MAX_BINARY_BYTES {
+        return Err(too_large(&path, bytes.len() as u64));
+    }
+    if create_dirs {
+        create_parent(&path)?;
+    }
+    std::fs::write(&path, bytes)
+        .map(|_| Value::Null)
+        .map_err(|e| ApiError::io(&format!("Could not write {}", path.display()), e))
+}
+
+/// Create the directories `path` will live in, for a write that asked to.
+fn create_parent(path: &Path) -> Result<(), ApiError> {
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    std::fs::create_dir_all(parent)
+        .map_err(|e| ApiError::io(&format!("Could not create {}", parent.display()), e))
+}
+
+fn list_dir(rt: &Runtime, params: Value) -> ApiResult {
+    let PathParams { path } = Request::params("filesystem.readDir", params)?;
+    let path = rt.permissions.check_path(&path, Access::Read)?;
+    read_dir(&path)
+}
+
+fn exists(rt: &Runtime, params: Value) -> ApiResult {
+    let PathParams { path } = Request::params("filesystem.exists", params)?;
+    // Existence is information, so it needs the same permission a read would
+    // need. Otherwise this becomes a way to probe the disk.
+    let path = rt.permissions.check_path(&path, Access::Read)?;
+    Ok(json!(path.exists()))
+}
+
+fn stat(rt: &Runtime, params: Value) -> ApiResult {
+    let PathParams { path } = Request::params("filesystem.stat", params)?;
+    let path = rt.permissions.check_path(&path, Access::Read)?;
+    let metadata = std::fs::symlink_metadata(&path)
+        .map_err(|e| ApiError::io(&format!("Could not stat {}", path.display()), e))?;
+    Ok(describe(&path, &metadata))
+}
+
+fn make_dir(rt: &Runtime, params: Value) -> ApiResult {
+    let RecursiveParams { path, recursive } = Request::params("filesystem.mkdir", params)?;
+    let path = rt.permissions.check_path(&path, Access::Write)?;
+    let created = if recursive {
+        std::fs::create_dir_all(&path)
+    } else {
+        std::fs::create_dir(&path)
+    };
+    created
+        .map(|_| Value::Null)
+        .map_err(|e| ApiError::io(&format!("Could not create {}", path.display()), e))
+}
+
+fn remove_path(rt: &Runtime, params: Value) -> ApiResult {
+    let RecursiveParams { path, recursive } = Request::params("filesystem.remove", params)?;
+    let path = rt.permissions.check_path(&path, Access::Write)?;
+    remove(&path, recursive)
+}
+
+fn copy(rt: &Runtime, params: Value) -> ApiResult {
+    let FromToParams { from, to } = Request::params("filesystem.copy", params)?;
+    // Copying reads the source and writes the destination.
+    let (from, to) = check_pair(&rt.permissions, &from, &to, Access::Read)?;
+    std::fs::copy(&from, &to)
+        .map(|_| Value::Null)
+        .map_err(|e| ApiError::io(&format!("Could not copy {}", from.display()), e))
+}
+
+fn rename(rt: &Runtime, params: Value) -> ApiResult {
+    let FromToParams { from, to } = Request::params("filesystem.rename", params)?;
+    // Renaming removes the original, so the source needs write too.
+    let (from, to) = check_pair(&rt.permissions, &from, &to, Access::Write)?;
+    std::fs::rename(&from, &to)
+        .map(|_| Value::Null)
+        .map_err(|e| ApiError::io(&format!("Could not rename {}", from.display()), e))
 }
 
 /// Check both sides of a two-path operation, and return both checked paths.
