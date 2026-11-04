@@ -21,6 +21,8 @@ use serde_json::{json, Value};
 
 use crate::error::{code, ApiError, ApiResult};
 use crate::ipc::{Event, Outgoing, Request};
+use crate::lock::lock;
+use crate::read::filled;
 use crate::state::Runtime;
 
 const BASE64: base64::engine::general_purpose::GeneralPurpose =
@@ -117,7 +119,7 @@ impl Drop for Waiting<'_> {
 /// Take the device for an API call, ahead of the read loop.
 fn borrow<T>(entry: &Open, work: impl FnOnce(&HidDevice) -> T) -> T {
     let _waiting = entry.waiting.enter();
-    let device = entry.device.lock().expect("hid device poisoned");
+    let device = lock(&entry.device);
     work(&device)
 }
 
@@ -134,35 +136,29 @@ impl Devices {
         &self,
         action: impl FnOnce(&mut HidApi) -> Result<T, ApiError>,
     ) -> Result<T, ApiError> {
-        let mut slot = self.api.lock().expect("hid api poisoned");
-        if slot.is_none() {
+        let mut slot = lock(&self.api);
+        let api = match slot.take() {
+            Some(api) => api,
             // Created on first use: initialising HID opens platform handles,
             // and an application that never touches a device should not.
-            *slot = Some(HidApi::new().map_err(|e| {
+            None => HidApi::new().map_err(|e| {
                 ApiError::unsupported(format!("HID is unavailable on this system: {e}"))
-            })?);
-        }
-        action(slot.as_mut().expect("just created"))
+            })?,
+        };
+        action(slot.insert(api))
     }
 
     fn get(&self, handle: u32) -> Option<Arc<Open>> {
-        self.open
-            .lock()
-            .expect("hid devices poisoned")
-            .get(&handle)
-            .cloned()
+        lock(&self.open).get(&handle).cloned()
     }
 
     fn remove(&self, handle: u32) -> Option<Arc<Open>> {
-        self.open
-            .lock()
-            .expect("hid devices poisoned")
-            .remove(&handle)
+        lock(&self.open).remove(&handle)
     }
 
     /// Close everything on the way out.
     pub fn shutdown(&self) {
-        let open = std::mem::take(&mut *self.open.lock().expect("hid devices poisoned"));
+        let open = std::mem::take(&mut *lock(&self.open));
         for (_, device) in open {
             device.reading.store(false, Ordering::Relaxed);
         }
@@ -268,11 +264,7 @@ fn open(rt: &Arc<Runtime>, source: &str, method: &str, params: Value) -> ApiResu
         waiting: Arc::new(Turnstile::default()),
     });
 
-    rt.devices
-        .open
-        .lock()
-        .expect("hid devices poisoned")
-        .insert(handle, Arc::clone(&entry));
+    lock(&rt.devices.open).insert(handle, Arc::clone(&entry));
 
     read_loop(rt, source, handle, &entry);
 
@@ -351,7 +343,7 @@ impl Reader {
         loop {
             match self.read_once(buffer) {
                 Ok(0) => return true,
-                Ok(count) => self.forward(&buffer[..count]),
+                Ok(count) => self.forward(filled(buffer, count)),
                 Err(_) => return false,
             }
 
@@ -362,7 +354,7 @@ impl Reader {
     }
 
     fn read_once(&self, buffer: &mut [u8]) -> hidapi::HidResult<usize> {
-        let device = self.device.lock().expect("hid device poisoned");
+        let device = lock(&self.device);
         device.read(buffer)
     }
 
@@ -390,10 +382,7 @@ fn close(rt: &Runtime, method: &str, params: Value) -> ApiResult {
 }
 
 fn opened(rt: &Runtime) -> Vec<Value> {
-    rt.devices
-        .open
-        .lock()
-        .expect("hid devices poisoned")
+    lock(&rt.devices.open)
         .iter()
         .map(|(handle, entry)| {
             json!({
@@ -450,12 +439,13 @@ fn get_feature(rt: &Runtime, method: &str, params: Value) -> ApiResult {
     let entry = require(rt, handle)?;
 
     // hidapi wants the report id in the first byte of the buffer it fills.
-    let mut buffer = vec![0_u8; length + 1];
-    buffer[0] = report_id;
+    let mut buffer = Vec::with_capacity(length + 1);
+    buffer.push(report_id);
+    buffer.resize(length + 1, 0);
 
     let read = borrow(&entry, |device| device.get_feature_report(&mut buffer));
 
-    read.map(|count| json!(BASE64.encode(&buffer[..count])))
+    read.map(|count| json!(BASE64.encode(filled(&buffer, count))))
         .map_err(|e| {
             ApiError::new(
                 code::IO_ERROR,

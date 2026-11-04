@@ -353,6 +353,11 @@ pub struct DevConfig {
 }
 
 impl Default for WindowConfig {
+    // Every field has a serde default, so an empty object always parses: the
+    // defaults live in one place, the serde attributes, rather than also in a
+    // hand-written copy here that could drift from them. Anything that breaks
+    // this fails the first test that opens a window.
+    #[allow(clippy::expect_used)]
     fn default() -> Self {
         serde_json::from_str("{}").expect("WindowConfig defaults are total")
     }

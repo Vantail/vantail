@@ -13,6 +13,7 @@ use crate::api::process::Registry;
 use crate::chrome::Chrome;
 use crate::config::{Config, LoadedConfig};
 use crate::ipc::{Outgoing, UserEvent};
+use crate::lock::lock;
 use crate::permissions::{Permissions, Vars};
 use crate::windows::WindowManager;
 
@@ -72,10 +73,7 @@ impl Runtime {
     }
 
     pub fn proxy(&self) -> EventLoopProxy<UserEvent> {
-        self.proxy
-            .lock()
-            .expect("event loop proxy poisoned")
-            .clone()
+        lock(&self.proxy).clone()
     }
 
     pub fn is_dev(&self) -> bool {
@@ -88,7 +86,7 @@ impl Runtime {
     /// Safe from any thread: the message is routed through the event loop,
     /// which is the only place that may touch a webview.
     pub fn send(&self, window: Option<String>, outgoing: Outgoing) {
-        let proxy = self.proxy.lock().expect("event loop proxy poisoned");
+        let proxy = lock(&self.proxy);
         // A send failure means the event loop is gone, i.e. we are shutting
         // down. Nothing useful left to do with the message.
         let _ = proxy.send_event(UserEvent::Outgoing { window, outgoing });

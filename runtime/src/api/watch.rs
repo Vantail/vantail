@@ -19,6 +19,7 @@ use serde_json::{json, Value};
 
 use crate::error::{ApiError, ApiResult};
 use crate::ipc::{Event, Outgoing, Request};
+use crate::lock::lock;
 use crate::permissions::{Access, RawPath};
 use crate::state::Runtime;
 
@@ -46,7 +47,7 @@ pub struct State {
 
 impl State {
     fn take_id(&self) -> String {
-        let mut next = self.next.lock().expect("watch ids poisoned");
+        let mut next = lock(&self.next);
         *next += 1;
         format!("watch-{next}")
     }
@@ -63,12 +64,7 @@ pub fn dispatch(rt: &Arc<Runtime>, source: &str, method: &str, params: Value) ->
 
         "filesystem.unwatch" => {
             let UnwatchParams { id } = Request::params(method, params)?;
-            let removed = rt
-                .watch
-                .watches
-                .lock()
-                .expect("watches poisoned")
-                .remove(&id);
+            let removed = lock(&rt.watch.watches).remove(&id);
 
             match removed {
                 // Dropping the watcher is what stops it.
@@ -81,7 +77,7 @@ pub fn dispatch(rt: &Arc<Runtime>, source: &str, method: &str, params: Value) ->
         }
 
         "filesystem.watches" => {
-            let watches = rt.watch.watches.lock().expect("watches poisoned");
+            let watches = lock(&rt.watch.watches);
             let mut ids: Vec<_> = watches.keys().cloned().collect();
             ids.sort();
             Ok(json!(ids))
@@ -137,11 +133,7 @@ fn start(rt: &Arc<Runtime>, source: &str, path: PathBuf, recursive: bool) -> Api
         .watch(&path, mode)
         .map_err(|e| ApiError::internal(format!("Could not watch {}: {e}", path.display())))?;
 
-    rt.watch
-        .watches
-        .lock()
-        .expect("watches poisoned")
-        .insert(id.clone(), Box::new(watcher));
+    lock(&rt.watch.watches).insert(id.clone(), Box::new(watcher));
 
     Ok(json!({ "id": id, "path": path.to_string_lossy(), "recursive": recursive }))
 }

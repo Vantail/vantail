@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 use crate::config::UpdaterConfig;
 use crate::error::{ApiError, ApiResult};
 use crate::ipc::{Event, Outgoing, Response};
+use crate::read::filled;
 use crate::state::{MainCtx, Runtime};
 use crate::updater::{target, version, Installation, Pending};
 
@@ -265,7 +266,7 @@ fn fetch_archive(
         if read == 0 {
             break;
         }
-        bytes.extend_from_slice(&buffer[..read]);
+        bytes.extend_from_slice(filled(&buffer, read));
 
         if bytes.len() as u64 > MAX_ARCHIVE_BYTES {
             return Err(ApiError::internal(

@@ -12,6 +12,7 @@
 //! the application registered, and the application still has to treat the
 //! contents as input from a stranger.
 
+use crate::lock::lock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
@@ -112,7 +113,7 @@ impl Links {
         if self.streaming.load(Ordering::Relaxed) {
             return Delivery::Now(url);
         }
-        self.pending.lock().expect("deep links poisoned").push(url);
+        lock(&self.pending).push(url);
         Delivery::Held
     }
 
@@ -120,7 +121,7 @@ impl Links {
     /// deliver the rest as it arrives.
     pub fn drain(&self) -> Vec<String> {
         self.streaming.store(true, Ordering::Relaxed);
-        std::mem::take(&mut *self.pending.lock().expect("deep links poisoned"))
+        std::mem::take(&mut *lock(&self.pending))
     }
 }
 

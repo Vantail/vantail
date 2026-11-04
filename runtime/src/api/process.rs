@@ -20,6 +20,8 @@ use serde_json::{json, Value};
 
 use crate::error::{ApiError, ApiResult};
 use crate::ipc::{Event, Outgoing, Request, Response};
+use crate::lock::lock;
+use crate::read::filled;
 use crate::state::{MainCtx, Runtime};
 
 /// How much output is read from a pipe at a time before it is delivered.
@@ -91,40 +93,28 @@ impl Registry {
         stdin: Option<ChildStdin>,
     ) -> u32 {
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
-        self.running
-            .lock()
-            .expect("process registry poisoned")
-            .insert(
-                id,
-                Arc::new(Running {
-                    program,
-                    pid,
-                    child,
-                    stdin: Mutex::new(stdin),
-                }),
-            );
+        lock(&self.running).insert(
+            id,
+            Arc::new(Running {
+                program,
+                pid,
+                child,
+                stdin: Mutex::new(stdin),
+            }),
+        );
         id
     }
 
     fn get(&self, id: u32) -> Option<Arc<Running>> {
-        self.running
-            .lock()
-            .expect("process registry poisoned")
-            .get(&id)
-            .cloned()
+        lock(&self.running).get(&id).cloned()
     }
 
     fn remove(&self, id: u32) {
-        self.running
-            .lock()
-            .expect("process registry poisoned")
-            .remove(&id);
+        lock(&self.running).remove(&id);
     }
 
     fn list(&self) -> Vec<Value> {
-        self.running
-            .lock()
-            .expect("process registry poisoned")
+        lock(&self.running)
             .iter()
             .map(
                 |(id, running)| json!({ "id": id, "pid": running.pid, "program": running.program }),
@@ -137,7 +127,7 @@ impl Registry {
     /// Called as the runtime shuts down: a child outliving the app that
     /// launched it is a surprise nobody wants.
     pub fn kill_all(&self) {
-        let running = std::mem::take(&mut *self.running.lock().expect("process registry poisoned"));
+        let running = std::mem::take(&mut *lock(&self.running));
         for (_, entry) in running {
             if let Ok(mut child) = entry.child.lock() {
                 let _ = child.kill();
@@ -200,7 +190,7 @@ fn execute(
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     let child = Arc::new(Mutex::new(child));
-    let pid = child.lock().expect("child poisoned").id();
+    let pid = lock(&child).id();
     let id = rt
         .processes
         .insert(params.program.clone(), pid, Arc::clone(&child), None);
@@ -260,7 +250,7 @@ fn spawn(rt: &Arc<Runtime>, source: &str, params: Value) -> ApiResult {
     let stdin = child.stdin.take();
 
     let child = Arc::new(Mutex::new(child));
-    let pid = child.lock().expect("child poisoned").id();
+    let pid = lock(&child).id();
     let id = rt
         .processes
         .insert(params.program.clone(), pid, Arc::clone(&child), stdin);
@@ -297,7 +287,7 @@ fn write_stdin(rt: &Runtime, method: &str, params: Value) -> ApiResult {
     let WriteParams { id, data } = Request::params(method, params)?;
     let running = rt.processes.get(id).ok_or_else(|| gone(id))?;
 
-    let mut slot = running.stdin.lock().expect("stdin poisoned");
+    let mut slot = lock(&running.stdin);
     let pipe = slot
         .as_mut()
         .ok_or_else(|| ApiError::new(crate::error::code::IO_ERROR, "stdin is already closed"))?;
@@ -311,7 +301,7 @@ fn write_stdin(rt: &Runtime, method: &str, params: Value) -> ApiResult {
 fn close_stdin(rt: &Runtime, method: &str, params: Value) -> ApiResult {
     let IdParams { id } = Request::params(method, params)?;
     let running = rt.processes.get(id).ok_or_else(|| gone(id))?;
-    running.stdin.lock().expect("stdin poisoned").take();
+    lock(&running.stdin).take();
     Ok(Value::Null)
 }
 
@@ -319,7 +309,7 @@ fn kill(rt: &Runtime, method: &str, params: Value) -> ApiResult {
     let IdParams { id } = Request::params(method, params)?;
     let running = rt.processes.get(id).ok_or_else(|| gone(id))?;
 
-    let killed = running.child.lock().expect("child poisoned").kill();
+    let killed = lock(&running.child).kill();
     killed
         .map(|()| Value::Null)
         .map_err(|e| ApiError::io("Could not stop the process", e))
@@ -392,7 +382,7 @@ fn stream<R: Read + Send + 'static>(
             match pipe.read(&mut buffer) {
                 Ok(0) | Err(_) => break,
                 Ok(read) => {
-                    let data = String::from_utf8_lossy(&buffer[..read]).into_owned();
+                    let data = String::from_utf8_lossy(filled(&buffer, read)).into_owned();
                     rt.send(
                         Some(source.clone()),
                         Outgoing::Event(Event::new(event, json!({ "id": id, "data": data }))),
@@ -438,7 +428,7 @@ fn reader_thread<R: Read + Send + 'static>(pipe: Option<R>) -> Collector {
 /// checks so both stay possible.
 fn wait_for(child: &Mutex<Child>) -> std::io::Result<std::process::ExitStatus> {
     loop {
-        match child.lock().expect("child poisoned").try_wait() {
+        match lock(child).try_wait() {
             Ok(Some(status)) => return Ok(status),
             Ok(None) => std::thread::sleep(std::time::Duration::from_millis(POLL_MS)),
             Err(error) => return Err(error),

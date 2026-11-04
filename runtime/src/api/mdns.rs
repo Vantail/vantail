@@ -20,6 +20,7 @@ use serde_json::{json, Value};
 
 use crate::error::{ApiError, ApiResult};
 use crate::ipc::{Event, Outgoing, Request, Response};
+use crate::lock::lock;
 use crate::state::{MainCtx, Runtime};
 
 /// Long enough for a quiet device to answer, short enough that an application
@@ -60,22 +61,22 @@ pub struct Discovery {
 
 impl Discovery {
     fn daemon(&self) -> Result<ServiceDaemon, ApiError> {
-        let mut slot = self.daemon.lock().expect("mdns daemon poisoned");
-        if slot.is_none() {
-            *slot = Some(ServiceDaemon::new().map_err(|e| {
+        let mut slot = lock(&self.daemon);
+        let daemon = match slot.take() {
+            Some(daemon) => daemon,
+            None => ServiceDaemon::new().map_err(|e| {
                 ApiError::unsupported(format!("Could not start mDNS discovery: {e}"))
-            })?);
-        }
+            })?,
+        };
         // The daemon is a handle around a shared thread, so cloning it is how
         // the crate expects it to be used.
-        Ok(slot.as_ref().expect("just created").clone())
+        Ok(slot.insert(daemon).clone())
     }
 
     /// Stop everything on the way out, so the sockets close with the process.
     pub fn shutdown(&self) {
-        if let Some(daemon) = self.daemon.lock().expect("mdns daemon poisoned").take() {
-            let browsing =
-                std::mem::take(&mut *self.browsing.lock().expect("mdns browse poisoned"));
+        if let Some(daemon) = lock(&self.daemon).take() {
+            let browsing = std::mem::take(&mut *lock(&self.browsing));
             for service in browsing {
                 let _ = daemon.stop_browse(&service);
             }
@@ -99,12 +100,7 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, id: &str, method: &str, params: Value) ->
         }
         "mdns.browse" => Some(browse(&rt, &source, params)),
         "mdns.stop" => Some(stop(&rt, method, params)),
-        "mdns.browsing" => Some(Ok(json!(rt
-            .discovery
-            .browsing
-            .lock()
-            .expect("mdns browse poisoned")
-            .clone()))),
+        "mdns.browsing" => Some(Ok(json!(lock(&rt.discovery.browsing).clone()))),
         _ => Some(Err(ApiError::unknown_method(method))),
     }
 }
@@ -201,7 +197,7 @@ fn browse(rt: &Arc<Runtime>, source: &str, params: Value) -> ApiResult {
     permitted(rt, &service, "mdns.browse")?;
 
     {
-        let mut browsing = rt.discovery.browsing.lock().expect("mdns browse poisoned");
+        let mut browsing = lock(&rt.discovery.browsing);
         if browsing.contains(&service) {
             return Ok(json!({ "service": service, "started": false }));
         }
@@ -241,11 +237,7 @@ fn browse(rt: &Arc<Runtime>, source: &str, params: Value) -> ApiResult {
                 }
             }
 
-            rt_for_thread
-                .discovery
-                .browsing
-                .lock()
-                .expect("mdns browse poisoned")
+            lock(&rt_for_thread.discovery.browsing)
                 .retain(|current| current != &watched);
         });
 
@@ -262,7 +254,7 @@ fn stop(rt: &Runtime, method: &str, params: Value) -> ApiResult {
     let service = normalise(&service)?;
 
     let was_browsing = {
-        let mut browsing = rt.discovery.browsing.lock().expect("mdns browse poisoned");
+        let mut browsing = lock(&rt.discovery.browsing);
         let before = browsing.len();
         browsing.retain(|current| current != &service);
         browsing.len() != before

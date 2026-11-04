@@ -27,7 +27,9 @@ use ureq::http;
 
 use crate::error::{ApiError, ApiResult};
 use crate::ipc::{Event, Outgoing, Request, Response, UserEvent};
+use crate::lock::lock;
 use crate::permissions::network::{CertificatePaths, Endpoint};
+use crate::read::filled;
 use crate::state::{MainCtx, Runtime};
 
 const BASE64: base64::engine::general_purpose::GeneralPurpose =
@@ -147,42 +149,33 @@ pub struct InFlight {
 impl InFlight {
     pub(crate) fn register(&self, id: &str, window: &str) -> Arc<AtomicBool> {
         let cancelled = Arc::new(AtomicBool::new(false));
-        self.live
-            .lock()
-            .expect("in-flight requests poisoned")
-            .insert(
-                id.to_string(),
-                Entry {
-                    cancelled: Arc::clone(&cancelled),
-                    window: window.to_string(),
-                },
-            );
+        lock(&self.live).insert(
+            id.to_string(),
+            Entry {
+                cancelled: Arc::clone(&cancelled),
+                window: window.to_string(),
+            },
+        );
         cancelled
     }
 
     /// Take the right to answer this id. `None` means somebody already did.
     pub(crate) fn claim(&self, id: &str) -> Option<Entry> {
-        self.live
-            .lock()
-            .expect("in-flight requests poisoned")
-            .remove(id)
+        lock(&self.live).remove(id)
     }
 
     fn open_stream(&self, cancelled: Arc<AtomicBool>) -> u32 {
         let id = self.next_stream.fetch_add(1, Ordering::Relaxed) + 1;
-        self.streams
-            .lock()
-            .expect("streams poisoned")
-            .insert(id, cancelled);
+        lock(&self.streams).insert(id, cancelled);
         id
     }
 
     fn close_stream(&self, id: u32) {
-        self.streams.lock().expect("streams poisoned").remove(&id);
+        lock(&self.streams).remove(&id);
     }
 
     fn cancel_stream(&self, id: u32) -> bool {
-        match self.streams.lock().expect("streams poisoned").remove(&id) {
+        match lock(&self.streams).remove(&id) {
             Some(cancelled) => {
                 cancelled.store(true, Ordering::SeqCst);
                 true
@@ -366,7 +359,9 @@ fn run_stream(
         Some(window.clone()),
         Outgoing::Response(Response::from_result(
             request_id,
-            Ok(head_json(stream_id, &url, &head, redirects, started)),
+            Ok(Value::Object(head_json(
+                stream_id, &url, &head, redirects, started,
+            ))),
         )),
     );
 
@@ -429,10 +424,11 @@ fn forward_chunks(
         if read == 0 {
             return Ok(());
         }
+        let chunk = filled(&buffer, read);
         let data = if binary {
-            BASE64.encode(&buffer[..read])
+            BASE64.encode(chunk)
         } else {
-            decode_text(&mut carry, &buffer[..read])
+            decode_text(&mut carry, chunk)
         };
         // A chunk that was nothing but the start of a character the next
         // chunk finishes has nothing to deliver yet.
@@ -697,10 +693,7 @@ fn ask_to_grant(rt: &Arc<Runtime>, url: &str, denial: ApiError) -> Result<Endpoi
         return Err(denial);
     };
 
-    let _serialised = PROMPT
-        .get_or_init(Mutex::default)
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _serialised = lock(PROMPT.get_or_init(Mutex::default));
 
     // Somebody may have been granted this host while we waited our turn.
     if let Ok(endpoint) = rt.permissions.network.check(url) {
@@ -768,7 +761,7 @@ fn client_certificate(paths: &CertificatePaths) -> Result<ureq::tls::ClientCert,
     let cache = CERTIFICATES.get_or_init(Mutex::default);
     let key = (paths.certificate.clone(), paths.key.clone());
 
-    if let Some(found) = cache.lock().expect("certificates poisoned").get(&key) {
+    if let Some(found) = lock(cache).get(&key) {
         return Ok(found.clone());
     }
 
@@ -812,10 +805,7 @@ fn client_certificate(paths: &CertificatePaths) -> Result<ureq::tls::ClientCert,
     })?;
 
     let certificate = ureq::tls::ClientCert::new_with_certs(&chain, private_key);
-    cache
-        .lock()
-        .expect("certificates poisoned")
-        .insert(key, certificate.clone());
+    lock(cache).insert(key, certificate.clone());
     Ok(certificate)
 }
 
@@ -961,25 +951,21 @@ fn decode_text(carry: &mut Vec<u8>, chunk: &[u8]) -> String {
             text
         }
         Err(error) => {
-            let valid = error.valid_up_to();
-            let mut text = String::from_utf8_lossy(&carry[..valid]).into_owned();
+            // Split where decoding stopped: what came before is text, and what
+            // comes after stays in `carry`.
+            let mut rest = carry.split_off(error.valid_up_to());
+            let mut text = String::from_utf8_lossy(carry).into_owned();
 
-            match error.error_len() {
+            *carry = match error.error_len() {
                 // Genuinely invalid bytes, not a truncated tail: mark them and
                 // carry on, rather than holding them forever.
                 Some(bad) => {
                     text.push('\u{FFFD}');
-                    let rest = carry.split_off(valid + bad);
-                    carry.clear();
-                    carry.extend_from_slice(&rest);
+                    rest.split_off(bad)
                 }
                 // The tail is the start of a character still on the wire.
-                None => {
-                    let rest = carry.split_off(valid);
-                    carry.clear();
-                    carry.extend_from_slice(&rest);
-                }
-            }
+                None => rest,
+            };
             text
         }
     }
@@ -1014,8 +1000,7 @@ fn render(negotiated: Negotiated, body: Vec<u8>, binary: bool, download: Duratio
     // everything except reading that response's body.
     let ttfb = total.saturating_sub(download);
 
-    let mut value = head_json(0, &url, &head, redirects, started);
-    let object = value.as_object_mut().expect("head renders as an object");
+    let mut object = head_json(0, &url, &head, redirects, started);
     object.remove("id");
     object.insert("body".into(), json!(body));
     object.insert("encoding".into(), json!(encoding));
@@ -1032,7 +1017,7 @@ fn render(negotiated: Negotiated, body: Vec<u8>, binary: bool, download: Duratio
             "totalMs": millis(total),
         }),
     );
-    value
+    Value::Object(object)
 }
 
 /// Everything known before the body: shared by a buffered response and the
@@ -1043,22 +1028,28 @@ fn head_json(
     head: &Head,
     redirects: Vec<Value>,
     started: Instant,
-) -> Value {
+) -> serde_json::Map<String, Value> {
     let status = head.status.as_u16();
-    json!({
-        "id": stream_id,
-        "url": url,
-        "status": status,
-        "statusText": head.status.canonical_reason().unwrap_or(""),
-        "ok": (200..300).contains(&status),
-        "headers": head.headers,
-        "headerPairs": head.pairs,
-        "redirects": redirects,
-        "timing": {
+    let mut object = serde_json::Map::new();
+    object.insert("id".into(), json!(stream_id));
+    object.insert("url".into(), json!(url));
+    object.insert("status".into(), json!(status));
+    object.insert(
+        "statusText".into(),
+        json!(head.status.canonical_reason().unwrap_or("")),
+    );
+    object.insert("ok".into(), json!((200..300).contains(&status)));
+    object.insert("headers".into(), json!(head.headers));
+    object.insert("headerPairs".into(), json!(head.pairs));
+    object.insert("redirects".into(), json!(redirects));
+    object.insert(
+        "timing".into(),
+        json!({
             "ttfbMs": millis(started.elapsed()),
             "headMs": millis(head.elapsed),
-        },
-    })
+        }),
+    );
+    object
 }
 
 /// Milliseconds with a fraction, since a LAN device often answers in under

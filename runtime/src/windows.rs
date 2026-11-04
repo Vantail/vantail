@@ -311,10 +311,18 @@ impl WindowManager {
     }
 
     pub fn require_mut(&mut self, label: &str) -> Result<&mut WindowEntry, ApiError> {
+        // Asked first, and with a shared borrow, because the error lists the
+        // open windows - which needs `self` again.
         if self.get(label).is_none() {
             return Err(self.unknown(label));
         }
-        Ok(self.get_mut(label).expect("presence just checked"))
+        match self.get_mut(label) {
+            Some(entry) => Ok(entry),
+            None => Err(ApiError::new(
+                crate::error::code::NOT_FOUND,
+                format!("No window labelled `{label}`"),
+            )),
+        }
     }
 
     fn unknown(&self, label: &str) -> ApiError {

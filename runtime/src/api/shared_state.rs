@@ -22,6 +22,7 @@ use serde_json::{json, Value};
 
 use crate::error::{code, ApiError, ApiResult};
 use crate::ipc::{Event, Outgoing, Request};
+use crate::lock::lock;
 use crate::permissions::Permissions;
 use crate::state::MainCtx;
 
@@ -195,16 +196,11 @@ impl Store {
     }
 
     pub fn get(&self, key: &str) -> Option<Value> {
-        self.inner
-            .lock()
-            .expect("shared-state store poisoned")
-            .values
-            .get(key)
-            .cloned()
+        lock(&self.inner).values.get(key).cloned()
     }
 
     pub fn set(&self, key: &str, value: Value) -> Result<(), ApiError> {
-        let mut inner = self.inner.lock().expect("shared-state store poisoned");
+        let mut inner = lock(&self.inner);
         inner.values.insert(key.to_string(), value);
         if !inner.persist {
             return Ok(());

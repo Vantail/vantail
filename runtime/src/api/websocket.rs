@@ -36,6 +36,7 @@ use tungstenite::{Bytes, Message, WebSocket};
 
 use crate::error::{ApiError, ApiResult};
 use crate::ipc::{Event, Outgoing, Request, Response};
+use crate::lock::lock;
 use crate::state::{MainCtx, Runtime};
 
 const BASE64: base64::engine::general_purpose::GeneralPurpose =
@@ -101,19 +102,16 @@ pub struct Sockets {
 impl Sockets {
     fn insert(&self, commands: Sender<Command>) -> u32 {
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
-        self.open
-            .lock()
-            .expect("sockets poisoned")
-            .insert(id, commands);
+        lock(&self.open).insert(id, commands);
         id
     }
 
     fn remove(&self, id: u32) {
-        self.open.lock().expect("sockets poisoned").remove(&id);
+        lock(&self.open).remove(&id);
     }
 
     fn tell(&self, id: u32, command: Command) -> Result<(), ApiError> {
-        let open = self.open.lock().expect("sockets poisoned");
+        let open = lock(&self.open);
         let Some(commands) = open.get(&id) else {
             return Err(ApiError::new(
                 crate::error::code::NOT_FOUND,
@@ -132,7 +130,7 @@ impl Sockets {
 
     /// Ask every socket to close, on the way out.
     pub fn shutdown(&self) {
-        let open = std::mem::take(&mut *self.open.lock().expect("sockets poisoned"));
+        let open = std::mem::take(&mut *lock(&self.open));
         for (_, commands) in open {
             let _ = commands.send(Command::Close(None));
         }

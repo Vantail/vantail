@@ -45,6 +45,7 @@ use serde_json::{json, Map, Value};
 
 use crate::error::{ApiError, ApiResult};
 use crate::ipc::{Outgoing, Request, Response};
+use crate::lock::lock;
 use crate::permissions::{Access, RawPath};
 use crate::state::{MainCtx, Runtime};
 
@@ -234,29 +235,21 @@ pub struct Databases {
 impl Databases {
     fn insert(&self, jobs: Sender<Job>) -> u32 {
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
-        self.open
-            .lock()
-            .expect("databases poisoned")
-            .insert(id, jobs);
+        lock(&self.open).insert(id, jobs);
         id
     }
 
     fn remove(&self, id: u32) {
-        self.open.lock().expect("databases poisoned").remove(&id);
+        lock(&self.open).remove(&id);
     }
 
     fn sender(&self, id: u32) -> Result<Sender<Job>, ApiError> {
-        self.open
-            .lock()
-            .expect("databases poisoned")
-            .get(&id)
-            .cloned()
-            .ok_or_else(|| {
-                ApiError::new(
-                    crate::error::code::NOT_FOUND,
-                    format!("There is no open database with id {id}"),
-                )
-            })
+        lock(&self.open).get(&id).cloned().ok_or_else(|| {
+            ApiError::new(
+                crate::error::code::NOT_FOUND,
+                format!("There is no open database with id {id}"),
+            )
+        })
     }
 
     /// Hand a job to the connection's thread. The thread answers the window.
@@ -269,7 +262,7 @@ impl Databases {
     /// Dropping the sender is what tells each thread to stop, and its loop
     /// rolls back anything unfinished before it does.
     pub fn shutdown(&self) {
-        self.open.lock().expect("databases poisoned").clear();
+        lock(&self.open).clear();
     }
 }
 

@@ -34,24 +34,28 @@ fn claim(rx: &Mutex<Receiver<Job>>) -> Option<Job> {
 }
 
 impl Pool {
-    pub fn new(size: usize) -> Self {
+    pub fn new(size: usize) -> Result<Self, String> {
         let (tx, rx) = channel::<Job>();
         let rx = Arc::new(Mutex::new(rx));
         let mut workers = Vec::with_capacity(size);
 
         for index in 0..size {
             let rx: Arc<Mutex<Receiver<Job>>> = Arc::clone(&rx);
-            let handle = std::thread::Builder::new()
+            let spawned = std::thread::Builder::new()
                 .name(format!("vantail-worker-{index}"))
-                .spawn(move || work(&rx))
-                .expect("could not start a Vantail worker thread");
-            workers.push(handle);
+                .spawn(move || work(&rx));
+            // Any workers already started stop on their own: the sender goes
+            // when this returns, and `claim` then finds nothing to take.
+            match spawned {
+                Ok(handle) => workers.push(handle),
+                Err(error) => return Err(format!("Could not start a worker thread: {error}")),
+            }
         }
 
-        Self {
+        Ok(Self {
             tx,
             _workers: workers,
-        }
+        })
     }
 
     pub fn execute(&self, job: impl FnOnce() + Send + 'static) -> Result<(), ApiError> {

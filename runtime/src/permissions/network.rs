@@ -25,6 +25,7 @@ use std::sync::Mutex;
 use serde::Deserialize;
 
 use crate::error::ApiError;
+use crate::lock::lock;
 use crate::permissions::Vars;
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -419,17 +420,11 @@ impl NetworkScope {
 
     /// Remember that the user said yes to this host, for this run.
     pub fn grant(&self, host: &str) {
-        self.granted
-            .lock()
-            .expect("network grants poisoned")
-            .insert(host.to_ascii_lowercase());
+        lock(&self.granted).insert(host.to_ascii_lowercase());
     }
 
     fn is_granted(&self, host: &str) -> bool {
-        self.granted
-            .lock()
-            .expect("network grants poisoned")
-            .contains(host)
+        lock(&self.granted).contains(host)
     }
 
     /// Whether this host may be reached without a trusted certificate.

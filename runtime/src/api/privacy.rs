@@ -134,30 +134,35 @@ mod imp {
         Authorized,
     }
 
-    pub fn media_type(kind: &str) -> &'static AVMediaType {
+    /// The AVFoundation media type for `kind`.
+    ///
+    /// `None` for anything but the microphone and the camera - unreachable
+    /// through `route`, since `kind()` rejects anything else first - and for a
+    /// constant the OS no longer provides. Never a fallback, so an unknown kind
+    /// can never silently become the camera.
+    pub fn media_type(kind: &str) -> Option<&'static AVMediaType> {
         // SAFETY: reading a framework-provided constant string.
-        let found = unsafe {
+        unsafe {
             match kind {
                 "microphone" => AVMediaTypeAudio,
                 "camera" => AVMediaTypeVideo,
-                // Unreachable through `route`: `kind()` rejects anything else
-                // first. Panicking rather than falling through, so an unknown
-                // kind can never silently become the camera.
-                _ => panic!("unknown privacy kind `{kind}`"),
+                _ => None,
             }
-        };
-        // The framework always provides these constants; absence would mean a
-        // future OS removed them, which is worth failing loudly on.
-        found.expect("AVFoundation media type constant is missing")
+        }
     }
 
     pub fn authorization_status(kind: &str) -> Status {
         if kind == "screen" {
             return screen_status();
         }
+        // Without a media type there is nothing to ask about, and the answer
+        // fails closed: restricted neither grants access nor prompts for it.
+        let Some(media) = media_type(kind) else {
+            return Status::Restricted;
+        };
         // SAFETY: `+authorizationStatusForMediaType:` is a thread-safe class
         // method that touches no Vantail state.
-        let raw = unsafe { AVCaptureDevice::authorizationStatusForMediaType(media_type(kind)) };
+        let raw = unsafe { AVCaptureDevice::authorizationStatusForMediaType(media) };
         map_raw(raw)
     }
 
@@ -172,6 +177,10 @@ mod imp {
         if !matches!(current, Status::NotDetermined) {
             return current;
         }
+        // Not determined means there was a media type to ask about.
+        let Some(media) = media_type(kind) else {
+            return Status::Restricted;
+        };
 
         let (tx, rx) = mpsc::channel();
         let block = StackBlock::new(move |granted: Bool| {
@@ -183,7 +192,7 @@ mod imp {
         // SAFETY: same class method, plus a completion block that only sends
         // through a channel. The block fires exactly once and is then released.
         unsafe {
-            AVCaptureDevice::requestAccessForMediaType_completionHandler(media_type(kind), &block);
+            AVCaptureDevice::requestAccessForMediaType_completionHandler(media, &block);
         }
 
         // The prompt is modal to nothing and fires on an arbitrary queue; a
@@ -470,8 +479,8 @@ mod tests {
 
         #[test]
         fn microphone_and_camera_use_different_media_types() {
-            let mic = imp::media_type("microphone");
-            let cam = imp::media_type("camera");
+            let mic = imp::media_type("microphone").expect("a microphone media type");
+            let cam = imp::media_type("camera").expect("a camera media type");
             assert!(
                 !std::ptr::eq(mic, cam),
                 "both kinds must not resolve to the same media type"
@@ -479,11 +488,13 @@ mod tests {
         }
 
         #[test]
-        fn media_type_for_an_unknown_kind_fails_loudly() {
+        fn an_unknown_kind_has_no_media_type_and_fails_closed() {
             // `kind()` validation runs first, so this is unreachable through
-            // `route` - the panic is the backstop, and it must stay one.
-            let result = std::panic::catch_unwind(|| imp::media_type("location"));
-            assert!(result.is_err());
+            // `route`. The backstop is that it never becomes another device and
+            // never reads as anything that could be granted.
+            assert!(imp::media_type("location").is_none());
+            assert_eq!(imp::authorization_status("location"), Status::Restricted);
+            assert_eq!(imp::request_access("location"), Status::Restricted);
         }
 
         #[test]

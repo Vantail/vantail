@@ -41,8 +41,10 @@ mod deeplink;
 mod error;
 mod instance;
 mod ipc;
+mod lock;
 mod permissions;
 mod power;
+mod read;
 mod state;
 mod updater;
 mod webview;
@@ -204,8 +206,8 @@ impl App {
         {
             let _ = rt.links.accept(url);
         }
-        let pool = Pool::new(worker_count());
-        let network_pool = Pool::new(worker_count());
+        let pool = Pool::new(worker_count())?;
+        let network_pool = Pool::new(worker_count())?;
         let mut windows = WindowManager::new();
         let chrome = Chrome::new();
 

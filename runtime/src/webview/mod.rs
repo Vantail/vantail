@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use percent_encoding::percent_decode_str;
 use serde_json::json;
-use wry::http::{header, Request, Response, StatusCode};
+use wry::http::{header, HeaderValue, Request, Response, StatusCode};
 
 use crate::state::Runtime;
 
@@ -555,20 +555,30 @@ fn ok(path: &Path, bytes: Vec<u8>) -> Response<Cow<'static, [u8]>> {
         mime.to_string()
     };
 
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, content_type)
-        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-        .body(Cow::Owned(bytes))
-        .expect("response builder inputs are valid")
+    let mut response = Response::new(Cow::Owned(bytes));
+    let headers = response.headers_mut();
+    // A guessed type is always a valid header value; one that somehow is not
+    // goes out as plain bytes rather than failing the request.
+    let content_type = match HeaderValue::from_str(&content_type) {
+        Ok(value) => value,
+        Err(_) => HeaderValue::from_static("application/octet-stream"),
+    };
+    headers.insert(header::CONTENT_TYPE, content_type);
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_static("*"),
+    );
+    response
 }
 
 fn status(code: StatusCode, message: &str) -> Response<Cow<'static, [u8]>> {
-    Response::builder()
-        .status(code)
-        .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
-        .body(Cow::Owned(message.as_bytes().to_vec()))
-        .expect("response builder inputs are valid")
+    let mut response = Response::new(Cow::Owned(message.as_bytes().to_vec()));
+    *response.status_mut() = code;
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
+    response
 }
 
 #[cfg(test)]

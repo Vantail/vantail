@@ -86,11 +86,11 @@ pub struct Keeper(());
 #[cfg(target_os = "macos")]
 impl Keeper {
     fn get(&self) -> Option<Shape> {
-        *self.0.lock().expect("the title bar shape lock")
+        *crate::lock::lock(&self.0)
     }
 
     fn set(&self, shape: Option<Shape>) {
-        *self.0.lock().expect("the title bar shape lock") = shape;
+        *crate::lock::lock(&self.0) = shape;
     }
 }
 

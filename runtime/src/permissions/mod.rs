@@ -25,6 +25,7 @@ use globset::{Glob, GlobBuilder, GlobSet, GlobSetBuilder};
 use serde::Deserialize;
 
 use crate::error::ApiError;
+use crate::lock::lock;
 
 // ---------------------------------------------------------------------------
 // Config shapes
@@ -126,8 +127,18 @@ fn match_segments(pattern: &[&str], key: &[&str]) -> bool {
     match pattern.split_first() {
         None => key.is_empty(),
         Some((&"**", rest)) => {
-            // `**` takes zero or more segments.
-            (0..=key.len()).any(|take| match_segments(rest, &key[take..]))
+            // `**` takes zero or more segments: try the rest of the pattern
+            // against every tail of the key, the whole key first.
+            let mut tail = key;
+            loop {
+                if match_segments(rest, tail) {
+                    return true;
+                }
+                match tail.split_first() {
+                    Some((_, shorter)) => tail = shorter,
+                    None => return false,
+                }
+            }
         }
         Some((head, rest)) => {
             let Some((segment, tail)) = key.split_first() else {
@@ -149,11 +160,12 @@ fn match_segment(pattern: &str, segment: &str) -> bool {
     let mut star: Option<usize> = None;
     let mut mark = 0usize;
 
-    while si < segment.len() {
-        if pi < pattern.len() && pattern[pi] == segment[si] {
+    while let Some(&byte) = segment.get(si) {
+        let wanted = pattern.get(pi).copied();
+        if wanted == Some(byte) {
             pi += 1;
             si += 1;
-        } else if pi < pattern.len() && pattern[pi] == b'*' {
+        } else if wanted == Some(b'*') {
             star = Some(pi);
             mark = si;
             pi += 1;
@@ -165,7 +177,7 @@ fn match_segment(pattern: &str, segment: &str) -> bool {
             return false;
         }
     }
-    while pi < pattern.len() && pattern[pi] == b'*' {
+    while pattern.get(pi) == Some(&b'*') {
         pi += 1;
     }
     pi == pattern.len()
@@ -860,7 +872,7 @@ impl Permissions {
     }
 
     fn granted_contains(&self, path: &Path, access: Access) -> bool {
-        let grants = self.granted.lock().expect("permission grants poisoned");
+        let grants = lock(&self.granted);
         let set = match access {
             Access::Read => &grants.read,
             Access::Write => &grants.write,
@@ -1044,11 +1056,7 @@ impl Permissions {
         let Ok(path) = normalize(path) else {
             return;
         };
-        self.granted
-            .lock()
-            .expect("permission grants poisoned")
-            .read
-            .insert(path);
+        lock(&self.granted).read.insert(path);
     }
 
     pub fn grant_from_dialog(&self, path: &Path, access: Access) {
@@ -1062,7 +1070,7 @@ impl Permissions {
             return;
         };
 
-        let mut grants = self.granted.lock().expect("permission grants poisoned");
+        let mut grants = lock(&self.granted);
         match access {
             Access::Read => {
                 grants.read.insert(path);

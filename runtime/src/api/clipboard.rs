@@ -191,12 +191,12 @@ where
 {
     CLIPBOARD.with(|cell| {
         let mut slot = cell.borrow_mut();
-        if slot.is_none() {
-            *slot = Some(arboard::Clipboard::new().map_err(|e| {
-                ApiError::unsupported(format!("The clipboard is unavailable: {e}"))
-            })?);
-        }
-        action(slot.as_mut().expect("clipboard was just initialised"))
+        let clipboard = match slot.take() {
+            Some(clipboard) => clipboard,
+            None => arboard::Clipboard::new()
+                .map_err(|e| ApiError::unsupported(format!("The clipboard is unavailable: {e}")))?,
+        };
+        action(slot.insert(clipboard))
     })
 }
 

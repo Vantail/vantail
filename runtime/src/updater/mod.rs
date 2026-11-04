@@ -21,6 +21,7 @@ use std::sync::Mutex;
 use serde_json::Value;
 
 use crate::error::{ApiError, ApiResult};
+use crate::lock::lock;
 use crate::state::MainCtx;
 
 /// A verified archive, waiting to be installed.
@@ -36,17 +37,15 @@ pub struct State {
 
 impl State {
     pub fn set(&self, pending: Pending) {
-        *self.pending.lock().expect("update state poisoned") = Some(pending);
+        *lock(&self.pending) = Some(pending);
     }
 
     pub fn take(&self) -> Option<Pending> {
-        self.pending.lock().expect("update state poisoned").take()
+        lock(&self.pending).take()
     }
 
     pub fn version(&self) -> Option<String> {
-        self.pending
-            .lock()
-            .expect("update state poisoned")
+        lock(&self.pending)
             .as_ref()
             .map(|pending| pending.version.clone())
     }

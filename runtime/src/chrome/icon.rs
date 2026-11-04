@@ -35,10 +35,12 @@ pub fn load_png(path: &Path) -> Result<Rgba, ApiError> {
 
     let pixels = (info.width as usize) * (info.height as usize);
     let bytes = match info.color_type {
-        png::ColorType::Rgba => buffer[..pixels * 4].to_vec(),
-        png::ColorType::Rgb => expand(&buffer[..pixels * 3], 3, pixels),
-        png::ColorType::GrayscaleAlpha => grey(&buffer[..pixels * 2], true, pixels),
-        png::ColorType::Grayscale => grey(&buffer[..pixels], false, pixels),
+        png::ColorType::Rgba => image_data(&buffer, pixels * 4, path)?.to_vec(),
+        png::ColorType::Rgb => expand(image_data(&buffer, pixels * 3, path)?, 3, pixels),
+        png::ColorType::GrayscaleAlpha => {
+            grey(image_data(&buffer, pixels * 2, path)?, true, pixels)
+        }
+        png::ColorType::Grayscale => grey(image_data(&buffer, pixels, path)?, false, pixels),
         other => {
             return Err(ApiError::unsupported(format!(
                 "{} uses an unsupported PNG colour type ({other:?})",
@@ -54,6 +56,19 @@ pub fn load_png(path: &Path) -> Result<Rgba, ApiError> {
     })
 }
 
+/// The decoded image: the first `length` bytes of what the decoder produced.
+/// A decoder that produced fewer was given a PNG smaller than its own header
+/// says.
+fn image_data<'a>(buffer: &'a [u8], length: usize, path: &Path) -> Result<&'a [u8], ApiError> {
+    match buffer.get(..length) {
+        Some(data) => Ok(data),
+        None => Err(ApiError::invalid_params(format!(
+            "{} has less image data than its size says",
+            path.display()
+        ))),
+    }
+}
+
 fn expand(source: &[u8], stride: usize, pixels: usize) -> Vec<u8> {
     let mut out = Vec::with_capacity(pixels * 4);
     for pixel in source.chunks_exact(stride) {
@@ -67,9 +82,13 @@ fn grey(source: &[u8], has_alpha: bool, pixels: usize) -> Vec<u8> {
     let stride = if has_alpha { 2 } else { 1 };
     let mut out = Vec::with_capacity(pixels * 4);
     for pixel in source.chunks_exact(stride) {
-        let value = pixel[0];
-        out.extend_from_slice(&[value, value, value]);
-        out.push(if has_alpha { pixel[1] } else { 255 });
+        let (value, alpha) = match pixel {
+            [value, alpha] => (*value, *alpha),
+            [value] => (*value, 255),
+            // `chunks_exact` only hands out chunks of `stride`, one or two.
+            _ => continue,
+        };
+        out.extend_from_slice(&[value, value, value, alpha]);
     }
     out
 }
