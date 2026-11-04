@@ -11,12 +11,12 @@
   },
   "dependencies": {
     "@vantail/api": "workspace:^",
-    "hono": "^4.13.13",
+    "hono": "^4.13.14",
     "htmx.org": "^2.0.11"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.1.0",
-    "@types/bun": "^1.4.2",
+    "@types/bun": "^1.4.4",
     "@vantail/cli": "workspace:^",
     "@vantail/runtime": "workspace:^",
     "tailwindcss": "^4.1.0",
