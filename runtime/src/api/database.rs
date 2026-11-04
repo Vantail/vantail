@@ -293,100 +293,122 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, id: &str, method: &str, params: Value) ->
         return Some(Err(error));
     }
 
+    match method {
+        "database.open" => return Some(open(rt, method, params)),
+        "database.createKey" => return Some(make_key(rt, params)),
+        _ => {}
+    }
+
     let reply = Reply {
         id: id.to_string(),
         window: ctx.source.to_string(),
     };
-
-    let queued = match method {
-        "database.open" => return Some(open(rt, method, params)),
-
-        // Making the key is its own call so the key never has to exist in
-        // JavaScript, even for the moment it takes to store it.
-        "database.createKey" => {
-            if let Err(error) = rt.permissions.require(rt.permissions.secrets, method) {
-                return Some(Err(error));
-            }
-            let params: Result<KeyParams, _> = Request::params(method, params);
-            return Some(params.and_then(|p| create_key(rt, &p.secret)));
-        }
-
-        "database.query" => Request::params::<StatementParams>(method, params).and_then(|p| {
-            rt.databases.hand(
-                p.id,
-                Job::Query {
-                    sql: p.sql,
-                    params: p.params,
-                    bigint: p.bigint,
-                    transaction: p.transaction,
-                    reply,
-                },
-            )
-        }),
-
-        "database.execute" => Request::params::<StatementParams>(method, params).and_then(|p| {
-            rt.databases.hand(
-                p.id,
-                Job::Execute {
-                    sql: p.sql,
-                    params: p.params,
-                    bigint: p.bigint,
-                    transaction: p.transaction,
-                    reply,
-                },
-            )
-        }),
-
-        "database.begin" => Request::params::<HandleParams>(method, params).and_then(|p| {
-            let transaction = rt
-                .databases
-                .next_transaction
-                .fetch_add(1, Ordering::Relaxed)
-                + 1;
-            rt.databases.hand(p.id, Job::Begin { transaction, reply })
-        }),
-
-        "database.commit" => Request::params::<TransactionParams>(method, params).and_then(|p| {
-            rt.databases.hand(
-                p.id,
-                Job::Commit {
-                    transaction: p.transaction,
-                    reply,
-                },
-            )
-        }),
-
-        "database.rollback" => Request::params::<TransactionParams>(method, params).and_then(|p| {
-            rt.databases.hand(
-                p.id,
-                Job::Rollback {
-                    transaction: p.transaction,
-                    reply,
-                },
-            )
-        }),
-
-        "database.checkpoint" => Request::params::<HandleParams>(method, params)
-            .and_then(|p| rt.databases.hand(p.id, Job::Checkpoint { reply })),
-
-        "database.snapshot" => Request::params::<SnapshotParams>(method, params).and_then(|p| {
-            // The copy is a new file, so it needs the same permission the
-            // database itself did.
-            let path = rt.permissions.check_path(&p.path, Access::Write)?;
-            rt.databases.hand(p.id, Job::Snapshot { path, reply })
-        }),
-
-        "database.close" => Request::params::<HandleParams>(method, params)
-            .and_then(|p| rt.databases.hand(p.id, Job::Close { reply })),
-
-        _ => return Some(Err(ApiError::unknown_method(method))),
-    };
-
+    let queued =
+        job_for(rt, method, params, reply).and_then(|(id, job)| rt.databases.hand(id, job));
     match queued {
         // The thread has it, and will answer the window itself.
         Ok(()) => None,
         Err(error) => Some(Err(error)),
     }
+}
+
+/// Making the key is its own call so the key never has to exist in
+/// JavaScript, even for the moment it takes to store it.
+fn make_key(rt: &Runtime, params: Value) -> ApiResult {
+    rt.permissions
+        .require(rt.permissions.secrets, "database.createKey")?;
+    let KeyParams { secret } = Request::params("database.createKey", params)?;
+    create_key(rt, &secret)
+}
+
+/// The job a call asks for, and the connection it is for.
+fn job_for(
+    rt: &Runtime,
+    method: &str,
+    params: Value,
+    reply: Reply,
+) -> Result<(u32, Job), ApiError> {
+    match method {
+        "database.query" => query_job(params, reply),
+        "database.execute" => execute_job(params, reply),
+        "database.begin" => begin_job(rt, params, reply),
+        "database.commit" => commit_job(params, reply),
+        "database.rollback" => rollback_job(params, reply),
+        "database.checkpoint" => checkpoint_job(params, reply),
+        "database.snapshot" => snapshot_job(rt, params, reply),
+        "database.close" => close_job(params, reply),
+        _ => Err(ApiError::unknown_method(method)),
+    }
+}
+
+fn query_job(params: Value, reply: Reply) -> Result<(u32, Job), ApiError> {
+    let p: StatementParams = Request::params("database.query", params)?;
+    let job = Job::Query {
+        sql: p.sql,
+        params: p.params,
+        bigint: p.bigint,
+        transaction: p.transaction,
+        reply,
+    };
+    Ok((p.id, job))
+}
+
+fn execute_job(params: Value, reply: Reply) -> Result<(u32, Job), ApiError> {
+    let p: StatementParams = Request::params("database.execute", params)?;
+    let job = Job::Execute {
+        sql: p.sql,
+        params: p.params,
+        bigint: p.bigint,
+        transaction: p.transaction,
+        reply,
+    };
+    Ok((p.id, job))
+}
+
+fn begin_job(rt: &Runtime, params: Value, reply: Reply) -> Result<(u32, Job), ApiError> {
+    let p: HandleParams = Request::params("database.begin", params)?;
+    let transaction = rt
+        .databases
+        .next_transaction
+        .fetch_add(1, Ordering::Relaxed)
+        + 1;
+    Ok((p.id, Job::Begin { transaction, reply }))
+}
+
+fn commit_job(params: Value, reply: Reply) -> Result<(u32, Job), ApiError> {
+    let p: TransactionParams = Request::params("database.commit", params)?;
+    let job = Job::Commit {
+        transaction: p.transaction,
+        reply,
+    };
+    Ok((p.id, job))
+}
+
+fn rollback_job(params: Value, reply: Reply) -> Result<(u32, Job), ApiError> {
+    let p: TransactionParams = Request::params("database.rollback", params)?;
+    let job = Job::Rollback {
+        transaction: p.transaction,
+        reply,
+    };
+    Ok((p.id, job))
+}
+
+fn checkpoint_job(params: Value, reply: Reply) -> Result<(u32, Job), ApiError> {
+    let p: HandleParams = Request::params("database.checkpoint", params)?;
+    Ok((p.id, Job::Checkpoint { reply }))
+}
+
+fn snapshot_job(rt: &Runtime, params: Value, reply: Reply) -> Result<(u32, Job), ApiError> {
+    let p: SnapshotParams = Request::params("database.snapshot", params)?;
+    // The copy is a new file, so it needs the same permission the database
+    // itself did.
+    let path = rt.permissions.check_path(&p.path, Access::Write)?;
+    Ok((p.id, Job::Snapshot { path, reply }))
+}
+
+fn close_job(params: Value, reply: Reply) -> Result<(u32, Job), ApiError> {
+    let p: HandleParams = Request::params("database.close", params)?;
+    Ok((p.id, Job::Close { reply }))
 }
 
 fn open(rt: &Arc<Runtime>, method: &str, params: Value) -> ApiResult {
@@ -427,7 +449,14 @@ fn open(rt: &Arc<Runtime>, method: &str, params: Value) -> ApiResult {
 
     let spawned = std::thread::Builder::new()
         .name(format!("vantail-db-{id}"))
-        .spawn(move || serve(runtime, id, resolved, read_only, key, ready, inbox));
+        .spawn(move || {
+            let target = Target {
+                path: resolved,
+                read_only,
+                key,
+            };
+            serve(runtime, id, target, ready, inbox)
+        });
 
     if let Err(error) = spawned {
         rt.databases.remove(id);
@@ -457,16 +486,22 @@ fn open(rt: &Arc<Runtime>, method: &str, params: Value) -> ApiResult {
 // The connection's own thread
 // ---------------------------------------------------------------------------
 
+/// The file a connection opens, and how.
+struct Target {
+    path: PathBuf,
+    read_only: bool,
+    /// The SQLCipher key, already read from the credential store.
+    key: Option<String>,
+}
+
 fn serve(
     rt: Arc<Runtime>,
     id: u32,
-    path: PathBuf,
-    read_only: bool,
-    key: Option<String>,
+    target: Target,
     ready: Sender<ApiResult>,
     inbox: Receiver<Job>,
 ) {
-    let connection = match connect(&path, read_only, key.as_deref()) {
+    let connection = match connect(&target.path, target.read_only, target.key.as_deref()) {
         Ok(connection) => {
             let _ = ready.send(Ok(Value::Null));
             connection
@@ -530,14 +565,24 @@ fn connect(path: &PathBuf, read_only: bool, key: Option<&str>) -> Result<Connect
     Ok(connection)
 }
 
-fn pump(rt: &Runtime, connection: Connection, inbox: Receiver<Job>) {
-    /// A transaction that is open, and when it was last touched.
-    struct Open {
-        id: u32,
-        touched: Instant,
-    }
+/// A transaction that is open, and when it was last touched.
+struct OpenTransaction {
+    id: u32,
+    touched: Instant,
+}
 
-    let mut transaction: Option<Open> = None;
+/// What waiting for the next job came back with.
+enum Next {
+    Job(Job),
+    /// The open transaction sat idle past its limit, and was rolled back.
+    RolledBack,
+    /// Every sender is gone: the connection was closed or the runtime is
+    /// shutting down.
+    Closed,
+}
+
+fn pump(rt: &Runtime, connection: Connection, inbox: Receiver<Job>) {
+    let mut transaction: Option<OpenTransaction> = None;
     // Jobs that arrived for somebody else while a transaction was open. They
     // are answered in arrival order once it finishes.
     let mut waiting: Vec<Job> = Vec::new();
@@ -546,58 +591,25 @@ fn pump(rt: &Runtime, connection: Connection, inbox: Receiver<Job>) {
         // Anything that was queued behind a transaction can run now.
         if transaction.is_none() && !waiting.is_empty() {
             let ready = std::mem::take(&mut waiting);
-            let mut requeued = Vec::new();
-            for job in ready {
-                if let Some(job) = handle(rt, &connection, job, &mut transaction) {
-                    requeued.push(job);
-                }
-            }
-            waiting = requeued;
+            waiting = run_waiting(rt, &connection, ready, &mut transaction);
             continue;
         }
 
-        let next = match &transaction {
-            // While a transaction is open the loop must wake up on its own to
-            // notice one that has been abandoned.
-            Some(open) => {
-                let idle = TRANSACTION_IDLE.saturating_sub(open.touched.elapsed());
-                match inbox.recv_timeout(idle) {
-                    Ok(job) => Some(job),
-                    Err(RecvTimeoutError::Timeout) => {
-                        let _ = connection.execute_batch("ROLLBACK");
-                        transaction = None;
-                        continue;
-                    }
-                    Err(RecvTimeoutError::Disconnected) => None,
+        let job = match next_job(&inbox, &connection, &mut transaction) {
+            Next::Job(job) => job,
+            // Back to the top, where whatever was waiting on it can now run.
+            Next::RolledBack => continue,
+            Next::Closed => {
+                // An unfinished transaction is not a commit.
+                if transaction.is_some() {
+                    let _ = connection.execute_batch("ROLLBACK");
                 }
+                return;
             }
-            None => inbox.recv().ok(),
-        };
-
-        let Some(job) = next else {
-            // Every sender is gone: the connection was closed or the runtime
-            // is shutting down. An unfinished transaction is not a commit.
-            if transaction.is_some() {
-                let _ = connection.execute_batch("ROLLBACK");
-            }
-            return;
         };
 
         if let Job::Close { reply } = job {
-            if transaction.is_some() {
-                let _ = connection.execute_batch("ROLLBACK");
-            }
-            // Answer everything still queued, so no caller waits forever.
-            for job in waiting.drain(..) {
-                job.into_reply().send(
-                    rt,
-                    Err(ApiError::new(
-                        crate::error::code::NOT_FOUND,
-                        "The database was closed while this was waiting",
-                    )),
-                );
-            }
-            reply.send(rt, close(connection));
+            close_connection(rt, connection, transaction.is_some(), waiting, reply);
             return;
         }
 
@@ -605,89 +617,172 @@ fn pump(rt: &Runtime, connection: Connection, inbox: Receiver<Job>) {
             waiting.push(job);
         }
     }
+}
 
-    /// Run a job, or hand it back to be queued behind the open transaction.
-    fn handle(
-        rt: &Runtime,
-        connection: &Connection,
-        job: Job,
-        transaction: &mut Option<Open>,
-    ) -> Option<Job> {
-        if let Some(open) = transaction {
-            match job.transaction() {
-                // Somebody else's work, or work that has no transaction: it
-                // waits rather than joining this one.
-                Some(id) if id == open.id => open.touched = Instant::now(),
-                _ => return Some(job),
-            }
-        } else if let Some(id) = job.transaction() {
-            // The transaction it names has already finished, or timed out.
-            job.into_reply().send(rt, Err(ApiError::new(
-                crate::error::code::NOT_FOUND,
-                format!("Transaction {id} is not open - it was committed, rolled back, or timed out after {}s of inactivity", TRANSACTION_IDLE.as_secs()),
-            )));
-            return None;
-        }
+/// Wait for the next job.
+///
+/// While a transaction is open the wait has a deadline, so the loop wakes up
+/// on its own to notice one that has been abandoned, and rolls it back.
+fn next_job(
+    inbox: &Receiver<Job>,
+    connection: &Connection,
+    transaction: &mut Option<OpenTransaction>,
+) -> Next {
+    let Some(open) = transaction else {
+        return match inbox.recv() {
+            Ok(job) => Next::Job(job),
+            Err(_) => Next::Closed,
+        };
+    };
 
-        match job {
-            Job::Query {
-                sql,
-                params,
-                bigint,
-                reply,
-                ..
-            } => reply.send(rt, query(connection, &sql, &params, bigint)),
-            Job::Execute {
-                sql,
-                params,
-                bigint,
-                reply,
-                ..
-            } => reply.send(rt, execute(connection, &sql, &params, bigint)),
-            Job::Begin {
-                transaction: id,
-                reply,
-            } => {
-                // IMMEDIATE, not DEFERRED: take the write lock now rather than
-                // discovering at the first write that somebody else has it.
-                match connection.execute_batch("BEGIN IMMEDIATE") {
-                    Ok(()) => {
-                        *transaction = Some(Open {
-                            id,
-                            touched: Instant::now(),
-                        });
-                        reply.send(rt, Ok(json!({ "transaction": id })));
-                    }
-                    Err(error) => {
-                        reply.send(rt, Err(failed("Could not begin a transaction", &error)));
-                    }
-                }
-            }
-            Job::Commit { reply, .. } => {
-                let result = connection
-                    .execute_batch("COMMIT")
-                    .map(|()| Value::Null)
-                    .map_err(|e| failed("Could not commit", &e));
-                // Committed or not, the transaction is over: leaving it open
-                // after a failed COMMIT would wedge the connection.
-                *transaction = None;
-                reply.send(rt, result);
-            }
-            Job::Rollback { reply, .. } => {
-                let result = connection
-                    .execute_batch("ROLLBACK")
-                    .map(|()| Value::Null)
-                    .map_err(|e| failed("Could not roll back", &e));
-                *transaction = None;
-                reply.send(rt, result);
-            }
-            Job::Checkpoint { reply } => reply.send(rt, checkpoint(connection)),
-            Job::Snapshot { path, reply } => reply.send(rt, snapshot(connection, &path)),
-            // Handled by the caller, which has to stop the loop.
-            Job::Close { reply } => reply.send(rt, Ok(Value::Null)),
+    let idle = TRANSACTION_IDLE.saturating_sub(open.touched.elapsed());
+    match inbox.recv_timeout(idle) {
+        Ok(job) => Next::Job(job),
+        Err(RecvTimeoutError::Timeout) => {
+            let _ = connection.execute_batch("ROLLBACK");
+            *transaction = None;
+            Next::RolledBack
         }
-        None
+        Err(RecvTimeoutError::Disconnected) => Next::Closed,
     }
+}
+
+/// Run the jobs that were queued behind a transaction. Any that find another
+/// one open by the time their turn comes are handed back, still in order.
+fn run_waiting(
+    rt: &Runtime,
+    connection: &Connection,
+    ready: Vec<Job>,
+    transaction: &mut Option<OpenTransaction>,
+) -> Vec<Job> {
+    let mut requeued = Vec::new();
+    for job in ready {
+        if let Some(job) = handle(rt, connection, job, transaction) {
+            requeued.push(job);
+        }
+    }
+    requeued
+}
+
+/// Close the connection, and answer everything still queued so no caller
+/// waits forever.
+fn close_connection(
+    rt: &Runtime,
+    connection: Connection,
+    in_transaction: bool,
+    waiting: Vec<Job>,
+    reply: Reply,
+) {
+    if in_transaction {
+        let _ = connection.execute_batch("ROLLBACK");
+    }
+    for job in waiting {
+        job.into_reply().send(
+            rt,
+            Err(ApiError::new(
+                crate::error::code::NOT_FOUND,
+                "The database was closed while this was waiting",
+            )),
+        );
+    }
+    reply.send(rt, close(connection));
+}
+
+/// Run a job, or hand it back to be queued behind the open transaction.
+fn handle(
+    rt: &Runtime,
+    connection: &Connection,
+    job: Job,
+    transaction: &mut Option<OpenTransaction>,
+) -> Option<Job> {
+    if let Some(open) = transaction {
+        match job.transaction() {
+            // Somebody else's work, or work that has no transaction: it waits
+            // rather than joining this one.
+            Some(id) if id == open.id => open.touched = Instant::now(),
+            _ => return Some(job),
+        }
+    } else if let Some(id) = job.transaction() {
+        // The transaction it names has already finished, or timed out.
+        job.into_reply().send(rt, Err(not_open(id)));
+        return None;
+    }
+
+    run(rt, connection, job, transaction);
+    None
+}
+
+fn not_open(transaction: u32) -> ApiError {
+    ApiError::new(
+        crate::error::code::NOT_FOUND,
+        format!(
+            "Transaction {transaction} is not open - it was committed, rolled back, or timed out after {}s of inactivity",
+            TRANSACTION_IDLE.as_secs()
+        ),
+    )
+}
+
+/// Run a job that is allowed to run now, and answer it.
+fn run(rt: &Runtime, connection: &Connection, job: Job, transaction: &mut Option<OpenTransaction>) {
+    match job {
+        Job::Query {
+            sql,
+            params,
+            bigint,
+            reply,
+            ..
+        } => reply.send(rt, query(connection, &sql, &params, bigint)),
+        Job::Execute {
+            sql,
+            params,
+            bigint,
+            reply,
+            ..
+        } => reply.send(rt, execute(connection, &sql, &params, bigint)),
+        Job::Begin {
+            transaction: id,
+            reply,
+        } => reply.send(rt, begin(connection, id, transaction)),
+        Job::Commit { reply, .. } => reply.send(rt, commit(connection, transaction)),
+        Job::Rollback { reply, .. } => reply.send(rt, roll_back(connection, transaction)),
+        Job::Checkpoint { reply } => reply.send(rt, checkpoint(connection)),
+        Job::Snapshot { path, reply } => reply.send(rt, snapshot(connection, &path)),
+        // Handled by the caller, which has to stop the loop.
+        Job::Close { reply } => reply.send(rt, Ok(Value::Null)),
+    }
+}
+
+fn begin(connection: &Connection, id: u32, transaction: &mut Option<OpenTransaction>) -> ApiResult {
+    // IMMEDIATE, not DEFERRED: take the write lock now rather than discovering
+    // at the first write that somebody else has it.
+    connection
+        .execute_batch("BEGIN IMMEDIATE")
+        .map_err(|e| failed("Could not begin a transaction", &e))?;
+    *transaction = Some(OpenTransaction {
+        id,
+        touched: Instant::now(),
+    });
+    Ok(json!({ "transaction": id }))
+}
+
+fn commit(connection: &Connection, transaction: &mut Option<OpenTransaction>) -> ApiResult {
+    let result = connection
+        .execute_batch("COMMIT")
+        .map(|()| Value::Null)
+        .map_err(|e| failed("Could not commit", &e));
+    // Committed or not, the transaction is over: leaving it open after a
+    // failed COMMIT would wedge the connection.
+    *transaction = None;
+    result
+}
+
+fn roll_back(connection: &Connection, transaction: &mut Option<OpenTransaction>) -> ApiResult {
+    let result = connection
+        .execute_batch("ROLLBACK")
+        .map(|()| Value::Null)
+        .map_err(|e| failed("Could not roll back", &e));
+    *transaction = None;
+    result
 }
 
 // ---------------------------------------------------------------------------
