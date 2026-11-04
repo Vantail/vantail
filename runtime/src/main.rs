@@ -52,8 +52,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde_json::json;
+use tao::dpi::{PhysicalPosition, PhysicalSize};
 use tao::event::{Event, StartCause, WindowEvent};
-use tao::event_loop::{ControlFlow, EventLoop, EventLoopBuilder};
+use tao::event_loop::{ControlFlow, EventLoop, EventLoopBuilder, EventLoopWindowTarget};
+use tao::window::WindowId;
 
 use crate::chrome::Chrome;
 use crate::config::LoadedConfig;
@@ -150,330 +152,432 @@ fn run() -> Result<(), String> {
     // Before anything is opened: a second launch should hand over what it was
     // asked to do and get out of the way, not build a whole second window
     // first.
-    if loaded.config.wants_single_instance() {
-        match instance::claim(&loaded.config.app.identifier, std::env::args().collect()) {
-            Ok(instance::Claim::HandedOver) => return Ok(()),
-            Ok(instance::Claim::Primary(listener)) => {
-                instance::listen(listener, event_loop.create_proxy());
-            }
-            // Not being able to hold the lock is no reason to refuse to run.
-            Err(error) => eprintln!("vantail: could not claim single instance: {error}"),
-        }
+    if loaded.config.wants_single_instance() && handed_over(&loaded, &event_loop) {
+        return Ok(());
     }
 
     let rt = Arc::new(Runtime::new(loaded, event_loop.create_proxy())?);
-
-    // Windows and Linux deliver a link by starting the application with it on
-    // the command line, which includes the very first launch.
-    for url in deeplink::from_args(&rt.config.protocols, &std::env::args().collect::<Vec<_>>()) {
-        let _ = rt.links.accept(url);
-    }
-    let pool = Pool::new(worker_count());
-    let network_pool = Pool::new(worker_count());
-    let mut windows = WindowManager::new();
-    let mut chrome = Chrome::new();
-
-    install_chrome_handlers(&event_loop);
-
-    let main_config = rt.config.window.clone();
-    let main_url = windows::resolve_url(&rt, None);
-    windows.create(
-        &event_loop,
-        &rt,
-        event_loop.create_proxy(),
-        windows::MAIN,
-        &main_config,
-        &main_url,
-    )?;
-
-    if rt.is_dev() {
-        eprintln!("vantail: {} -> {main_url}", rt.config.app.name);
-    }
-
-    let quit_when_empty = rt.config.quit_on_last_window_closed;
+    let mut app = App::start(rt, &event_loop)?;
 
     event_loop.run(move |event, target, control_flow| {
-        *control_flow = ControlFlow::Wait;
+        *control_flow = app.handle(event, target);
+    });
+}
 
+/// Whether another copy of the application is already running and has been
+/// handed this launch, in which case this one has nothing left to do.
+fn handed_over(loaded: &LoadedConfig, event_loop: &EventLoop<UserEvent>) -> bool {
+    match instance::claim(&loaded.config.app.identifier, std::env::args().collect()) {
+        Ok(instance::Claim::HandedOver) => true,
+        Ok(instance::Claim::Primary(listener)) => {
+            instance::listen(listener, event_loop.create_proxy());
+            false
+        }
+        // Not being able to hold the lock is no reason to refuse to run.
+        Err(error) => {
+            eprintln!("vantail: could not claim single instance: {error}");
+            false
+        }
+    }
+}
+
+/// Everything the event loop holds on to between events.
+struct App {
+    rt: Arc<Runtime>,
+    windows: WindowManager,
+    chrome: Chrome,
+    /// Blocking filesystem work.
+    pool: Pool,
+    /// Network requests, on their own queue so a slow host does not hold up
+    /// a file read.
+    network_pool: Pool,
+    quit_when_empty: bool,
+}
+
+impl App {
+    /// Take any link the application was launched with, and open the main
+    /// window.
+    fn start(rt: Arc<Runtime>, event_loop: &EventLoop<UserEvent>) -> Result<Self, String> {
+        // Windows and Linux deliver a link by starting the application with it
+        // on the command line, which includes the very first launch.
+        for url in deeplink::from_args(&rt.config.protocols, &std::env::args().collect::<Vec<_>>())
+        {
+            let _ = rt.links.accept(url);
+        }
+        let pool = Pool::new(worker_count());
+        let network_pool = Pool::new(worker_count());
+        let mut windows = WindowManager::new();
+        let chrome = Chrome::new();
+
+        install_chrome_handlers(event_loop);
+
+        let main_config = rt.config.window.clone();
+        let main_url = windows::resolve_url(&rt, None);
+        windows.create(
+            event_loop,
+            &rt,
+            event_loop.create_proxy(),
+            windows::MAIN,
+            &main_config,
+            &main_url,
+        )?;
+
+        if rt.is_dev() {
+            eprintln!("vantail: {} -> {main_url}", rt.config.app.name);
+        }
+
+        let quit_when_empty = rt.config.quit_on_last_window_closed;
+        Ok(App {
+            rt,
+            windows,
+            chrome,
+            pool,
+            network_pool,
+            quit_when_empty,
+        })
+    }
+
+    /// Handle one event, and say whether the loop carries on.
+    ///
+    /// Only three things end it: the Quit menu item, the last window closing,
+    /// and a call to `app.quit`. Their handlers say so by what they return.
+    fn handle(
+        &mut self,
+        event: Event<'_, UserEvent>,
+        target: &EventLoopWindowTarget<UserEvent>,
+    ) -> ControlFlow {
         match event {
             // Menus and the tray icon are created here rather than before the
             // loop starts: on macOS neither exists until the application has
             // actually launched.
-            Event::NewEvents(StartCause::Init) => {
-                // Sleep and wake, once the application is actually running.
-                power::watch(&rt);
-
-                // Every menu built from here on, including a tray menu set
-                // much later, can label its Quit item.
-                chrome::menu::remember_app_name(&rt.config.app.name);
-
-                // On macOS a missing menu is not a cosmetic difference: without
-                // one, Cmd-W, Cmd-Q, Cmd-C and friends do nothing at all. So an
-                // application that sets none gets the standard one. `menu: []`
-                // is how you ask for no menu on purpose.
-                let default_menu = (cfg!(target_os = "macos") && rt.config.menu.is_none())
-                    .then(|| chrome::menu::default_app_menu(&rt.config.app.name));
-                let items = rt.config.menu.as_deref().or(default_menu.as_deref());
-
-                if let Some(items) = items {
-                    match chrome.set_app_menu(items) {
-                        // The menu is installed either way; anything the
-                        // platform refused was left out of it. Saying which
-                        // item went missing is the difference between a
-                        // puzzling gap in the menu bar and a one-line fix.
-                        Ok(skipped) => {
-                            for note in skipped {
-                                eprintln!("vantail: menu item left out - {note}");
-                            }
-                        }
-                        Err(error) => {
-                            eprintln!("vantail: could not install the menu: {}", error.message);
-                        }
-                    }
-                    for label in windows.labels() {
-                        if let Some(entry) = windows.get(&label) {
-                            chrome.attach(&entry.window);
-                        }
-                    }
-                }
-                if let Some(spec) = &rt.config.tray {
-                    match chrome.set_tray(&rt, spec) {
-                        Ok(skipped) => {
-                            for note in skipped {
-                                eprintln!("vantail: tray menu item left out - {note}");
-                            }
-                        }
-                        Err(error) => {
-                            eprintln!("vantail: could not create the tray icon: {}", error.message);
-                        }
-                    }
-                }
-            }
+            Event::NewEvents(StartCause::Init) => self.launched(),
 
             // macOS hands a link to the running application rather than
             // starting a new one, so it arrives here instead of in argv.
             Event::Opened { urls } => {
                 for url in urls {
-                    deliver_link(&rt, &windows, url.to_string());
+                    deliver_link(&self.rt, &self.windows, url.to_string());
                 }
             }
 
-            Event::UserEvent(UserEvent::SecondInstance(launch)) => {
-                for url in deeplink::from_args(&rt.config.protocols, &launch.args) {
-                    deliver_link(&rt, &windows, url);
-                }
+            Event::UserEvent(UserEvent::SecondInstance(launch)) => self.second_instance(launch),
+            Event::LoopDestroyed => self.shut_down(),
+            Event::UserEvent(UserEvent::Menu(id)) => return self.menu_clicked(id),
+            Event::UserEvent(UserEvent::Shortcut(hotkey)) => self.shortcut_pressed(hotkey),
 
-                // Somebody tried to start the application again, so bring the
-                // one that is already running to the front.
-                if let Some(entry) = windows.get(windows::MAIN) {
-                    entry.window.set_visible(true);
-                    entry.window.set_focus();
-                }
-
-                windows.deliver(
-                    None,
-                    &Outgoing::Event(IpcEvent::new(
-                        "app.secondInstance",
-                        json!({ "args": launch.args, "cwd": launch.cwd }),
-                    )),
-                );
-            }
-
-            Event::LoopDestroyed => {
-                rt.processes.kill_all();
-                rt.discovery.shutdown();
-                rt.devices.shutdown();
-                rt.sockets.shutdown();
-                rt.databases.shutdown();
-            }
-
-            Event::UserEvent(UserEvent::Menu(id)) => {
-                // Quit is the runtime's own item, and takes the same route out
-                // as `app.quit`: unwind the loop rather than let the platform
-                // terminate the process from under it.
-                if id == chrome::menu::QUIT_ID {
-                    *control_flow = ControlFlow::Exit;
-                    return;
-                }
-
-                windows.deliver(
-                    None,
-                    &Outgoing::Event(IpcEvent::new("menu.click", json!({ "id": id }))),
-                );
-            }
-
-            Event::UserEvent(UserEvent::Shortcut(hotkey)) => {
-                // The window server reports the combination, not what the
-                // application called it, so the name is looked up here.
-                if let Some((id, accelerator)) = chrome.shortcut_by_hotkey(hotkey) {
-                    let payload = serde_json::json!({ "id": id, "accelerator": accelerator });
-                    windows.deliver(
-                        None,
-                        &Outgoing::Event(IpcEvent::new("shortcut.pressed", payload)),
-                    );
-                }
-            }
-
+            // The thread that asked is blocked until this replies, so the
+            // dialog runs here and the answer goes straight back.
             Event::UserEvent(UserEvent::GrantHost { host, app, answer }) => {
-                // The thread that asked is blocked until this replies, so the
-                // dialog runs here and the answer goes straight back. Naming
-                // the host is the whole point: a page that has been taken over
-                // cannot reach somewhere new without a person reading where.
-                let allowed = rfd::MessageDialog::new()
-                    .set_level(rfd::MessageLevel::Warning)
-                    .set_title(&app)
-                    .set_description(format!(
-                        "{app} wants to connect to {host}.\n\n                         Allow it for as long as {app} is running?"
-                    ))
-                    .set_buttons(rfd::MessageButtons::YesNo)
-                    .show();
-                let _ = answer.send(matches!(allowed, rfd::MessageDialogResult::Yes));
+                let _ = answer.send(ask_to_grant_host(&host, &app));
             }
 
+            // A print job that is still rendering after its deadline fails
+            // rather than hanging the caller's promise. A job that already
+            // reached its dialog was taken before the dialog opened, so this
+            // only ever catches renders.
             Event::UserEvent(UserEvent::PrintTimeout { job }) => {
-                // A print job that is still rendering after its deadline
-                // fails rather than hanging the caller's promise. A job that
-                // already reached its dialog was taken before the dialog
-                // opened, so this only ever catches renders.
-                crate::api::print::timed_out(&rt, &windows.print, job);
+                crate::api::print::timed_out(&self.rt, &self.windows.print, job);
             }
 
             #[cfg(target_os = "windows")]
             Event::UserEvent(UserEvent::PrintClosed { job }) => {
-                crate::api::print::closed(&rt, &windows.print, job);
+                crate::api::print::closed(&self.rt, &self.windows.print, job);
             }
 
-            Event::UserEvent(UserEvent::Tray { event, payload }) => {
-                let left = event == "tray.click"
-                    && payload.get("button").and_then(|b| b.as_str()) == Some("left");
-                if left {
-                    activate_from_tray(&windows, &chrome);
-                }
-                windows.deliver(None, &Outgoing::Event(IpcEvent::new(event, payload)));
-            }
-
-            Event::WindowEvent { window_id, event, .. } => {
-                // A window we have already dropped can still deliver a final
-                // event; there is nothing left to tell anyone about it.
-                let Some(label) = windows.by_id(window_id).map(|entry| entry.label.clone()) else {
-                    // A print window is never listed; closing it ends its job.
-                    #[cfg(target_os = "windows")]
-                    if matches!(event, WindowEvent::CloseRequested) {
-                        crate::api::print::close_requested(&rt, &windows.print, window_id);
-                    }
-                    return;
-                };
-
-                match event {
-                    WindowEvent::CloseRequested | WindowEvent::Destroyed => {
-                        // An application that lives in the tray needs its
-                        // window to go away without its JavaScript going with
-                        // it, so the close button is not always a close.
-                        let action = api::window::close_action(
-                            windows
-                                .by_id(window_id)
-                                .map(|entry| entry.close_behavior)
-                                .unwrap_or_default(),
-                        );
-
-                        if action == api::window::CloseAction::Hide {
-                            if let Some(entry) = windows.by_id(window_id) {
-                                entry.window.set_visible(false);
-                            }
-                        }
-
-                        match action.outcome() {
-                            Some(outcome) => announce_close_request(&windows, &label, outcome),
-                            None => {
-                                if api::window::closed_by_user(&mut windows, &label, quit_when_empty)
-                                {
-                                    *control_flow = ControlFlow::Exit;
-                                }
-                            }
-                        }
-                    }
-                    WindowEvent::Resized(size) => {
-                        let Some(entry) = windows.by_id_mut(window_id) else {
-                            return;
-                        };
-                        entry.size = size.to_logical::<f64>(entry.window.scale_factor());
-                        let size = entry.size;
-                        // A resize puts the traffic lights back where the
-                        // platform wants them, so a window that moved them has
-                        // to move them again - on every frame of the drag, or
-                        // they visibly snap home while the user holds on.
-                        entry.reapply_title_bar();
-                        // A corner shape is a path, not a property: it has to
-                        // be rebuilt at the new size or it keeps the old one.
-                        entry.reshape_corners();
-                        windows.deliver(
-                            Some(&label),
-                            &Outgoing::Event(IpcEvent::new(
-                                "window.resized",
-                                json!({ "width": size.width, "height": size.height, "label": label }),
-                            )),
-                        );
-                    }
-                    WindowEvent::Moved(position) => {
-                        let Some(entry) = windows.by_id(window_id) else {
-                            return;
-                        };
-                        let position = position.to_logical::<f64>(entry.window.scale_factor());
-                        windows.deliver(
-                            Some(&label),
-                            &Outgoing::Event(IpcEvent::new(
-                                "window.moved",
-                                json!({ "x": position.x, "y": position.y, "label": label }),
-                            )),
-                        );
-                    }
-                    WindowEvent::Focused(focused) => {
-                        if let Some(entry) = windows.by_id_mut(window_id) {
-                            entry.focused = focused;
-                        }
-                        windows.deliver(
-                            Some(&label),
-                            &Outgoing::Event(IpcEvent::new(
-                                "window.focus",
-                                json!({ "focused": focused, "label": label }),
-                            )),
-                        );
-                    }
-                    _ => {}
-                }
-            }
-
+            Event::UserEvent(UserEvent::Tray { event, payload }) => self.tray_event(event, payload),
+            Event::WindowEvent {
+                window_id, event, ..
+            } => return self.window_event(window_id, event),
             Event::UserEvent(UserEvent::Request { window, request }) => {
-                let mut exit = false;
-                let response = {
-                    let mut ctx = MainCtx {
-                        rt: &rt,
-                        windows: &mut windows,
-                        target,
-                        source: &window,
-                        chrome: &mut chrome,
-                        pool: &pool,
-                        network: &network_pool,
-                        exit: &mut exit,
-                    };
-                    router::dispatch(&mut ctx, request)
-                };
-
-                if let Some(response) = response {
-                    windows.deliver(Some(&window), &Outgoing::Response(response));
-                }
-                if exit {
-                    *control_flow = ControlFlow::Exit;
-                }
+                return self.request(target, &window, request);
             }
-
             Event::UserEvent(UserEvent::Outgoing { window, outgoing }) => {
-                windows.deliver(window.as_deref(), &outgoing);
+                self.windows.deliver(window.as_deref(), &outgoing);
             }
-
             _ => {}
         }
-    });
+        ControlFlow::Wait
+    }
+
+    /// The application has launched, so what needs it to exist can be set up.
+    fn launched(&mut self) {
+        // Sleep and wake, once the application is actually running.
+        power::watch(&self.rt);
+
+        // Every menu built from here on, including a tray menu set much later,
+        // can label its Quit item.
+        chrome::menu::remember_app_name(&self.rt.config.app.name);
+
+        self.install_menu();
+        self.install_tray();
+    }
+
+    fn install_menu(&mut self) {
+        // On macOS a missing menu is not a cosmetic difference: without one,
+        // Cmd-W, Cmd-Q, Cmd-C and friends do nothing at all. So an application
+        // that sets none gets the standard one. `menu: []` is how you ask for
+        // no menu on purpose.
+        let default_menu = (cfg!(target_os = "macos") && self.rt.config.menu.is_none())
+            .then(|| chrome::menu::default_app_menu(&self.rt.config.app.name));
+        let Some(items) = self.rt.config.menu.as_deref().or(default_menu.as_deref()) else {
+            return;
+        };
+
+        match self.chrome.set_app_menu(items) {
+            // The menu is installed either way; anything the platform refused
+            // was left out of it. Saying which item went missing is the
+            // difference between a puzzling gap in the menu bar and a one-line
+            // fix.
+            Ok(skipped) => {
+                for note in skipped {
+                    eprintln!("vantail: menu item left out - {note}");
+                }
+            }
+            Err(error) => {
+                eprintln!("vantail: could not install the menu: {}", error.message);
+            }
+        }
+        for label in self.windows.labels() {
+            if let Some(entry) = self.windows.get(&label) {
+                self.chrome.attach(&entry.window);
+            }
+        }
+    }
+
+    fn install_tray(&mut self) {
+        let Some(spec) = &self.rt.config.tray else {
+            return;
+        };
+        match self.chrome.set_tray(&self.rt, spec) {
+            Ok(skipped) => {
+                for note in skipped {
+                    eprintln!("vantail: tray menu item left out - {note}");
+                }
+            }
+            Err(error) => {
+                eprintln!("vantail: could not create the tray icon: {}", error.message);
+            }
+        }
+    }
+
+    /// Somebody tried to start the application again.
+    fn second_instance(&self, launch: instance::Launch) {
+        for url in deeplink::from_args(&self.rt.config.protocols, &launch.args) {
+            deliver_link(&self.rt, &self.windows, url);
+        }
+
+        // So bring the one that is already running to the front.
+        if let Some(entry) = self.windows.get(windows::MAIN) {
+            entry.window.set_visible(true);
+            entry.window.set_focus();
+        }
+
+        self.windows.deliver(
+            None,
+            &Outgoing::Event(IpcEvent::new(
+                "app.secondInstance",
+                json!({ "args": launch.args, "cwd": launch.cwd }),
+            )),
+        );
+    }
+
+    fn shut_down(&self) {
+        self.rt.processes.kill_all();
+        self.rt.discovery.shutdown();
+        self.rt.devices.shutdown();
+        self.rt.sockets.shutdown();
+        self.rt.databases.shutdown();
+    }
+
+    fn menu_clicked(&self, id: String) -> ControlFlow {
+        // Quit is the runtime's own item, and takes the same route out as
+        // `app.quit`: unwind the loop rather than let the platform terminate
+        // the process from under it.
+        if id == chrome::menu::QUIT_ID {
+            return ControlFlow::Exit;
+        }
+
+        self.windows.deliver(
+            None,
+            &Outgoing::Event(IpcEvent::new("menu.click", json!({ "id": id }))),
+        );
+        ControlFlow::Wait
+    }
+
+    fn shortcut_pressed(&self, hotkey: u32) {
+        // The window server reports the combination, not what the application
+        // called it, so the name is looked up here.
+        let Some((id, accelerator)) = self.chrome.shortcut_by_hotkey(hotkey) else {
+            return;
+        };
+        let payload = json!({ "id": id, "accelerator": accelerator });
+        self.windows.deliver(
+            None,
+            &Outgoing::Event(IpcEvent::new("shortcut.pressed", payload)),
+        );
+    }
+
+    fn tray_event(&self, event: &'static str, payload: serde_json::Value) {
+        let left =
+            event == "tray.click" && payload.get("button").and_then(|b| b.as_str()) == Some("left");
+        if left {
+            activate_from_tray(&self.windows, &self.chrome);
+        }
+        self.windows
+            .deliver(None, &Outgoing::Event(IpcEvent::new(event, payload)));
+    }
+
+    fn window_event(&mut self, window_id: WindowId, event: WindowEvent<'_>) -> ControlFlow {
+        // A window we have already dropped can still deliver a final event;
+        // there is nothing left to tell anyone about it.
+        let Some(label) = self
+            .windows
+            .by_id(window_id)
+            .map(|entry| entry.label.clone())
+        else {
+            // A print window is never listed; closing it ends its job.
+            #[cfg(target_os = "windows")]
+            if matches!(event, WindowEvent::CloseRequested) {
+                crate::api::print::close_requested(&self.rt, &self.windows.print, window_id);
+            }
+            return ControlFlow::Wait;
+        };
+
+        match event {
+            WindowEvent::CloseRequested | WindowEvent::Destroyed => {
+                return self.close_requested(window_id, &label);
+            }
+            WindowEvent::Resized(size) => self.resized(window_id, &label, size),
+            WindowEvent::Moved(position) => self.moved(window_id, &label, position),
+            WindowEvent::Focused(focused) => self.focused(window_id, &label, focused),
+            _ => {}
+        }
+        ControlFlow::Wait
+    }
+
+    fn close_requested(&mut self, window_id: WindowId, label: &str) -> ControlFlow {
+        // An application that lives in the tray needs its window to go away
+        // without its JavaScript going with it, so the close button is not
+        // always a close.
+        let behavior = self
+            .windows
+            .by_id(window_id)
+            .map(|entry| entry.close_behavior)
+            .unwrap_or_default();
+        let action = api::window::close_action(behavior);
+
+        if action == api::window::CloseAction::Hide {
+            if let Some(entry) = self.windows.by_id(window_id) {
+                entry.window.set_visible(false);
+            }
+        }
+
+        let Some(outcome) = action.outcome() else {
+            if api::window::closed_by_user(&mut self.windows, label, self.quit_when_empty) {
+                return ControlFlow::Exit;
+            }
+            return ControlFlow::Wait;
+        };
+        announce_close_request(&self.windows, label, outcome);
+        ControlFlow::Wait
+    }
+
+    fn resized(&mut self, window_id: WindowId, label: &str, size: PhysicalSize<u32>) {
+        let Some(entry) = self.windows.by_id_mut(window_id) else {
+            return;
+        };
+        entry.size = size.to_logical::<f64>(entry.window.scale_factor());
+        let size = entry.size;
+        // A resize puts the traffic lights back where the platform wants them,
+        // so a window that moved them has to move them again - on every frame
+        // of the drag, or they visibly snap home while the user holds on.
+        entry.reapply_title_bar();
+        // A corner shape is a path, not a property: it has to be rebuilt at
+        // the new size or it keeps the old one.
+        entry.reshape_corners();
+        self.windows.deliver(
+            Some(label),
+            &Outgoing::Event(IpcEvent::new(
+                "window.resized",
+                json!({ "width": size.width, "height": size.height, "label": label }),
+            )),
+        );
+    }
+
+    fn moved(&self, window_id: WindowId, label: &str, position: PhysicalPosition<i32>) {
+        let Some(entry) = self.windows.by_id(window_id) else {
+            return;
+        };
+        let position = position.to_logical::<f64>(entry.window.scale_factor());
+        self.windows.deliver(
+            Some(label),
+            &Outgoing::Event(IpcEvent::new(
+                "window.moved",
+                json!({ "x": position.x, "y": position.y, "label": label }),
+            )),
+        );
+    }
+
+    fn focused(&mut self, window_id: WindowId, label: &str, focused: bool) {
+        if let Some(entry) = self.windows.by_id_mut(window_id) {
+            entry.focused = focused;
+        }
+        self.windows.deliver(
+            Some(label),
+            &Outgoing::Event(IpcEvent::new(
+                "window.focus",
+                json!({ "focused": focused, "label": label }),
+            )),
+        );
+    }
+
+    /// A call from JavaScript, answered on the window that made it.
+    fn request(
+        &mut self,
+        target: &EventLoopWindowTarget<UserEvent>,
+        window: &str,
+        request: ipc::Request,
+    ) -> ControlFlow {
+        let mut exit = false;
+        let response = {
+            let mut ctx = MainCtx {
+                rt: &self.rt,
+                windows: &mut self.windows,
+                target,
+                source: window,
+                chrome: &mut self.chrome,
+                pool: &self.pool,
+                network: &self.network_pool,
+                exit: &mut exit,
+            };
+            router::dispatch(&mut ctx, request)
+        };
+
+        if let Some(response) = response {
+            self.windows
+                .deliver(Some(window), &Outgoing::Response(response));
+        }
+        if exit {
+            return ControlFlow::Exit;
+        }
+        ControlFlow::Wait
+    }
+}
+
+/// Ask whether a page may reach a host the config did not name.
+///
+/// Naming the host is the whole point: a page that has been taken over cannot
+/// reach somewhere new without a person reading where.
+fn ask_to_grant_host(host: &str, app: &str) -> bool {
+    let allowed = rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Warning)
+        .set_title(app)
+        .set_description(format!(
+            "{app} wants to connect to {host}.\n\n                         Allow it for as long as {app} is running?"
+        ))
+        .set_buttons(rfd::MessageButtons::YesNo)
+        .show();
+    matches!(allowed, rfd::MessageDialogResult::Yes)
 }
 
 /// Hand a deep link to the application, or hold it until someone is listening.
@@ -535,10 +639,6 @@ fn announce_close_request(windows: &WindowManager, label: &str, outcome: &str) {
     );
 }
 
-/// Route menu and tray activations into the event loop.
-///
-/// Both libraries deliver their events through global handlers rather than
-/// through the window system, so this is where they rejoin everything else.
 /// Whether the application appears in the Dock.
 ///
 /// macOS reads the activation policy when the event loop starts running and
@@ -559,6 +659,10 @@ fn apply_dock_visibility(event_loop: &mut EventLoop<UserEvent>, show_in_dock: bo
     let _ = (event_loop, show_in_dock);
 }
 
+/// Route menu, shortcut and tray activations into the event loop.
+///
+/// These libraries deliver their events through global handlers rather than
+/// through the window system, so this is where they rejoin everything else.
 fn install_chrome_handlers(event_loop: &EventLoop<UserEvent>) {
     let proxy = event_loop.create_proxy();
     muda::MenuEvent::set_event_handler(Some(move |event: muda::MenuEvent| {
