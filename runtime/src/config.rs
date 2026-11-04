@@ -82,25 +82,29 @@ pub struct AppConfig {
 /// colour string should not be the reason a window fails to open.
 pub fn parse_color(value: &str) -> Option<(u8, u8, u8, u8)> {
     let hex = value.trim().strip_prefix('#')?;
-    let channel = |s: &str| u8::from_str_radix(s, 16).ok();
+    let digits = hex_digits(hex)?;
 
-    match hex.len() {
-        3 => {
-            let mut it = hex.chars().map(|c| {
-                let d = c.to_digit(16)? as u8;
-                // `#abc` means `#aabbcc`, so each digit is doubled.
-                Some(d * 17)
-            });
-            Some((it.next()??, it.next()??, it.next()??, 255))
-        }
-        6 => Some((
-            channel(&hex[0..2])?,
-            channel(&hex[2..4])?,
-            channel(&hex[4..6])?,
+    match *digits.as_slice() {
+        // `#abc` means `#aabbcc`, so each digit is doubled.
+        [red, green, blue] => Some((red * 17, green * 17, blue * 17, 255)),
+        [red_high, red_low, green_high, green_low, blue_high, blue_low] => Some((
+            red_high * 16 + red_low,
+            green_high * 16 + green_low,
+            blue_high * 16 + blue_low,
             255,
         )),
         _ => None,
     }
+}
+
+/// The value of each hex digit in `text`, or `None` if any character is not one.
+fn hex_digits(text: &str) -> Option<Vec<u8>> {
+    let mut digits = Vec::with_capacity(text.len());
+    for character in text.chars() {
+        let digit = character.to_digit(16)?;
+        digits.push(digit as u8);
+    }
+    Some(digits)
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -267,10 +271,14 @@ pub struct Radii {
 impl Radii {
     /// Whether one `cornerRadius` can draw this, or it needs a shape.
     pub fn uniform(self) -> Option<f64> {
-        (self.top_left == self.top_right
+        let same = self.top_left == self.top_right
             && self.top_left == self.bottom_left
-            && self.top_left == self.bottom_right)
-            .then_some(self.top_left)
+            && self.top_left == self.bottom_right;
+        if same {
+            Some(self.top_left)
+        } else {
+            None
+        }
     }
 }
 
@@ -285,10 +293,10 @@ impl BorderRadius {
                 bottom_right: radius,
             },
             Self::Corners(corners) => Radii {
-                top_left: corners.top_left.unwrap_or(0.0),
-                top_right: corners.top_right.unwrap_or(0.0),
-                bottom_left: corners.bottom_left.unwrap_or(0.0),
-                bottom_right: corners.bottom_right.unwrap_or(0.0),
+                top_left: radius_or_square(corners.top_left),
+                top_right: radius_or_square(corners.top_right),
+                bottom_left: radius_or_square(corners.bottom_left),
+                bottom_right: radius_or_square(corners.bottom_right),
             },
         };
 
@@ -297,7 +305,19 @@ impl BorderRadius {
             || radii.bottom_left > 0.0
             || radii.bottom_right > 0.0;
 
-        rounded.then_some(radii)
+        if rounded {
+            Some(radii)
+        } else {
+            None
+        }
+    }
+}
+
+/// A corner the config does not name stays square.
+fn radius_or_square(radius: Option<f64>) -> f64 {
+    match radius {
+        Some(radius) => radius,
+        None => 0.0,
     }
 }
 
@@ -389,7 +409,10 @@ pub struct LoadedConfig {
 impl Config {
     /// Whether this application should refuse to run twice.
     pub fn wants_single_instance(&self) -> bool {
-        self.single_instance.unwrap_or(!self.protocols.is_empty())
+        match self.single_instance {
+            Some(single) => single,
+            None => !self.protocols.is_empty(),
+        }
     }
 }
 
@@ -402,12 +425,14 @@ impl LoadedConfig {
 
         // Asset paths in the config are relative to the config file, so a
         // project works the same whatever directory it is launched from.
-        let config_dir = path
-            .canonicalize()
-            .unwrap_or_else(|_| path.to_path_buf())
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("."));
+        let canonical = match path.canonicalize() {
+            Ok(canonical) => canonical,
+            Err(_) => path.to_path_buf(),
+        };
+        let config_dir = match canonical.parent() {
+            Some(parent) => parent.to_path_buf(),
+            None => PathBuf::from("."),
+        };
 
         Ok(Self {
             dist_dir: config_dir.join(&config.dist_dir),
@@ -428,7 +453,12 @@ impl LoadedConfig {
             candidates.push(cwd.join("vantail.json"));
         }
 
-        candidates.into_iter().find(|p| p.is_file())
+        for candidate in candidates {
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+        None
     }
 }
 
@@ -580,14 +610,9 @@ mod tests {
             "window": { "decorations": false, "borderRadius": 12 },
         }))
         .expect("a window naming a radius should load");
-        assert_eq!(
-            config
-                .window
-                .border_radius
-                .and_then(BorderRadius::radii)
-                .and_then(Radii::uniform),
-            Some(12.0),
-        );
+        let radius = config.window.border_radius.expect("a radius");
+        let radii = radius.radii().expect("a radius of 12 rounds something");
+        assert_eq!(radii.uniform(), Some(12.0));
     }
 
     #[test]
@@ -638,6 +663,14 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn a_colour_with_a_multibyte_character_is_refused_rather_than_split() {
+        // Six bytes, but `é` takes two of them: cutting the text into pairs of
+        // bytes would split it, which used to panic.
+        assert_eq!(parse_color("#aébcd"), None);
+        assert_eq!(parse_color("#+f+f+f"), None);
+    }
 
     #[test]
     fn a_colour_is_read_in_either_length() {

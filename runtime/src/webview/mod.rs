@@ -48,41 +48,46 @@ pub struct Origins {
 
 impl Origins {
     pub fn new(rt: &Runtime) -> Self {
-        Self::with_dev(rt.config.dev.as_ref().map(|dev| dev.url.as_str()))
+        let dev = match &rt.config.dev {
+            Some(dev) => Some(dev.url.as_str()),
+            None => None,
+        };
+        Self::with_dev(dev)
     }
 
+    /// The application's own origin and, in development, the dev server's.
     fn with_dev(dev: Option<&str>) -> Self {
-        let app = app_url("");
-        let trusted = std::iter::once(app.as_str())
-            .chain(dev)
-            .filter_map(Origin::parse)
-            .collect();
+        let mut urls = vec![app_url("")];
+        if let Some(dev) = dev {
+            urls.push(dev.to_string());
+        }
+
+        let mut trusted = Vec::new();
+        for url in &urls {
+            if let Some(origin) = Origin::parse(url) {
+                trusted.push(origin);
+            }
+        }
         Self { trusted }
     }
 
     /// Whether the page at `url` is one of the application's own.
     pub fn allows(&self, url: &str) -> bool {
-        Origin::parse(url).is_some_and(|origin| self.trusted.contains(&origin))
+        match Origin::parse(url) {
+            Some(origin) => self.trusted.contains(&origin),
+            None => false,
+        }
     }
 
     /// The trusted origins as a page sees itself: `location.protocol + '//' +
     /// location.host`. Not `location.origin`, which is `"null"` for a scheme
     /// the URL standard does not know, `vantail:` included.
     fn as_seen_by_page(&self) -> Vec<String> {
-        self.trusted
-            .iter()
-            .map(|origin| {
-                let default = match origin.scheme.as_str() {
-                    "http" => Some(80),
-                    "https" => Some(443),
-                    _ => None,
-                };
-                match origin.port.filter(|port| Some(*port) != default) {
-                    Some(port) => format!("{}://{}:{port}", origin.scheme, origin.host),
-                    None => format!("{}://{}", origin.scheme, origin.host),
-                }
-            })
-            .collect()
+        let mut seen = Vec::with_capacity(self.trusted.len());
+        for origin in &self.trusted {
+            seen.push(origin.as_seen_by_page());
+        }
+        seen
     }
 }
 
@@ -95,26 +100,57 @@ struct Origin {
 
 impl Origin {
     fn parse(url: &str) -> Option<Self> {
-        let uri: wry::http::Uri = url.parse().ok()?;
+        let Ok(uri) = url.parse::<wry::http::Uri>() else {
+            return None;
+        };
         let scheme = uri.scheme_str()?.to_ascii_lowercase();
         let host = uri.host()?.to_ascii_lowercase();
         // `http://localhost` and `http://localhost:80` are the same page.
-        let port = uri.port_u16().or(match scheme.as_str() {
-            "http" => Some(80),
-            "https" => Some(443),
-            _ => None,
-        });
+        let port = match uri.port_u16() {
+            Some(port) => Some(port),
+            None => default_port(&scheme),
+        };
         Some(Self { scheme, host, port })
+    }
+
+    /// `scheme://host`, with the port only when it is not the scheme's own.
+    fn as_seen_by_page(&self) -> String {
+        match self.port {
+            Some(port) if Some(port) != default_port(&self.scheme) => {
+                format!("{}://{}:{port}", self.scheme, self.host)
+            }
+            _ => format!("{}://{}", self.scheme, self.host),
+        }
+    }
+}
+
+fn default_port(scheme: &str) -> Option<u16> {
+    match scheme {
+        "http" => Some(80),
+        "https" => Some(443),
+        _ => None,
     }
 }
 
 /// Whether a popup's URL is something to hand to the system instead: a web
 /// page or a mail link, which a browser would have opened itself.
 pub fn opens_externally(url: &str) -> bool {
-    let scheme = url
-        .split_once(':')
-        .map(|(scheme, _)| scheme.to_ascii_lowercase());
-    matches!(scheme.as_deref(), Some("http" | "https" | "mailto"))
+    let Some((scheme, _)) = url.split_once(':') else {
+        return false;
+    };
+    matches!(
+        scheme.to_ascii_lowercase().as_str(),
+        "http" | "https" | "mailto"
+    )
+}
+
+fn append_line(path: &std::ffi::OsStr, line: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    writeln!(file, "{line}")
 }
 
 /// Hand a URL to the user's browser or mail client.
@@ -124,13 +160,7 @@ pub fn opens_externally(url: &str) -> bool {
 /// what they check is which URLs would have left, not that a browser came up.
 pub fn open_externally(url: &str) {
     if let Some(stub) = std::env::var_os("VANTAIL_OPEN_STUB") {
-        use std::io::Write;
-        let written = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&stub)
-            .and_then(|mut file| writeln!(file, "{url}"));
-        if let Err(error) = written {
+        if let Err(error) = append_line(&stub, url) {
             eprintln!("vantail: could not record {url} in VANTAIL_OPEN_STUB: {error}");
         }
         return;
@@ -463,7 +493,10 @@ pub struct Resources {
 impl Resources {
     pub fn new(root: &Path) -> Self {
         Self {
-            root: root.canonicalize().unwrap_or_else(|_| root.to_path_buf()),
+            root: match root.canonicalize() {
+                Ok(canonical) => canonical,
+                Err(_) => root.to_path_buf(),
+            },
         }
     }
 
@@ -512,7 +545,9 @@ pub fn serve(root: &Path, request: &Request<Vec<u8>>) -> Response<Cow<'static, [
 /// The application's `index.html`, if it has one.
 fn shell_document(root: &Path) -> Option<Response<Cow<'static, [u8]>>> {
     let index = resolve(root, "index.html")?;
-    let bytes = std::fs::read(&index).ok()?;
+    let Ok(bytes) = std::fs::read(&index) else {
+        return None;
+    };
     Some(ok(&index, bytes))
 }
 
@@ -540,8 +575,15 @@ fn resolve(root: &Path, requested: &str) -> Option<PathBuf> {
         }
     }
 
-    let candidate = candidate.canonicalize().unwrap_or(candidate);
-    candidate.starts_with(&root).then_some(candidate)
+    let candidate = match candidate.canonicalize() {
+        Ok(canonical) => canonical,
+        Err(_) => candidate,
+    };
+    if candidate.starts_with(&root) {
+        Some(candidate)
+    } else {
+        None
+    }
 }
 
 fn ok(path: &Path, bytes: Vec<u8>) -> Response<Cow<'static, [u8]>> {
@@ -660,11 +702,14 @@ mod tests {
 
         let response = serve(&root, &request);
         assert_eq!(response.status(), StatusCode::OK);
-        assert!(response
+        let content_type = response
             .headers()
             .get(header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .is_some_and(|value| value.starts_with("text/html")));
+            .expect("a content type");
+        assert!(content_type
+            .to_str()
+            .expect("a readable content type")
+            .starts_with("text/html"));
     }
 
     #[test]

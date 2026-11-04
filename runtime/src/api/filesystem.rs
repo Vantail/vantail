@@ -86,9 +86,9 @@ pub fn dispatch(rt: &Runtime, method: &str, params: Value) -> ApiResult {
 fn read_text(rt: &Runtime, params: Value) -> ApiResult {
     let PathParams { path } = Request::params("filesystem.readText", params)?;
     let path = rt.permissions.check_path(&path, Access::Read)?;
-    std::fs::read_to_string(&path)
-        .map(Value::from)
-        .map_err(|e| ApiError::io(&format!("Could not read {}", path.display()), e))
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| ApiError::io(&format!("Could not read {}", path.display()), e))?;
+    Ok(Value::from(text))
 }
 
 fn write_text(rt: &Runtime, params: Value) -> ApiResult {
@@ -102,8 +102,8 @@ fn write_text(rt: &Runtime, params: Value) -> ApiResult {
         create_parent(&path)?;
     }
     std::fs::write(&path, contents)
-        .map(|_| Value::Null)
-        .map_err(|e| ApiError::io(&format!("Could not write {}", path.display()), e))
+        .map_err(|e| ApiError::io(&format!("Could not write {}", path.display()), e))?;
+    Ok(Value::Null)
 }
 
 fn append_text(rt: &Runtime, params: Value) -> ApiResult {
@@ -116,8 +116,8 @@ fn append_text(rt: &Runtime, params: Value) -> ApiResult {
         .open(&path)
         .map_err(|e| ApiError::io(&format!("Could not open {}", path.display()), e))?;
     file.write_all(contents.as_bytes())
-        .map(|_| Value::Null)
-        .map_err(|e| ApiError::io(&format!("Could not append to {}", path.display()), e))
+        .map_err(|e| ApiError::io(&format!("Could not append to {}", path.display()), e))?;
+    Ok(Value::Null)
 }
 
 fn read_binary(rt: &Runtime, params: Value) -> ApiResult {
@@ -154,8 +154,8 @@ fn write_binary(rt: &Runtime, params: Value) -> ApiResult {
         create_parent(&path)?;
     }
     std::fs::write(&path, bytes)
-        .map(|_| Value::Null)
-        .map_err(|e| ApiError::io(&format!("Could not write {}", path.display()), e))
+        .map_err(|e| ApiError::io(&format!("Could not write {}", path.display()), e))?;
+    Ok(Value::Null)
 }
 
 /// Create the directories `path` will live in, for a write that asked to.
@@ -197,9 +197,8 @@ fn make_dir(rt: &Runtime, params: Value) -> ApiResult {
     } else {
         std::fs::create_dir(&path)
     };
-    created
-        .map(|_| Value::Null)
-        .map_err(|e| ApiError::io(&format!("Could not create {}", path.display()), e))
+    created.map_err(|e| ApiError::io(&format!("Could not create {}", path.display()), e))?;
+    Ok(Value::Null)
 }
 
 fn remove_path(rt: &Runtime, params: Value) -> ApiResult {
@@ -213,8 +212,8 @@ fn copy(rt: &Runtime, params: Value) -> ApiResult {
     // Copying reads the source and writes the destination.
     let (from, to) = check_pair(&rt.permissions, &from, &to, Access::Read)?;
     std::fs::copy(&from, &to)
-        .map(|_| Value::Null)
-        .map_err(|e| ApiError::io(&format!("Could not copy {}", from.display()), e))
+        .map_err(|e| ApiError::io(&format!("Could not copy {}", from.display()), e))?;
+    Ok(Value::Null)
 }
 
 fn rename(rt: &Runtime, params: Value) -> ApiResult {
@@ -222,8 +221,8 @@ fn rename(rt: &Runtime, params: Value) -> ApiResult {
     // Renaming removes the original, so the source needs write too.
     let (from, to) = check_pair(&rt.permissions, &from, &to, Access::Write)?;
     std::fs::rename(&from, &to)
-        .map(|_| Value::Null)
-        .map_err(|e| ApiError::io(&format!("Could not rename {}", from.display()), e))
+        .map_err(|e| ApiError::io(&format!("Could not rename {}", from.display()), e))?;
+    Ok(Value::Null)
 }
 
 /// Check both sides of a two-path operation, and return both checked paths.
@@ -289,12 +288,7 @@ fn read_dir(path: &Path) -> ApiResult {
     }
 
     out.sort_by(|a, b| {
-        let key = |v: &Value| {
-            (
-                !v["isDirectory"].as_bool().unwrap_or(false),
-                v["name"].as_str().unwrap_or_default().to_lowercase(),
-            )
-        };
+        let key = listing_order;
         key(a).cmp(&key(b))
     });
 
@@ -317,7 +311,7 @@ fn remove(path: &PathBuf, recursive: bool) -> ApiResult {
         std::fs::remove_file(path)
     };
 
-    removed.map(|_| Value::Null).map_err(|e| {
+    removed.map_err(|e| {
         if metadata.is_dir() && !recursive && e.kind() != std::io::ErrorKind::NotFound {
             ApiError::new(
                 code::IO_ERROR,
@@ -329,7 +323,8 @@ fn remove(path: &PathBuf, recursive: bool) -> ApiResult {
         } else {
             ApiError::io(&format!("Could not remove {}", path.display()), e)
         }
-    })
+    })?;
+    Ok(Value::Null)
 }
 
 fn describe(path: &Path, metadata: &std::fs::Metadata) -> Value {
@@ -340,17 +335,34 @@ fn describe(path: &Path, metadata: &std::fs::Metadata) -> Value {
         "isSymlink": metadata.file_type().is_symlink(),
         "size": metadata.len(),
         "readonly": metadata.permissions().readonly(),
-        "modifiedAt": epoch_millis(metadata.modified().ok()),
-        "createdAt": epoch_millis(metadata.created().ok()),
+        "modifiedAt": epoch_millis(metadata.modified()),
+        "createdAt": epoch_millis(metadata.created()),
     })
 }
 
 /// Milliseconds since the Unix epoch, or `null` when the platform does not
 /// record the timestamp. `Date` in JavaScript takes this directly.
-fn epoch_millis(time: Option<SystemTime>) -> Value {
-    time.and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| json!(d.as_millis() as u64))
-        .unwrap_or(Value::Null)
+fn epoch_millis(time: std::io::Result<SystemTime>) -> Value {
+    let Ok(time) = time else {
+        return Value::Null;
+    };
+    match time.duration_since(UNIX_EPOCH) {
+        Ok(since) => json!(since.as_millis() as u64),
+        Err(_) => Value::Null,
+    }
+}
+
+/// Directories first, then by name regardless of case.
+fn listing_order(entry: &Value) -> (bool, String) {
+    let is_directory = match entry["isDirectory"].as_bool() {
+        Some(is_directory) => is_directory,
+        None => false,
+    };
+    let name = match entry["name"].as_str() {
+        Some(name) => name.to_lowercase(),
+        None => String::new(),
+    };
+    (!is_directory, name)
 }
 
 #[cfg(test)]
