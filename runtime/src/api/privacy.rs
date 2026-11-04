@@ -97,7 +97,8 @@ fn open_settings() -> Result<(), ApiError> {
 /// Deep link into the Privacy & Security pane. A constant so tests can pin
 /// the shape without opening anything.
 #[cfg(target_os = "macos")]
-const SETTINGS_URL: &str = "x-apple.systempreferences:com.apple.preference.security?Privacy";
+const SETTINGS_URL: &str =
+    "x-apple.systempreferences:com.apple.preference.security?Privacy";
 
 #[cfg(not(target_os = "macos"))]
 fn open_settings() -> Result<(), ApiError> {
@@ -124,7 +125,9 @@ mod imp {
 
     use block2::StackBlock;
     use objc2::runtime::Bool;
-    use objc2_av_foundation::{AVCaptureDevice, AVMediaType, AVMediaTypeAudio, AVMediaTypeVideo};
+    use objc2_av_foundation::{
+        AVCaptureDevice, AVMediaType, AVMediaTypeAudio, AVMediaTypeVideo,
+    };
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum Status {
@@ -162,7 +165,8 @@ mod imp {
         };
         // SAFETY: `+authorizationStatusForMediaType:` is a thread-safe class
         // method that touches no Vantail state.
-        let raw = unsafe { AVCaptureDevice::authorizationStatusForMediaType(media) };
+        let raw =
+            unsafe { AVCaptureDevice::authorizationStatusForMediaType(media) };
         map_raw(raw)
     }
 
@@ -193,7 +197,9 @@ mod imp {
         // SAFETY: same class method, plus a completion block that only sends
         // through a channel. The block fires exactly once and is then released.
         unsafe {
-            AVCaptureDevice::requestAccessForMediaType_completionHandler(media, &block);
+            AVCaptureDevice::requestAccessForMediaType_completionHandler(
+                media, &block,
+            );
         }
 
         // The prompt is modal to nothing and fires on an arbitrary queue; a
@@ -271,7 +277,8 @@ mod tests {
 
     #[test]
     fn an_unknown_method_is_unknown_no_matter_the_params() {
-        for params in [json!({}), json!({ "kind": "microphone" }), json!(null)] {
+        for params in [json!({}), json!({ "kind": "microphone" }), json!(null)]
+        {
             let error = route("privacy.selfDestruct", params).unwrap_err();
             assert_eq!(error.code, crate::error::code::UNKNOWN_METHOD);
         }
@@ -285,7 +292,8 @@ mod tests {
 
     #[test]
     fn an_unknown_kind_is_rejected_before_touching_the_os() {
-        let error = route("privacy.status", json!({ "kind": "location" })).unwrap_err();
+        let error =
+            route("privacy.status", json!({ "kind": "location" })).unwrap_err();
         assert_eq!(error.code, crate::error::code::INVALID_PARAMS);
     }
 
@@ -301,7 +309,8 @@ mod tests {
             "mic",
             "speakers",
         ] {
-            let error = kind(json!({ "kind": kind_name }), "privacy.status").unwrap_err();
+            let error = kind(json!({ "kind": kind_name }), "privacy.status")
+                .unwrap_err();
             assert_eq!(
                 error.code,
                 crate::error::code::INVALID_PARAMS,
@@ -342,7 +351,8 @@ mod tests {
 
     #[test]
     fn the_error_names_the_method_that_was_called() {
-        let error = route("privacy.request", json!({ "kind": "location" })).unwrap_err();
+        let error = route("privacy.request", json!({ "kind": "location" }))
+            .unwrap_err();
         assert_eq!(error.code, crate::error::code::INVALID_PARAMS);
         assert!(
             error.message.contains("privacy.request"),
@@ -377,7 +387,8 @@ mod tests {
 
     #[test]
     fn status_answers_with_the_documented_shape() {
-        let value = route("privacy.status", json!({ "kind": "microphone" })).unwrap();
+        let value =
+            route("privacy.status", json!({ "kind": "microphone" })).unwrap();
         let status_text = value
             .get("status")
             .expect("`privacy.status` answers `{ status }`")
@@ -481,7 +492,8 @@ mod tests {
 
         #[test]
         fn microphone_and_camera_use_different_media_types() {
-            let mic = imp::media_type("microphone").expect("a microphone media type");
+            let mic =
+                imp::media_type("microphone").expect("a microphone media type");
             let cam = imp::media_type("camera").expect("a camera media type");
             assert!(
                 !std::ptr::eq(mic, cam),
@@ -495,7 +507,10 @@ mod tests {
             // `route`. The backstop is that it never becomes another device and
             // never reads as anything that could be granted.
             assert!(imp::media_type("location").is_none());
-            assert_eq!(imp::authorization_status("location"), Status::Restricted);
+            assert_eq!(
+                imp::authorization_status("location"),
+                Status::Restricted
+            );
             assert_eq!(imp::request_access("location"), Status::Restricted);
         }
 

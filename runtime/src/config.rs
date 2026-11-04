@@ -87,12 +87,14 @@ pub fn parse_color(value: &str) -> Option<(u8, u8, u8, u8)> {
     match *digits.as_slice() {
         // `#abc` means `#aabbcc`, so each digit is doubled.
         [red, green, blue] => Some((red * 17, green * 17, blue * 17, 255)),
-        [red_high, red_low, green_high, green_low, blue_high, blue_low] => Some((
-            red_high * 16 + red_low,
-            green_high * 16 + green_low,
-            blue_high * 16 + blue_low,
-            255,
-        )),
+        [red_high, red_low, green_high, green_low, blue_high, blue_low] => {
+            Some((
+                red_high * 16 + red_low,
+                green_high * 16 + green_low,
+                blue_high * 16 + blue_low,
+                255,
+            ))
+        }
         _ => None,
     }
 }
@@ -421,8 +423,9 @@ impl LoadedConfig {
     pub fn load(path: &Path) -> Result<Self, String> {
         let text = std::fs::read_to_string(path)
             .map_err(|e| format!("Could not read {}: {e}", path.display()))?;
-        let config: Config = serde_json::from_str(&text)
-            .map_err(|e| format!("Invalid config at {}: {e}", path.display()))?;
+        let config: Config = serde_json::from_str(&text).map_err(|e| {
+            format!("Invalid config at {}: {e}", path.display())
+        })?;
 
         // Asset paths in the config are relative to the config file, so a
         // project works the same whatever directory it is launched from.
@@ -487,7 +490,8 @@ mod tests {
         // runtime used to read straight past them - a setting someone wrote
         // that silently did nothing. `scripts/test/config-contract.test.js`
         // tries every object against both; these are the ones that slipped.
-        let app = serde_json::json!({ "name": "A", "identifier": "dev.test.a" });
+        let app =
+            serde_json::json!({ "name": "A", "identifier": "dev.test.a" });
         for (section, value) in [
             (
                 "app",

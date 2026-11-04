@@ -24,7 +24,11 @@ struct PointParams {
     y: f64,
 }
 
-pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult {
+pub fn dispatch(
+    ctx: &mut MainCtx<'_>,
+    method: &str,
+    params: Value,
+) -> ApiResult {
     // Screen layout is only useful for placing windows, and is gated with them.
     ctx.rt
         .permissions
@@ -68,10 +72,11 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
             // far off every screen comes back as the primary one. Checking the
             // bounds is what makes the answer mean the same thing on every
             // platform.
-            let found = match ctx.target.monitor_from_point(x * scale, y * scale) {
-                Some(monitor) if contains(&monitor, x, y) => Some(monitor),
-                _ => None,
-            };
+            let found =
+                match ctx.target.monitor_from_point(x * scale, y * scale) {
+                    Some(monitor) if contains(&monitor, x, y) => Some(monitor),
+                    _ => None,
+                };
 
             Ok(match found {
                 Some(monitor) => describe(&monitor, primary.as_ref()),
@@ -103,5 +108,8 @@ fn contains(monitor: &MonitorHandle, x: f64, y: f64) -> bool {
     let origin = monitor.position().to_logical::<f64>(scale);
     let size = monitor.size().to_logical::<f64>(scale);
 
-    x >= origin.x && x < origin.x + size.width && y >= origin.y && y < origin.y + size.height
+    x >= origin.x
+        && x < origin.x + size.width
+        && y >= origin.y
+        && y < origin.y + size.height
 }

@@ -50,20 +50,33 @@ struct SetParams {
     value: Value,
 }
 
-pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult {
+pub fn dispatch(
+    ctx: &mut MainCtx<'_>,
+    method: &str,
+    params: Value,
+) -> ApiResult {
     match method {
         "sharedState.get" => {
             let GetParams { key, default } = Request::params(method, params)?;
-            resolve_get(&ctx.rt.permissions, &ctx.rt.shared, method, &key, default)
+            resolve_get(
+                &ctx.rt.permissions,
+                &ctx.rt.shared,
+                method,
+                &key,
+                default,
+            )
         }
 
         "sharedState.set" => {
             let SetParams { key, value } = Request::params(method, params)?;
-            let broadcast = prepare_set(&ctx.rt.permissions, &ctx.rt.shared, &key, value)?;
+            let broadcast =
+                prepare_set(&ctx.rt.permissions, &ctx.rt.shared, &key, value)?;
             // To every window, including the caller: the caller's own copy
             // updates through the same path as everyone else's.
-            ctx.windows
-                .deliver(None, &Outgoing::Event(Event::new(CHANGED_EVENT, broadcast)));
+            ctx.windows.deliver(
+                None,
+                &Outgoing::Event(Event::new(CHANGED_EVENT, broadcast)),
+            );
             Ok(Value::Null)
         }
 
@@ -102,7 +115,12 @@ fn resolve_get(
 
 /// The `set` path without the windows: validate the key, check the write
 /// permission, store, and hand back the broadcast payload for delivery.
-fn prepare_set(permissions: &Permissions, store: &Store, key: &str, value: Value) -> ApiResult {
+fn prepare_set(
+    permissions: &Permissions,
+    store: &Store,
+    key: &str,
+    value: Value,
+) -> ApiResult {
     Permissions::check_shared_key(key)?;
     permissions.check_shared_write(key)?;
     check_serializable(&value)?;
@@ -245,7 +263,9 @@ fn persist_path(identifier: &str) -> PathBuf {
 fn load(path: &PathBuf) -> HashMap<String, Value> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return HashMap::new(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return HashMap::new()
+        }
         Err(e) => {
             eprintln!(
                 "vantail: could not read shared state at {}: {e}",
@@ -271,7 +291,10 @@ fn save(path: &PathBuf, snapshot: &Value) -> Result<(), ApiError> {
         std::fs::create_dir_all(parent).map_err(|e| {
             ApiError::new(
                 code::SHARED_STATE_PERSIST_FAILED,
-                format!("Could not persist shared state to {}: {e}", path.display()),
+                format!(
+                    "Could not persist shared state to {}: {e}",
+                    path.display()
+                ),
             )
         })?;
     }
@@ -293,7 +316,10 @@ fn save(path: &PathBuf, snapshot: &Value) -> Result<(), ApiError> {
     written.map_err(|e| {
         ApiError::new(
             code::SHARED_STATE_PERSIST_FAILED,
-            format!("Could not persist shared state to {}: {e}", path.display()),
+            format!(
+                "Could not persist shared state to {}: {e}",
+                path.display()
+            ),
         )
     })
 }
@@ -304,7 +330,8 @@ mod tests {
     use crate::permissions::{PermissionsConfig, SharedStateConfig, Vars};
 
     fn temp_path(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("vantail-shared-state-test-{name}.json"))
+        std::env::temp_dir()
+            .join(format!("vantail-shared-state-test-{name}.json"))
     }
 
     fn clean(path: &PathBuf) {
@@ -323,7 +350,8 @@ mod tests {
     }
 
     fn permissions(read: bool, write: &[&str]) -> Permissions {
-        let vars = Vars::resolve("dev.vantail.test", std::path::Path::new("/tmp"));
+        let vars =
+            Vars::resolve("dev.vantail.test", std::path::Path::new("/tmp"));
         Permissions::compile(
             &PermissionsConfig {
                 shared_state: SharedStateConfig {
@@ -392,7 +420,8 @@ mod tests {
         let store = Store::persistent(path.clone());
         store.set("demo.a", json!(1)).expect("set");
         // Read straight off disk, without going through the store again.
-        let text = std::fs::read_to_string(&path).expect("file exists after one write");
+        let text = std::fs::read_to_string(&path)
+            .expect("file exists after one write");
         assert!(
             text.contains("demo.a"),
             "a write must be durable at once: {text}"
@@ -474,7 +503,14 @@ mod tests {
         assert_eq!(answered, json!(42));
         // The key is still unset afterwards.
         assert_eq!(
-            resolve_get(&allowed, &store, "sharedState.get", "demo.missing", None).expect("get"),
+            resolve_get(
+                &allowed,
+                &store,
+                "sharedState.get",
+                "demo.missing",
+                None
+            )
+            .expect("get"),
             Value::Null
         );
     }
@@ -505,9 +541,11 @@ mod tests {
 
         for method in ["sharedState.get", "sharedState.subscribe"] {
             let error = if method == "sharedState.get" {
-                resolve_get(&denied, &store, method, "demo.counter", None).unwrap_err()
+                resolve_get(&denied, &store, method, "demo.counter", None)
+                    .unwrap_err()
             } else {
-                resolve_subscribe(&denied, &store, method, "demo.counter").unwrap_err()
+                resolve_subscribe(&denied, &store, method, "demo.counter")
+                    .unwrap_err()
             };
             assert_eq!(error.code, code::PERMISSION_DENIED, "{method}");
         }
@@ -518,7 +556,8 @@ mod tests {
         let allowed = permissions(true, &["demo.*"]);
         let store = Store::ephemeral();
 
-        let error = prepare_set(&allowed, &store, "other.counter", json!(1)).unwrap_err();
+        let error = prepare_set(&allowed, &store, "other.counter", json!(1))
+            .unwrap_err();
         assert_eq!(error.code, code::SHARED_STATE_KEY_DENIED);
         assert!(store.get("other.counter").is_none());
     }
@@ -529,7 +568,9 @@ mod tests {
         // read.
         let write_only = permissions(false, &["demo.*"]);
         let store = Store::ephemeral();
-        let broadcast = prepare_set(&write_only, &store, "demo.counter", json!(7)).expect("set");
+        let broadcast =
+            prepare_set(&write_only, &store, "demo.counter", json!(7))
+                .expect("set");
 
         assert_eq!(broadcast, json!({ "key": "demo.counter", "value": 7 }));
         assert_eq!(store.get("demo.counter"), Some(json!(7)));
@@ -571,11 +612,24 @@ mod tests {
                 .code,
             code::INVALID_PARAMS
         );
-        assert!(resolve_get(&allowed, &store, "sharedState.get", &"k".repeat(512), None).is_ok());
+        assert!(resolve_get(
+            &allowed,
+            &store,
+            "sharedState.get",
+            &"k".repeat(512),
+            None
+        )
+        .is_ok());
         assert_eq!(
-            resolve_get(&allowed, &store, "sharedState.get", &"k".repeat(513), None)
-                .unwrap_err()
-                .code,
+            resolve_get(
+                &allowed,
+                &store,
+                "sharedState.get",
+                &"k".repeat(513),
+                None
+            )
+            .unwrap_err()
+            .code,
             code::INVALID_PARAMS
         );
     }
@@ -586,14 +640,24 @@ mod tests {
         let store = Store::ephemeral();
 
         assert_eq!(
-            resolve_subscribe(&allowed, &store, "sharedState.subscribe", "demo.counter")
-                .expect("subscribe"),
+            resolve_subscribe(
+                &allowed,
+                &store,
+                "sharedState.subscribe",
+                "demo.counter"
+            )
+            .expect("subscribe"),
             Value::Null
         );
         store.set("demo.counter", json!("dark")).expect("set");
         assert_eq!(
-            resolve_subscribe(&allowed, &store, "sharedState.subscribe", "demo.counter")
-                .expect("subscribe"),
+            resolve_subscribe(
+                &allowed,
+                &store,
+                "sharedState.subscribe",
+                "demo.counter"
+            )
+            .expect("subscribe"),
             json!("dark")
         );
     }

@@ -143,7 +143,9 @@ impl Devices {
             // Created on first use: initialising HID opens platform handles,
             // and an application that never touches a device should not.
             None => HidApi::new().map_err(|e| {
-                ApiError::unsupported(format!("HID is unavailable on this system: {e}"))
+                ApiError::unsupported(format!(
+                    "HID is unavailable on this system: {e}"
+                ))
             })?,
         };
         action(slot.insert(api))
@@ -166,7 +168,12 @@ impl Devices {
     }
 }
 
-pub fn dispatch(rt: &Arc<Runtime>, source: &str, method: &str, params: Value) -> ApiResult {
+pub fn dispatch(
+    rt: &Arc<Runtime>,
+    source: &str,
+    method: &str,
+    params: Value,
+) -> ApiResult {
     match method {
         "hid.list" => list(rt),
         "hid.open" => open(rt, source, method, params),
@@ -185,8 +192,9 @@ pub fn dispatch(rt: &Arc<Runtime>, source: &str, method: &str, params: Value) ->
 /// one vendor's hardware has no business learning what else is plugged in.
 fn list(rt: &Runtime) -> ApiResult {
     rt.devices.api(|api| {
-        api.refresh_devices()
-            .map_err(|e| ApiError::internal(format!("Could not enumerate HID devices: {e}")))?;
+        api.refresh_devices().map_err(|e| {
+            ApiError::internal(format!("Could not enumerate HID devices: {e}"))
+        })?;
 
         Ok(Value::Array(permitted_devices(rt, api)))
     })
@@ -196,9 +204,11 @@ fn list(rt: &Runtime) -> ApiResult {
 fn permitted_devices(rt: &Runtime, api: &HidApi) -> Vec<Value> {
     let mut devices = Vec::new();
     for info in api.device_list() {
-        let permitted =
-            rt.permissions
-                .allows_device(info.vendor_id(), info.product_id(), info.usage_page());
+        let permitted = rt.permissions.allows_device(
+            info.vendor_id(),
+            info.product_id(),
+            info.usage_page(),
+        );
         if !permitted {
             continue;
         }
@@ -222,29 +232,44 @@ fn permitted_devices(rt: &Runtime, api: &HidApi) -> Vec<Value> {
 fn find_device(api: &HidApi, id: &str) -> Option<(u16, u16, u16)> {
     for info in api.device_list() {
         if info.path().to_string_lossy() == id {
-            return Some((info.vendor_id(), info.product_id(), info.usage_page()));
+            return Some((
+                info.vendor_id(),
+                info.product_id(),
+                info.usage_page(),
+            ));
         }
     }
     None
 }
 
-fn open(rt: &Arc<Runtime>, source: &str, method: &str, params: Value) -> ApiResult {
+fn open(
+    rt: &Arc<Runtime>,
+    source: &str,
+    method: &str,
+    params: Value,
+) -> ApiResult {
     let IdParams { id } = Request::params(method, params)?;
 
     // Look the device up first, so the permission check is against what the
     // device actually reports rather than what the caller claims it is.
     let (vendor_id, product_id, usage_page) = rt.devices.api(|api| {
-        api.refresh_devices()
-            .map_err(|e| ApiError::internal(format!("Could not enumerate HID devices: {e}")))?;
-        find_device(api, &id)
-            .ok_or_else(|| ApiError::new(code::NOT_FOUND, format!("No HID device with id `{id}`")))
+        api.refresh_devices().map_err(|e| {
+            ApiError::internal(format!("Could not enumerate HID devices: {e}"))
+        })?;
+        find_device(api, &id).ok_or_else(|| {
+            ApiError::new(
+                code::NOT_FOUND,
+                format!("No HID device with id `{id}`"),
+            )
+        })
     })?;
 
     rt.permissions
         .check_device(vendor_id, product_id, usage_page)?;
 
-    let path = std::ffi::CString::new(id.clone())
-        .map_err(|_| ApiError::invalid_params("That device id is not a usable path"))?;
+    let path = std::ffi::CString::new(id.clone()).map_err(|_| {
+        ApiError::invalid_params("That device id is not a usable path")
+    })?;
 
     let device = rt.devices.api(|api| {
         api.open_path(&path).map_err(|e| {
@@ -282,7 +307,9 @@ fn open(rt: &Arc<Runtime>, source: &str, method: &str, params: Value) -> ApiResu
 
     read_loop(rt, source, handle, &entry);
 
-    Ok(json!({ "handle": handle, "vendorId": vendor_id, "productId": product_id }))
+    Ok(
+        json!({ "handle": handle, "vendorId": vendor_id, "productId": product_id }),
+    )
 }
 
 /// One thread per device, reading until it is closed or goes away.
@@ -480,9 +507,9 @@ fn require(rt: &Runtime, handle: u32) -> Result<Arc<Open>, ApiError> {
 }
 
 fn decode(data: &str) -> Result<Vec<u8>, ApiError> {
-    let bytes = BASE64
-        .decode(data.as_bytes())
-        .map_err(|e| ApiError::invalid_params(format!("`data` is not valid base64: {e}")))?;
+    let bytes = BASE64.decode(data.as_bytes()).map_err(|e| {
+        ApiError::invalid_params(format!("`data` is not valid base64: {e}"))
+    })?;
 
     if bytes.is_empty() {
         return Err(ApiError::invalid_params(
@@ -524,7 +551,9 @@ mod tests {
         holds: Option<usize>,
     ) -> std::thread::JoinHandle<()> {
         std::thread::spawn(move || {
-            read_like_the_loop(&device, &turnstile, &running, hold, polling, holds);
+            read_like_the_loop(
+                &device, &turnstile, &running, hold, polling, holds,
+            );
         })
     }
 
@@ -561,7 +590,12 @@ mod tests {
     }
 
     /// What a run of calls costs, which is what drawing to a device is.
-    fn sequential(calls: usize, hold: Duration, polling: bool, holds: Option<usize>) -> Duration {
+    fn sequential(
+        calls: usize,
+        hold: Duration,
+        polling: bool,
+        holds: Option<usize>,
+    ) -> Duration {
         let device = Arc::new(Mutex::new(()));
         let turnstile = Arc::new(Turnstile::default());
         let running = Arc::new(AtomicBool::new(true));

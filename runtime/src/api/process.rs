@@ -142,7 +142,12 @@ impl Registry {
 
 /// `None` means the response will arrive later, from the thread waiting on
 /// the child.
-pub fn dispatch(ctx: &mut MainCtx<'_>, id: &str, method: &str, params: Value) -> Option<ApiResult> {
+pub fn dispatch(
+    ctx: &mut MainCtx<'_>,
+    id: &str,
+    method: &str,
+    params: Value,
+) -> Option<ApiResult> {
     let rt = ctx.rt.clone();
     let source = ctx.source.to_string();
 
@@ -176,11 +181,13 @@ fn execute(
         Stdio::null()
     });
 
-    let mut child = command
-        .spawn()
-        .map_err(|e| ApiError::io(&format!("Could not start `{}`", params.program), e))?;
+    let mut child = command.spawn().map_err(|e| {
+        ApiError::io(&format!("Could not start `{}`", params.program), e)
+    })?;
 
-    if let (Some(input), Some(mut pipe)) = (params.stdin.clone(), child.stdin.take()) {
+    if let (Some(input), Some(mut pipe)) =
+        (params.stdin.clone(), child.stdin.take())
+    {
         // Written and closed before waiting, so a child that reads all of
         // stdin before writing anything cannot deadlock against us.
         let _ = pipe.write_all(input.as_bytes());
@@ -191,9 +198,12 @@ fn execute(
     let stderr = child.stderr.take();
     let child = Arc::new(Mutex::new(child));
     let pid = lock(&child).id();
-    let id = rt
-        .processes
-        .insert(params.program.clone(), pid, Arc::clone(&child), None);
+    let id = rt.processes.insert(
+        params.program.clone(),
+        pid,
+        Arc::clone(&child),
+        None,
+    );
 
     if let Some(after) = params.timeout_ms {
         watchdog(Arc::clone(&child), after);
@@ -220,7 +230,9 @@ fn execute(
                 "stdout": out.join(),
                 "stderr": err.join(),
             })),
-            Err(error) => Err(ApiError::io("The process could not be waited on", error)),
+            Err(error) => {
+                Err(ApiError::io("The process could not be waited on", error))
+            }
         };
 
         rt.send(
@@ -241,9 +253,9 @@ fn spawn(rt: &Arc<Runtime>, source: &str, params: Value) -> ApiResult {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let mut child = command
-        .spawn()
-        .map_err(|e| ApiError::io(&format!("Could not start `{}`", params.program), e))?;
+    let mut child = command.spawn().map_err(|e| {
+        ApiError::io(&format!("Could not start `{}`", params.program), e)
+    })?;
 
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -251,9 +263,12 @@ fn spawn(rt: &Arc<Runtime>, source: &str, params: Value) -> ApiResult {
 
     let child = Arc::new(Mutex::new(child));
     let pid = lock(&child).id();
-    let id = rt
-        .processes
-        .insert(params.program.clone(), pid, Arc::clone(&child), stdin);
+    let id = rt.processes.insert(
+        params.program.clone(),
+        pid,
+        Arc::clone(&child),
+        stdin,
+    );
 
     stream(rt, source, id, "process.stdout", stdout);
     stream(rt, source, id, "process.stderr", stderr);
@@ -288,9 +303,9 @@ fn write_stdin(rt: &Runtime, method: &str, params: Value) -> ApiResult {
     let running = rt.processes.get(id).ok_or_else(|| gone(id))?;
 
     let mut slot = lock(&running.stdin);
-    let pipe = slot
-        .as_mut()
-        .ok_or_else(|| ApiError::new(crate::error::code::IO_ERROR, "stdin is already closed"))?;
+    let pipe = slot.as_mut().ok_or_else(|| {
+        ApiError::new(crate::error::code::IO_ERROR, "stdin is already closed")
+    })?;
 
     let failed = |e| ApiError::io("Could not write to the process", e);
     pipe.write_all(data.as_bytes()).map_err(failed)?;
@@ -381,10 +396,14 @@ fn stream<R: Read + Send + 'static>(
             match pipe.read(&mut buffer) {
                 Ok(0) | Err(_) => break,
                 Ok(read) => {
-                    let data = String::from_utf8_lossy(filled(&buffer, read)).into_owned();
+                    let data = String::from_utf8_lossy(filled(&buffer, read))
+                        .into_owned();
                     rt.send(
                         Some(source.clone()),
-                        Outgoing::Event(Event::new(event, json!({ "id": id, "data": data }))),
+                        Outgoing::Event(Event::new(
+                            event,
+                            json!({ "id": id, "data": data }),
+                        )),
                     );
                 }
             }
@@ -436,7 +455,9 @@ fn wait_for(child: &Mutex<Child>) -> std::io::Result<std::process::ExitStatus> {
     loop {
         match lock(child).try_wait() {
             Ok(Some(status)) => return Ok(status),
-            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(POLL_MS)),
+            Ok(None) => {
+                std::thread::sleep(std::time::Duration::from_millis(POLL_MS))
+            }
             Err(error) => return Err(error),
         }
     }

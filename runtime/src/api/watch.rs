@@ -53,10 +53,16 @@ impl State {
     }
 }
 
-pub fn dispatch(rt: &Arc<Runtime>, source: &str, method: &str, params: Value) -> ApiResult {
+pub fn dispatch(
+    rt: &Arc<Runtime>,
+    source: &str,
+    method: &str,
+    params: Value,
+) -> ApiResult {
     match method {
         "filesystem.watch" => {
-            let WatchParams { path, recursive } = Request::params(method, params)?;
+            let WatchParams { path, recursive } =
+                Request::params(method, params)?;
             // The same check a read goes through, on the resolved path.
             let resolved = rt.permissions.check_path(&path, Access::Read)?;
             start(rt, source, resolved, recursive)
@@ -90,7 +96,12 @@ pub fn dispatch(rt: &Arc<Runtime>, source: &str, method: &str, params: Value) ->
     }
 }
 
-fn start(rt: &Arc<Runtime>, source: &str, path: PathBuf, recursive: bool) -> ApiResult {
+fn start(
+    rt: &Arc<Runtime>,
+    source: &str,
+    path: PathBuf,
+    recursive: bool,
+) -> ApiResult {
     let id = rt.watch.take_id();
 
     let rt_for_thread = rt.clone();
@@ -98,33 +109,37 @@ fn start(rt: &Arc<Runtime>, source: &str, path: PathBuf, recursive: bool) -> Api
     let watch_id = id.clone();
     let watched = path.clone();
 
-    let mut watcher = notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
-        let Ok(event) = result else {
-            return;
-        };
+    let mut watcher = notify::recommended_watcher(
+        move |result: notify::Result<notify::Event>| {
+            let Ok(event) = result else {
+                return;
+            };
 
-        let Some(kind) = describe(&event.kind) else {
-            return;
-        };
+            let Some(kind) = describe(&event.kind) else {
+                return;
+            };
 
-        // A change reports the paths it touched, which for a recursive
-        // watch is not the path that was asked for.
-        for changed in &event.paths {
-            rt_for_thread.send(
-                Some(window.clone()),
-                Outgoing::Event(Event::new(
-                    "filesystem.changed",
-                    json!({
-                        "id": watch_id,
-                        "kind": kind,
-                        "path": changed.to_string_lossy(),
-                        "watching": watched.to_string_lossy(),
-                    }),
-                )),
-            );
-        }
-    })
-    .map_err(|e| ApiError::internal(format!("Could not start watching: {e}")))?;
+            // A change reports the paths it touched, which for a recursive
+            // watch is not the path that was asked for.
+            for changed in &event.paths {
+                rt_for_thread.send(
+                    Some(window.clone()),
+                    Outgoing::Event(Event::new(
+                        "filesystem.changed",
+                        json!({
+                            "id": watch_id,
+                            "kind": kind,
+                            "path": changed.to_string_lossy(),
+                            "watching": watched.to_string_lossy(),
+                        }),
+                    )),
+                );
+            }
+        },
+    )
+    .map_err(|e| {
+        ApiError::internal(format!("Could not start watching: {e}"))
+    })?;
 
     let mode = if recursive {
         RecursiveMode::Recursive
@@ -132,13 +147,15 @@ fn start(rt: &Arc<Runtime>, source: &str, path: PathBuf, recursive: bool) -> Api
         RecursiveMode::NonRecursive
     };
 
-    watcher
-        .watch(&path, mode)
-        .map_err(|e| ApiError::internal(format!("Could not watch {}: {e}", path.display())))?;
+    watcher.watch(&path, mode).map_err(|e| {
+        ApiError::internal(format!("Could not watch {}: {e}", path.display()))
+    })?;
 
     lock(&rt.watch.watches).insert(id.clone(), Box::new(watcher));
 
-    Ok(json!({ "id": id, "path": path.to_string_lossy(), "recursive": recursive }))
+    Ok(
+        json!({ "id": id, "path": path.to_string_lossy(), "recursive": recursive }),
+    )
 }
 
 /// The three things an application actually reacts to.
@@ -150,7 +167,9 @@ fn describe(kind: &notify::EventKind) -> Option<&'static str> {
     use notify::EventKind;
     match kind {
         EventKind::Create(_) => Some("created"),
-        EventKind::Modify(notify::event::ModifyKind::Name(_)) => Some("renamed"),
+        EventKind::Modify(notify::event::ModifyKind::Name(_)) => {
+            Some("renamed")
+        }
         EventKind::Modify(_) => Some("modified"),
         EventKind::Remove(_) => Some("removed"),
         _ => None,
@@ -179,18 +198,20 @@ mod tests {
     /// plumbing rather than in the watching.
     #[test]
     fn a_watcher_reports_a_file_created_under_it() {
-        let dir = std::env::temp_dir().join(format!("vantail-watch-{}", std::process::id()));
+        let dir = std::env::temp_dir()
+            .join(format!("vantail-watch-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("scratch");
 
         let (tx, rx) = mpsc::channel();
-        let mut watcher =
-            notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
+        let mut watcher = notify::recommended_watcher(
+            move |result: notify::Result<notify::Event>| {
                 if let Ok(event) = result {
                     let _ = tx.send(event);
                 }
-            })
-            .expect("watcher");
+            },
+        )
+        .expect("watcher");
 
         watcher
             .watch(&dir, RecursiveMode::NonRecursive)

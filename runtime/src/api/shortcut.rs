@@ -31,14 +31,19 @@ struct AcceleratorParams {
     accelerator: String,
 }
 
-pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult {
+pub fn dispatch(
+    ctx: &mut MainCtx<'_>,
+    method: &str,
+    params: Value,
+) -> ApiResult {
     ctx.rt
         .permissions
         .require(ctx.rt.permissions.shortcut, method)?;
 
     match method {
         "shortcut.register" => {
-            let RegisterParams { accelerator, id } = Request::params(method, params)?;
+            let RegisterParams { accelerator, id } =
+                Request::params(method, params)?;
             // Named after its accelerator unless the call names it.
             let id = match id {
                 Some(id) => id,
@@ -49,7 +54,8 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
         }
 
         "shortcut.unregister" => {
-            let AcceleratorParams { accelerator } = Request::params(method, params)?;
+            let AcceleratorParams { accelerator } =
+                Request::params(method, params)?;
             ctx.chrome.unregister_shortcut(&accelerator)?;
             Ok(Value::Null)
         }
@@ -60,7 +66,8 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
         }
 
         "shortcut.isRegistered" => {
-            let AcceleratorParams { accelerator } = Request::params(method, params)?;
+            let AcceleratorParams { accelerator } =
+                Request::params(method, params)?;
             Ok(json!(ctx.chrome.shortcut_registered(&accelerator)))
         }
 

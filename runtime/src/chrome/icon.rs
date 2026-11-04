@@ -16,16 +16,21 @@ pub struct Rgba {
 /// 16-bit PNGs without thinking about it. Normalising here means an icon that
 /// looks fine in a viewer also works in the tray.
 pub fn load_png(path: &Path) -> Result<Rgba, ApiError> {
-    let file = std::fs::File::open(path)
-        .map_err(|e| ApiError::io(&format!("Could not open the icon {}", path.display()), e))?;
+    let file = std::fs::File::open(path).map_err(|e| {
+        ApiError::io(&format!("Could not open the icon {}", path.display()), e)
+    })?;
 
     let mut decoder = png::Decoder::new(std::io::BufReader::new(file));
     decoder.set_transformations(
-        png::Transformations::normalize_to_color8() | png::Transformations::ALPHA,
+        png::Transformations::normalize_to_color8()
+            | png::Transformations::ALPHA,
     );
 
     let mut reader = decoder.read_info().map_err(|e| {
-        ApiError::invalid_params(format!("{} is not a valid PNG: {e}", path.display()))
+        ApiError::invalid_params(format!(
+            "{} is not a valid PNG: {e}",
+            path.display()
+        ))
     })?;
 
     let size = match reader.output_buffer_size() {
@@ -34,17 +39,24 @@ pub fn load_png(path: &Path) -> Result<Rgba, ApiError> {
     };
     let mut buffer = vec![0; size];
     let info = reader.next_frame(&mut buffer).map_err(|e| {
-        ApiError::invalid_params(format!("Could not decode {}: {e}", path.display()))
+        ApiError::invalid_params(format!(
+            "Could not decode {}: {e}",
+            path.display()
+        ))
     })?;
 
     let pixels = (info.width as usize) * (info.height as usize);
     let bytes = match info.color_type {
         png::ColorType::Rgba => image_data(&buffer, pixels * 4, path)?.to_vec(),
-        png::ColorType::Rgb => expand(image_data(&buffer, pixels * 3, path)?, 3, pixels),
+        png::ColorType::Rgb => {
+            expand(image_data(&buffer, pixels * 3, path)?, 3, pixels)
+        }
         png::ColorType::GrayscaleAlpha => {
             grey(image_data(&buffer, pixels * 2, path)?, true, pixels)
         }
-        png::ColorType::Grayscale => grey(image_data(&buffer, pixels, path)?, false, pixels),
+        png::ColorType::Grayscale => {
+            grey(image_data(&buffer, pixels, path)?, false, pixels)
+        }
         other => {
             return Err(ApiError::unsupported(format!(
                 "{} uses an unsupported PNG colour type ({other:?})",
@@ -63,7 +75,11 @@ pub fn load_png(path: &Path) -> Result<Rgba, ApiError> {
 /// The decoded image: the first `length` bytes of what the decoder produced.
 /// A decoder that produced fewer was given a PNG smaller than its own header
 /// says.
-fn image_data<'a>(buffer: &'a [u8], length: usize, path: &Path) -> Result<&'a [u8], ApiError> {
+fn image_data<'a>(
+    buffer: &'a [u8],
+    length: usize,
+    path: &Path,
+) -> Result<&'a [u8], ApiError> {
     match buffer.get(..length) {
         Some(data) => Ok(data),
         None => Err(ApiError::invalid_params(format!(

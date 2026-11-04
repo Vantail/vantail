@@ -37,7 +37,11 @@ struct MenuParams {
     items: Vec<MenuSpec>,
 }
 
-pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult {
+pub fn dispatch(
+    ctx: &mut MainCtx<'_>,
+    method: &str,
+    params: Value,
+) -> ApiResult {
     ctx.rt
         .permissions
         .require(ctx.rt.permissions.tray, method)?;
@@ -68,7 +72,8 @@ fn remove(ctx: &mut MainCtx<'_>) -> ApiResult {
 }
 
 fn set_icon(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
-    let IconParams { icon, template } = Request::params("tray.setIcon", params)?;
+    let IconParams { icon, template } =
+        Request::params("tray.setIcon", params)?;
     let icon = crate::chrome::load_icon(ctx.rt, &icon)?;
     let tray = ctx.chrome.tray()?;
     // Leaving `template` out keeps the icon drawn the way it already was. A
@@ -91,7 +96,9 @@ fn set_icon(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
         let _ = template;
         tray.set_icon(Some(icon))
     };
-    set.map_err(|e| ApiError::internal(format!("Could not set the tray icon: {e}")))?;
+    set.map_err(|e| {
+        ApiError::internal(format!("Could not set the tray icon: {e}"))
+    })?;
     Ok(Value::Null)
 }
 
@@ -100,7 +107,9 @@ fn set_tooltip(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
     ctx.chrome
         .tray()?
         .set_tooltip(tooltip.as_deref())
-        .map_err(|e| ApiError::internal(format!("Could not set the tooltip: {e}")))?;
+        .map_err(|e| {
+            ApiError::internal(format!("Could not set the tooltip: {e}"))
+        })?;
     Ok(Value::Null)
 }
 
@@ -118,10 +127,9 @@ fn set_title(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
 
 fn set_visible(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
     let VisibleParams { visible } = Request::params("tray.setVisible", params)?;
-    ctx.chrome
-        .tray()?
-        .set_visible(visible)
-        .map_err(|e| ApiError::internal(format!("Could not change visibility: {e}")))?;
+    ctx.chrome.tray()?.set_visible(visible).map_err(|e| {
+        ApiError::internal(format!("Could not change visibility: {e}"))
+    })?;
     Ok(Value::Null)
 }
 

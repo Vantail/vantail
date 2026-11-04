@@ -132,7 +132,10 @@ pub(crate) struct PrintJob {
     window: tao::window::Window,
     /// Only the macOS path reads this (HTML goes through a PDF-capture
     /// step there); everywhere else the dialog prints whatever rendered.
-    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "windows")),
+        allow(dead_code)
+    )]
     phase: Phase,
     request_id: String,
     source: String,
@@ -174,7 +177,10 @@ impl PrintState {
         self.inner.live.borrow_mut().remove(&job)
     }
 
-    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "windows")),
+        allow(dead_code)
+    )]
     fn phase(&self, job: u64) -> Option<Phase> {
         match self.inner.live.borrow().get(&job) {
             Some(entry) => Some(entry.phase),
@@ -184,7 +190,12 @@ impl PrintState {
 }
 
 /// `None` means the response arrives later, after the dialog has closed.
-pub fn dispatch(ctx: &mut MainCtx<'_>, id: &str, method: &str, params: Value) -> Option<ApiResult> {
+pub fn dispatch(
+    ctx: &mut MainCtx<'_>,
+    id: &str,
+    method: &str,
+    params: Value,
+) -> Option<ApiResult> {
     match method {
         "print.document" => match document(ctx, id, params) {
             Ok(()) => None,
@@ -194,7 +205,11 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, id: &str, method: &str, params: Value) ->
     }
 }
 
-fn document(ctx: &mut MainCtx<'_>, id: &str, params: Value) -> Result<(), ApiError> {
+fn document(
+    ctx: &mut MainCtx<'_>,
+    id: &str,
+    params: Value,
+) -> Result<(), ApiError> {
     let params: DocumentParams = Request::params("print.document", params)?;
     let source = split_source(&params)?;
     let (phase, url) = what_to_load(ctx.rt, &source)?;
@@ -207,9 +222,9 @@ fn document(ctx: &mut MainCtx<'_>, id: &str, params: Value) -> Result<(), ApiErr
     // Windows previews in this window, so it is set up to be shown later.
     #[cfg(target_os = "windows")]
     let window = preview_window(window, ctx.windows.get(ctx.source));
-    let window = window
-        .build(ctx.target)
-        .map_err(|e| ApiError::internal(format!("Could not create the print window: {e}")))?;
+    let window = window.build(ctx.target).map_err(|e| {
+        ApiError::internal(format!("Could not create the print window: {e}"))
+    })?;
 
     let state = ctx.windows.print.clone();
     let handler_state = state.clone();
@@ -248,7 +263,10 @@ fn document(ctx: &mut MainCtx<'_>, id: &str, params: Value) -> Result<(), ApiErr
 }
 
 /// The URL the print view loads, and the phase its job starts in.
-fn what_to_load(rt: &Runtime, source: &Source) -> Result<(Phase, String), ApiError> {
+fn what_to_load(
+    rt: &Runtime,
+    source: &Source,
+) -> Result<(Phase, String), ApiError> {
     match source {
         Source::Html(html) => Ok((Phase::Html, html_data_url(html))),
         Source::PdfPath(raw) => {
@@ -279,17 +297,17 @@ fn attach_print_view(
     {
         use tao::platform::unix::WindowExtUnix;
         use wry::WebViewBuilderExtUnix;
-        let container = window
-            .default_vbox()
-            .ok_or_else(|| ApiError::internal("The print window has no GTK container"))?;
-        builder
-            .build_gtk(container)
-            .map_err(|e| ApiError::internal(format!("Could not create the print view: {e}")))
+        let container = window.default_vbox().ok_or_else(|| {
+            ApiError::internal("The print window has no GTK container")
+        })?;
+        builder.build_gtk(container).map_err(|e| {
+            ApiError::internal(format!("Could not create the print view: {e}"))
+        })
     }
     #[cfg(not(target_os = "linux"))]
-    builder
-        .build(window)
-        .map_err(|e| ApiError::internal(format!("Could not create the print view: {e}")))
+    builder.build(window).map_err(|e| {
+        ApiError::internal(format!("Could not create the print view: {e}"))
+    })
 }
 
 fn start_watchdog(
@@ -363,7 +381,10 @@ pub fn answer(rt: &Arc<Runtime>, entry: PrintJob, result: ApiResult) {
     }
     rt.send(
         Some(entry.source.clone()),
-        Outgoing::Response(Response::from_result(entry.request_id.clone(), result)),
+        Outgoing::Response(Response::from_result(
+            entry.request_id.clone(),
+            result,
+        )),
     );
     // `entry` drops here: the hidden webview goes before its window.
 }
@@ -395,7 +416,8 @@ fn html_data_url(html: &str) -> String {
 
 fn file_url(path: &std::path::Path) -> String {
     use percent_encoding::{utf8_percent_encode, CONTROLS};
-    const EXTRA: &percent_encoding::AsciiSet = &CONTROLS.add(b' ').add(b'#').add(b'?');
+    const EXTRA: &percent_encoding::AsciiSet =
+        &CONTROLS.add(b' ').add(b'#').add(b'?');
     let display = path.to_string_lossy();
     #[cfg(target_os = "windows")]
     let display = {
@@ -431,7 +453,11 @@ fn platform_print(webview: &wry::WebView) -> Result<bool, ApiError> {
 ///
 /// Runs on the event loop thread; every platform's dialog is modal, which is
 /// what resolves the promise on close rather than on print.
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(
+    target_os = "windows",
+    target_os = "macos",
+    target_os = "linux"
+)))]
 fn platform_print(webview: &wry::WebView) -> Result<bool, ApiError> {
     let _ = webview;
     Err(ApiError::unsupported(
@@ -472,8 +498,10 @@ fn preview_window(
     };
     let size = owner.window.outer_size();
     let scale = owner.window.scale_factor();
-    let x = origin.x + size.width as i32 / 2 - (PREVIEW_SIZE.0 * scale) as i32 / 2;
-    let y = origin.y + size.height as i32 / 2 - (PREVIEW_SIZE.1 * scale) as i32 / 2;
+    let x =
+        origin.x + size.width as i32 / 2 - (PREVIEW_SIZE.0 * scale) as i32 / 2;
+    let y =
+        origin.y + size.height as i32 / 2 - (PREVIEW_SIZE.1 * scale) as i32 / 2;
     builder.with_position(PhysicalPosition::new(x.max(0), y.max(0)))
 }
 
@@ -557,7 +585,10 @@ pub fn closed(rt: &Arc<Runtime>, state: &PrintState, job: u64) {
 
 /// The job whose preview window this is, if any.
 #[cfg(target_os = "windows")]
-fn job_for_window(state: &PrintState, window: tao::window::WindowId) -> Option<u64> {
+fn job_for_window(
+    state: &PrintState,
+    window: tao::window::WindowId,
+) -> Option<u64> {
     for (job, entry) in state.inner.live.borrow().iter() {
         if entry.window.id() == window {
             return Some(*job);
@@ -568,7 +599,11 @@ fn job_for_window(state: &PrintState, window: tao::window::WindowId) -> Option<u
 
 /// Windows: a print window's close button was pressed.
 #[cfg(target_os = "windows")]
-pub fn close_requested(rt: &Arc<Runtime>, state: &PrintState, window: tao::window::WindowId) {
+pub fn close_requested(
+    rt: &Arc<Runtime>,
+    state: &PrintState,
+    window: tao::window::WindowId,
+) {
     if let Some(job) = job_for_window(state, window) {
         closed(rt, state, job);
     }
@@ -638,9 +673,10 @@ fn begin_pdf_capture(rt: &Arc<Runtime>, state: &PrintState, job: u64) {
 
     let rt = Arc::clone(rt);
     let state = state.clone();
-    let block = StackBlock::new(move |data: *mut NSData, error: *mut NSError| {
-        on_pdf_captured(&rt, &state, job, data, error);
-    });
+    let block =
+        StackBlock::new(move |data: *mut NSData, error: *mut NSError| {
+            on_pdf_captured(&rt, &state, job, data, error);
+        });
     // The capture retains the block; this heap copy outlives the stack frame.
     let block = block.copy();
     // Safety: `wk` is the live hidden view on the event loop thread, and the
@@ -801,14 +837,18 @@ mod tests {
         );
         // Deserialization fills missing keys with `None`, so `{}` lands here.
         let empty: DocumentParams =
-            serde_json::from_value(serde_json::json!({})).expect("empty object parses");
+            serde_json::from_value(serde_json::json!({}))
+                .expect("empty object parses");
         assert_eq!(code_of(split_source(&empty)), code::INVALID_ARGUMENT);
     }
 
     #[test]
     fn both_sources_are_invalid_argument() {
         assert_eq!(
-            code_of(split_source(&params(Some("<p>x</p>"), Some("/tmp/x.pdf")))),
+            code_of(split_source(&params(
+                Some("<p>x</p>"),
+                Some("/tmp/x.pdf")
+            ))),
             code::INVALID_ARGUMENT
         );
     }
@@ -856,8 +896,10 @@ mod tests {
         // `Request::params` rejects a non-string source with INVALID_PARAMS,
         // so `split_source` never sees it. Pinned here because the two codes
         // answer different questions: shape versus choice.
-        let result: Result<DocumentParams, ApiError> =
-            Request::params("print.document", serde_json::json!({ "html": 123 }));
+        let result: Result<DocumentParams, ApiError> = Request::params(
+            "print.document",
+            serde_json::json!({ "html": 123 }),
+        );
         assert_eq!(result.unwrap_err().code, code::INVALID_PARAMS);
     }
 

@@ -161,7 +161,9 @@ fn append_line(path: &std::ffi::OsStr, line: &str) -> std::io::Result<()> {
 pub fn open_externally(url: &str) {
     if let Some(stub) = std::env::var_os("VANTAIL_OPEN_STUB") {
         if let Err(error) = append_line(&stub, url) {
-            eprintln!("vantail: could not record {url} in VANTAIL_OPEN_STUB: {error}");
+            eprintln!(
+                "vantail: could not record {url} in VANTAIL_OPEN_STUB: {error}"
+            );
         }
         return;
     }
@@ -178,7 +180,11 @@ pub fn open_externally(url: &str) {
 /// permission, for the same reason a browser asks none - it is what clicking
 /// a link does - and only for what `target="_blank"` could already reach:
 /// a web page or a mail link that is not the application's own.
-pub fn dispatch(rt: &Runtime, method: &str, params: serde_json::Value) -> crate::error::ApiResult {
+pub fn dispatch(
+    rt: &Runtime,
+    method: &str,
+    params: serde_json::Value,
+) -> crate::error::ApiResult {
     #[derive(serde::Deserialize)]
     struct OpenLink {
         url: String,
@@ -197,7 +203,10 @@ pub fn dispatch(rt: &Runtime, method: &str, params: serde_json::Value) -> crate:
 
 /// Whether `bridge.openLink` may hand `url` over. The page can call it
 /// directly, so what the bridge would never send is refused here as well.
-fn leaves_for_the_system(origins: &Origins, url: &str) -> Result<(), crate::error::ApiError> {
+fn leaves_for_the_system(
+    origins: &Origins,
+    url: &str,
+) -> Result<(), crate::error::ApiError> {
     if opens_externally(url) && !origins.allows(url) {
         Ok(())
     } else {
@@ -500,13 +509,19 @@ impl Resources {
         }
     }
 
-    pub fn serve(&self, request: &Request<Vec<u8>>) -> Response<Cow<'static, [u8]>> {
+    pub fn serve(
+        &self,
+        request: &Request<Vec<u8>>,
+    ) -> Response<Cow<'static, [u8]>> {
         serve(&self.root, request)
     }
 }
 
 /// Serve `vantail://` requests from the app's resource directory.
-pub fn serve(root: &Path, request: &Request<Vec<u8>>) -> Response<Cow<'static, [u8]>> {
+pub fn serve(
+    root: &Path,
+    request: &Request<Vec<u8>>,
+) -> Response<Cow<'static, [u8]>> {
     if request.method() != "GET" {
         return status(StatusCode::METHOD_NOT_ALLOWED, "Only GET is supported");
     }
@@ -633,11 +648,14 @@ mod tests {
     /// one test truncating `index.html` while another read it made the suite
     /// fail about once in a hundred runs.
     fn root(name: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("vantail-protocol-test-{name}"));
+        let root =
+            std::env::temp_dir().join(format!("vantail-protocol-test-{name}"));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("assets")).expect("scratch root");
-        std::fs::write(root.join("index.html"), b"<!doctype html>").expect("index.html");
-        std::fs::write(root.join("assets/app.js"), b"export {}").expect("app.js");
+        std::fs::write(root.join("index.html"), b"<!doctype html>")
+            .expect("index.html");
+        std::fs::write(root.join("assets/app.js"), b"export {}")
+            .expect("app.js");
         root.canonicalize().expect("canonical scratch root")
     }
 
@@ -681,7 +699,8 @@ mod tests {
 
     #[test]
     fn a_missing_asset_is_a_404_rather_than_the_shell_document() {
-        let root = root("a_missing_asset_is_a_404_rather_than_the_shell_document");
+        let root =
+            root("a_missing_asset_is_a_404_rather_than_the_shell_document");
         let request = Request::builder()
             .method("GET")
             .uri("vantail://localhost/assets/missing.js")
@@ -795,8 +814,13 @@ mod tests {
     #[test]
     fn a_link_out_is_only_ever_another_site() {
         let origins = Origins::with_dev(Some("http://localhost:5173"));
-        assert!(leaves_for_the_system(&origins, "https://example.com/docs").is_ok());
-        assert!(leaves_for_the_system(&origins, "mailto:someone@example.com").is_ok());
+        assert!(
+            leaves_for_the_system(&origins, "https://example.com/docs").is_ok()
+        );
+        assert!(
+            leaves_for_the_system(&origins, "mailto:someone@example.com")
+                .is_ok()
+        );
         for url in [
             // The application's own pages stay in the window.
             &app_url("settings.html"),

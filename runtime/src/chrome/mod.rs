@@ -96,7 +96,9 @@ pub struct WindowState {
 ///
 /// The release is the click. Enter, Move and Leave fire constantly and nobody
 /// has asked for them.
-pub fn tray_message(event: &tray_icon::TrayIconEvent) -> Option<(&'static str, serde_json::Value)> {
+pub fn tray_message(
+    event: &tray_icon::TrayIconEvent,
+) -> Option<(&'static str, serde_json::Value)> {
     match event {
         tray_icon::TrayIconEvent::Click {
             position,
@@ -130,7 +132,10 @@ pub fn tray_message(event: &tray_icon::TrayIconEvent) -> Option<(&'static str, s
     }
 }
 
-pub fn tray_activation(mode: TrayLeftClick, window: Option<WindowState>) -> TrayActivation {
+pub fn tray_activation(
+    mode: TrayLeftClick,
+    window: Option<WindowState>,
+) -> TrayActivation {
     match mode {
         // The library opens the menu itself; there is no event to act on.
         TrayLeftClick::Menu => TrayActivation::Nothing,
@@ -191,24 +196,36 @@ impl Chrome {
     // Global shortcuts
     // -----------------------------------------------------------------------
 
-    pub fn register_shortcut(&mut self, accelerator: &str, id: &str) -> Result<(), ApiError> {
-        let hotkey: global_hotkey::hotkey::HotKey = accelerator.parse().map_err(|e| {
-            ApiError::invalid_params(format!("`{accelerator}` is not a key combination: {e}"))
-        })?;
+    pub fn register_shortcut(
+        &mut self,
+        accelerator: &str,
+        id: &str,
+    ) -> Result<(), ApiError> {
+        let hotkey: global_hotkey::hotkey::HotKey =
+            accelerator.parse().map_err(|e| {
+                ApiError::invalid_params(format!(
+                    "`{accelerator}` is not a key combination: {e}"
+                ))
+            })?;
 
         if self.shortcuts.contains_key(accelerator) {
             return Err(ApiError::new(
                 crate::error::code::ALREADY_EXISTS,
-                format!("`{accelerator}` is already registered by this application"),
+                format!(
+                    "`{accelerator}` is already registered by this application"
+                ),
             ));
         }
 
         let manager = match self.hotkeys.as_ref() {
             Some(manager) => manager,
             None => {
-                let manager = global_hotkey::GlobalHotKeyManager::new().map_err(|e| {
-                    ApiError::internal(format!("Could not start listening for shortcuts: {e}"))
-                })?;
+                let manager = global_hotkey::GlobalHotKeyManager::new()
+                    .map_err(|e| {
+                        ApiError::internal(format!(
+                            "Could not start listening for shortcuts: {e}"
+                        ))
+                    })?;
                 self.hotkeys.insert(manager)
             }
         };
@@ -232,7 +249,10 @@ impl Chrome {
         Ok(())
     }
 
-    pub fn unregister_shortcut(&mut self, accelerator: &str) -> Result<(), ApiError> {
+    pub fn unregister_shortcut(
+        &mut self,
+        accelerator: &str,
+    ) -> Result<(), ApiError> {
         let Some(shortcut) = self.shortcuts.remove(accelerator) else {
             return Err(ApiError::new(
                 crate::error::code::NOT_FOUND,
@@ -242,7 +262,9 @@ impl Chrome {
 
         if let Some(manager) = self.hotkeys.as_ref() {
             manager.unregister(shortcut.hotkey).map_err(|e| {
-                ApiError::internal(format!("Could not release `{accelerator}`: {e}"))
+                ApiError::internal(format!(
+                    "Could not release `{accelerator}`: {e}"
+                ))
             })?;
         }
         Ok(())
@@ -258,9 +280,9 @@ impl Chrome {
         for shortcut in taken.values() {
             hotkeys.push(shortcut.hotkey);
         }
-        manager
-            .unregister_all(&hotkeys)
-            .map_err(|e| ApiError::internal(format!("Could not release the shortcuts: {e}")))
+        manager.unregister_all(&hotkeys).map_err(|e| {
+            ApiError::internal(format!("Could not release the shortcuts: {e}"))
+        })
     }
 
     pub fn shortcut_registered(&self, accelerator: &str) -> bool {
@@ -275,7 +297,9 @@ impl Chrome {
         }
         // A map has no order, and a list that reshuffles between calls is
         // tiresome to assert on.
-        listed.sort_by(|a, b| a["accelerator"].as_str().cmp(&b["accelerator"].as_str()));
+        listed.sort_by(|a, b| {
+            a["accelerator"].as_str().cmp(&b["accelerator"].as_str())
+        });
         listed
     }
 
@@ -295,7 +319,10 @@ impl Chrome {
 
     /// Replace the application menu.
     /// Returns the items that had to be left out, if any - see `menu::build`.
-    pub fn set_app_menu(&mut self, specs: &[MenuSpec]) -> Result<Vec<String>, ApiError> {
+    pub fn set_app_menu(
+        &mut self,
+        specs: &[MenuSpec],
+    ) -> Result<Vec<String>, ApiError> {
         let mut items = HashMap::new();
         let menu::Built { menu, skipped } =
             menu::build(specs, &mut items).map_err(ApiError::invalid_params)?;
@@ -367,7 +394,9 @@ impl Chrome {
         {
             use tao::platform::windows::WindowExtWindows;
             use windows::Win32::Foundation::HWND;
-            use windows::Win32::UI::WindowsAndMessaging::{DrawMenuBar, GetMenu, SetMenu};
+            use windows::Win32::UI::WindowsAndMessaging::{
+                DrawMenuBar, GetMenu, SetMenu,
+            };
 
             let hwnd = HWND(window.hwnd() as *mut std::ffi::c_void);
             let before = window.inner_size();
@@ -398,12 +427,17 @@ impl Chrome {
     }
 
     /// Create or replace the tray icon.
-    pub fn set_tray(&mut self, rt: &Runtime, spec: &TraySpec) -> Result<Vec<String>, ApiError> {
+    pub fn set_tray(
+        &mut self,
+        rt: &Runtime,
+        spec: &TraySpec,
+    ) -> Result<Vec<String>, ApiError> {
         let mut skipped = Vec::new();
         let menu = match &spec.menu {
             Some(specs) => {
                 let mut items = HashMap::new();
-                let built = menu::build(specs, &mut items).map_err(ApiError::invalid_params)?;
+                let built = menu::build(specs, &mut items)
+                    .map_err(ApiError::invalid_params)?;
                 skipped = built.skipped;
                 self.forget(Scope::Tray);
                 self.tray_menu_ids = item_ids(&items);
@@ -415,15 +449,17 @@ impl Chrome {
 
         // Only `menu` lets the library handle the click; the others need the
         // event, so the runtime can decide between window and menu.
-        let mut builder =
-            TrayIconBuilder::new().with_menu_on_left_click(spec.left_click == TrayLeftClick::Menu);
+        let mut builder = TrayIconBuilder::new()
+            .with_menu_on_left_click(spec.left_click == TrayLeftClick::Menu);
 
         if let Some(path) = &spec.icon {
             builder = match load_icon(rt, path)? {
                 // Template images are a macOS idea; elsewhere the icon is
                 // drawn as-is.
                 #[cfg(target_os = "macos")]
-                icon if spec.icon_as_template => builder.with_icon_templated(icon),
+                icon if spec.icon_as_template => {
+                    builder.with_icon_templated(icon)
+                }
                 icon => builder.with_icon(icon),
             };
         }
@@ -436,11 +472,9 @@ impl Chrome {
 
         // Replaced rather than mutated: the builder is the only place several
         // of these can be set at all.
-        self.tray = Some(
-            builder
-                .build()
-                .map_err(|e| ApiError::internal(format!("Could not create the tray icon: {e}")))?,
-        );
+        self.tray = Some(builder.build().map_err(|e| {
+            ApiError::internal(format!("Could not create the tray icon: {e}"))
+        })?);
         self.tray_menu = menu;
         self.left_click = spec.left_click;
         self.tray_window = spec.window.clone();
@@ -486,7 +520,10 @@ impl Chrome {
         })
     }
 
-    pub fn set_tray_menu(&mut self, specs: &[MenuSpec]) -> Result<Vec<String>, ApiError> {
+    pub fn set_tray_menu(
+        &mut self,
+        specs: &[MenuSpec],
+    ) -> Result<Vec<String>, ApiError> {
         let mut items = HashMap::new();
         let menu::Built { menu, skipped } =
             menu::build(specs, &mut items).map_err(ApiError::invalid_params)?;
@@ -521,8 +558,12 @@ enum Scope {
 /// A relative path is an application asset. An absolute one has to be inside
 /// the filesystem read scope, so `tray.setIcon` cannot be used to read a file
 /// the application is otherwise not allowed to touch.
-pub fn load_icon(rt: &Runtime, path: &str) -> Result<tray_icon::Icon, ApiError> {
-    let resolved: PathBuf = if let Some(rest) = path.strip_prefix("$RESOURCE/") {
+pub fn load_icon(
+    rt: &Runtime,
+    path: &str,
+) -> Result<tray_icon::Icon, ApiError> {
+    let resolved: PathBuf = if let Some(rest) = path.strip_prefix("$RESOURCE/")
+    {
         rt.resource_dir.join(rest)
     } else if std::path::Path::new(path).is_absolute() {
         // Wrapped rather than taken as a `RawPath` argument: this function
@@ -540,8 +581,13 @@ pub fn load_icon(rt: &Runtime, path: &str) -> Result<tray_icon::Icon, ApiError> 
     };
 
     let image = icon::load_png(&resolved)?;
-    tray_icon::Icon::from_rgba(image.bytes, image.width, image.height)
-        .map_err(|e| ApiError::invalid_params(format!("Could not use {path} as an icon: {e}")))
+    tray_icon::Icon::from_rgba(image.bytes, image.width, image.height).map_err(
+        |e| {
+            ApiError::invalid_params(format!(
+                "Could not use {path} as an icon: {e}"
+            ))
+        },
+    )
 }
 
 /// What a failed shortcut registration means, in the terms of the call that
@@ -557,7 +603,9 @@ fn shortcut_error(accelerator: &str, error: global_hotkey::Error) -> ApiError {
         ),
         global_hotkey::Error::UnrecognizedHotKeyCode(_)
         | global_hotkey::Error::HotKeyParseError(_) => {
-            ApiError::invalid_params(format!("`{accelerator}` is not a key combination: {error}"))
+            ApiError::invalid_params(format!(
+                "`{accelerator}` is not a key combination: {error}"
+            ))
         }
         other if other.to_string().contains("Unable to find keycode") => {
             ApiError::invalid_params(format!(
@@ -603,10 +651,13 @@ mod tests {
         // `tray_icon` reports a press and a release as two `Click`s. Passing
         // both on gave listeners two `tray.click`s per click, which turned a
         // handler that toggles a window into one that opened and shut it.
-        assert!(tray_message(&click(tray_icon::MouseButtonState::Down)).is_none());
+        assert!(
+            tray_message(&click(tray_icon::MouseButtonState::Down)).is_none()
+        );
 
-        let (name, payload) = tray_message(&click(tray_icon::MouseButtonState::Up))
-            .expect("the release is the click");
+        let (name, payload) =
+            tray_message(&click(tray_icon::MouseButtonState::Up))
+                .expect("the release is the click");
         assert_eq!(name, "tray.click");
         assert_eq!(payload["button"], "left");
         assert_eq!(payload["x"], 12.0);

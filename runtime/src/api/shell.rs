@@ -32,7 +32,9 @@ pub fn dispatch(rt: &Runtime, method: &str, params: Value) -> ApiResult {
                 None => open::that_detached(&target),
             };
 
-            opened.map_err(|e| ApiError::io(&format!("Could not open `{target}`"), e))?;
+            opened.map_err(|e| {
+                ApiError::io(&format!("Could not open `{target}`"), e)
+            })?;
             Ok(Value::Null)
         }
         _ => Err(ApiError::unknown_method(method)),

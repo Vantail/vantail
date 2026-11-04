@@ -102,7 +102,10 @@ struct Toggle {
 
 /// A limit is only a limit if both dimensions are given: tao takes one size,
 /// not a width and a height that can be constrained separately.
-fn size_limit(width: Option<f64>, height: Option<f64>) -> Option<LogicalSize<f64>> {
+fn size_limit(
+    width: Option<f64>,
+    height: Option<f64>,
+) -> Option<LogicalSize<f64>> {
     match (width, height) {
         (Some(width), Some(height)) => Some(LogicalSize::new(width, height)),
         _ => None,
@@ -166,7 +169,8 @@ fn zoom_in_one_step(entry: &mut WindowEntry, maximized: bool) -> bool {
             } else {
                 // Nothing remembered - the window was maximised by the
                 // platform, or at startup - so let AppKit do what it knows.
-                let Some((x, y, width, height)) = entry.restore_frame.take() else {
+                let Some((x, y, width, height)) = entry.restore_frame.take()
+                else {
                     return false;
                 };
                 NSRect::new(NSPoint::new(x, y), NSSize::new(width, height))
@@ -226,9 +230,9 @@ fn skip_taskbar(window: &tao::window::Window, skip: bool) -> ApiResult {
         #[cfg(target_os = "windows")]
         use tao::platform::windows::WindowExtWindows;
 
-        window
-            .set_skip_taskbar(skip)
-            .map_err(|e| ApiError::internal(format!("Could not change the taskbar: {e}")))?;
+        window.set_skip_taskbar(skip).map_err(|e| {
+            ApiError::internal(format!("Could not change the taskbar: {e}"))
+        })?;
         return Ok(Value::Null);
     }
 
@@ -241,7 +245,11 @@ fn skip_taskbar(window: &tao::window::Window, skip: bool) -> ApiResult {
     }
 }
 
-pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult {
+pub fn dispatch(
+    ctx: &mut MainCtx<'_>,
+    method: &str,
+    params: Value,
+) -> ApiResult {
     ctx.rt
         .permissions
         .require(ctx.rt.permissions.window, method)?;
@@ -268,7 +276,11 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
 }
 
 /// The calls that act on one window and nothing else.
-fn one_window(entry: &mut WindowEntry, method: &str, params: Value) -> ApiResult {
+fn one_window(
+    entry: &mut WindowEntry,
+    method: &str,
+    params: Value,
+) -> ApiResult {
     let window = &entry.window;
     match method {
         "window.setTitle" => set_title(window, params),
@@ -282,7 +294,9 @@ fn one_window(entry: &mut WindowEntry, method: &str, params: Value) -> ApiResult
         "window.isMaximized" => Ok(json!(window.is_maximized())),
 
         "window.setSize" => set_size(entry, params),
-        "window.size" => Ok(json!({ "width": entry.size.width, "height": entry.size.height })),
+        "window.size" => Ok(
+            json!({ "width": entry.size.width, "height": entry.size.height }),
+        ),
         "window.setMinSize" => set_min_size(entry, params),
         "window.setMaxSize" => set_max_size(entry, params),
         "window.setSkipTaskbar" => set_skip_taskbar(window, params),
@@ -294,7 +308,9 @@ fn one_window(entry: &mut WindowEntry, method: &str, params: Value) -> ApiResult
         "window.isFullscreen" => Ok(json!(window.fullscreen().is_some())),
         "window.setResizable" => set_resizable(window, params),
         "window.setCloseBehavior" => set_close_behavior(entry, params),
-        "window.closeBehavior" => Ok(json!(close_behavior_name(entry.close_behavior))),
+        "window.closeBehavior" => {
+            Ok(json!(close_behavior_name(entry.close_behavior)))
+        }
         "window.setAlwaysOnTop" => set_always_on_top(window, params),
 
         "window.show" => set_visible(window, true),
@@ -304,11 +320,19 @@ fn one_window(entry: &mut WindowEntry, method: &str, params: Value) -> ApiResult
         "window.startDragging" => start_dragging(window),
 
         "window.setTitleBarHeight" => set_title_bar_height(entry, params),
-        "window.titleBarStyle" => Ok(json!(title_bar_style_name(entry.title_bar_style))),
-        "window.setTrafficLightPosition" => set_traffic_light_position(entry, params),
-        "window.centerTrafficLights" => Ok(json!(entry.set_traffic_lights(None))),
+        "window.titleBarStyle" => {
+            Ok(json!(title_bar_style_name(entry.title_bar_style)))
+        }
+        "window.setTrafficLightPosition" => {
+            set_traffic_light_position(entry, params)
+        }
+        "window.centerTrafficLights" => {
+            Ok(json!(entry.set_traffic_lights(None)))
+        }
         "window.setTitleBarButtons" => set_title_bar_buttons(entry, params),
-        "window.titleBarButtons" => Ok(json!(title_bar_buttons_name(entry.buttons_hidden))),
+        "window.titleBarButtons" => {
+            Ok(json!(title_bar_buttons_name(entry.buttons_hidden)))
+        }
 
         "window.openDevtools" => open_devtools(entry),
 
@@ -384,7 +408,11 @@ fn set_position(window: &Window, params: Value) -> ApiResult {
 fn position(window: &Window) -> ApiResult {
     let position = window
         .outer_position()
-        .map_err(|e| ApiError::unsupported(format!("Window position is unavailable: {e}")))?
+        .map_err(|e| {
+            ApiError::unsupported(format!(
+                "Window position is unavailable: {e}"
+            ))
+        })?
         .to_logical::<f64>(window.scale_factor());
     Ok(json!({ "x": position.x, "y": position.y }))
 }
@@ -412,7 +440,8 @@ fn set_resizable(window: &Window, params: Value) -> ApiResult {
 }
 
 fn set_close_behavior(entry: &mut WindowEntry, params: Value) -> ApiResult {
-    let Behaviour { behavior } = Request::params("window.setCloseBehavior", params)?;
+    let Behaviour { behavior } =
+        Request::params("window.setCloseBehavior", params)?;
     entry.close_behavior = behavior;
     Ok(Value::Null)
 }
@@ -446,16 +475,20 @@ fn focus(window: &Window) -> ApiResult {
 /// extension and does nothing in a WKWebView, so this is the portable way:
 /// call it from `pointerdown` and the platform takes over the drag from there.
 fn start_dragging(window: &Window) -> ApiResult {
-    window
-        .drag_window()
-        .map_err(|e| ApiError::unsupported(format!("Could not drag the window: {e}")))?;
+    window.drag_window().map_err(|e| {
+        ApiError::unsupported(format!("Could not drag the window: {e}"))
+    })?;
     Ok(Value::Null)
 }
 
 /// Switch between an ordinary title bar and one the application draws in, on
 /// a window that is already open. Answers with the room the new arrangement
 /// leaves, since that is what a caller needs next.
-fn set_title_bar_style(ctx: &mut MainCtx<'_>, label: &str, params: Value) -> ApiResult {
+fn set_title_bar_style(
+    ctx: &mut MainCtx<'_>,
+    label: &str,
+    params: Value,
+) -> ApiResult {
     let Style { style } = Request::params("window.setTitleBarStyle", params)?;
     let entry = ctx.windows.require_mut(label)?;
     // What the page has now. On Windows this call adds or removes the
@@ -488,7 +521,8 @@ fn set_title_bar_style(ctx: &mut MainCtx<'_>, label: &str, params: Value) -> Api
 /// A taller bar than the platform's, with the lights re-centred in it.
 /// `null` puts it back to whatever the platform uses.
 fn set_title_bar_height(entry: &mut WindowEntry, params: Value) -> ApiResult {
-    let Height { height } = Request::params("window.setTitleBarHeight", params)?;
+    let Height { height } =
+        Request::params("window.setTitleBarHeight", params)?;
     Ok(json!(entry.set_title_bar_height(height)))
 }
 
@@ -502,13 +536,17 @@ fn title_bar_style_name(style: crate::config::TitleBarStyle) -> &'static str {
 /// Where the traffic lights sit, for a toolbar taller than the bar it
 /// replaced. macOS only, because nowhere else has them. Moving them back to
 /// the middle of the bar is `window.centerTrafficLights`.
-fn set_traffic_light_position(entry: &mut WindowEntry, params: Value) -> ApiResult {
+fn set_traffic_light_position(
+    entry: &mut WindowEntry,
+    params: Value,
+) -> ApiResult {
     if cfg!(not(target_os = "macos")) {
         return Err(ApiError::unsupported(
             "Only macOS has traffic lights to position",
         ));
     }
-    let Nudge { x, y } = Request::params("window.setTrafficLightPosition", params)?;
+    let Nudge { x, y } =
+        Request::params("window.setTrafficLightPosition", params)?;
     Ok(json!(entry.set_traffic_lights(Some((x, y)))))
 }
 
@@ -516,7 +554,8 @@ fn set_traffic_light_position(entry: &mut WindowEntry, params: Value) -> ApiResu
 /// with the metrics, whose `insetLeft` is then zero - the same signal the
 /// platforms without any already give.
 fn set_title_bar_buttons(entry: &mut WindowEntry, params: Value) -> ApiResult {
-    let Buttons { buttons } = Request::params("window.setTitleBarButtons", params)?;
+    let Buttons { buttons } =
+        Request::params("window.setTitleBarButtons", params)?;
     let hidden = buttons == crate::config::TitleBarButtons::Hidden;
     Ok(json!(entry.set_buttons_hidden(hidden)))
 }
@@ -610,7 +649,9 @@ fn announce(ctx: &MainCtx<'_>, event: &str, label: &str) {
 /// Letters, digits, `-` and `_`, and nothing else.
 fn is_label(text: &str) -> bool {
     for character in text.chars() {
-        let allowed = character.is_ascii_alphanumeric() || character == '-' || character == '_';
+        let allowed = character.is_ascii_alphanumeric()
+            || character == '-'
+            || character == '_';
         if !allowed {
             return false;
         }
@@ -677,7 +718,10 @@ pub fn closed_by_user(
     windows.close(label);
     windows.deliver(
         None,
-        &Outgoing::Event(Event::new("window.closed", json!({ "label": label }))),
+        &Outgoing::Event(Event::new(
+            "window.closed",
+            json!({ "label": label }),
+        )),
     );
     windows.is_empty() && quit_when_empty
 }

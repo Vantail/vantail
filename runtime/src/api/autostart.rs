@@ -38,8 +38,9 @@ pub fn dispatch(rt: &Runtime, method: &str, _params: Value) -> ApiResult {
 /// The bundle on macOS, the executable everywhere else - launching the inner
 /// binary of a `.app` directly gives a process with no icon and no menu bar.
 fn target(rt: &Runtime) -> Result<std::path::PathBuf, ApiError> {
-    let exe = std::env::current_exe()
-        .map_err(|e| ApiError::io("Could not find the running executable", e))?;
+    let exe = std::env::current_exe().map_err(|e| {
+        ApiError::io("Could not find the running executable", e)
+    })?;
 
     // `vantail package` renames the executable to the application, so a binary
     // still called `vantail-runtime` is one being run directly - out of a
@@ -59,7 +60,8 @@ fn target(rt: &Runtime) -> Result<std::path::PathBuf, ApiError> {
     {
         let mut ancestor = exe.as_path();
         while let Some(parent) = ancestor.parent() {
-            if matches!(parent.extension(), Some(extension) if extension == "app") {
+            if matches!(parent.extension(), Some(extension) if extension == "app")
+            {
                 return Ok(parent.to_path_buf());
             }
             ancestor = parent;
@@ -75,8 +77,9 @@ fn target(rt: &Runtime) -> Result<std::path::PathBuf, ApiError> {
 
 #[cfg(target_os = "macos")]
 fn agent_path(rt: &Runtime) -> Result<std::path::PathBuf, ApiError> {
-    let home =
-        dirs::home_dir().ok_or_else(|| ApiError::internal("This account has no home directory"))?;
+    let home = dirs::home_dir().ok_or_else(|| {
+        ApiError::internal("This account has no home directory")
+    })?;
     Ok(home
         .join("Library/LaunchAgents")
         .join(format!("{}.plist", rt.config.app.identifier)))
@@ -88,8 +91,9 @@ fn enable(rt: &Runtime) -> Result<(), ApiError> {
     let path = agent_path(rt)?;
 
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| ApiError::io("Could not create ~/Library/LaunchAgents", e))?;
+        std::fs::create_dir_all(parent).map_err(|e| {
+            ApiError::io("Could not create ~/Library/LaunchAgents", e)
+        })?;
     }
 
     // `open` rather than the executable inside the bundle: launching that
@@ -115,7 +119,8 @@ fn enable(rt: &Runtime) -> Result<(), ApiError> {
         bundle = escape_xml(&bundle.to_string_lossy()),
     );
 
-    std::fs::write(&path, plist).map_err(|e| ApiError::io("Could not write the launch agent", e))
+    std::fs::write(&path, plist)
+        .map_err(|e| ApiError::io("Could not write the launch agent", e))
 }
 
 #[cfg(target_os = "macos")]
@@ -125,7 +130,9 @@ fn disable(rt: &Runtime) -> Result<(), ApiError> {
         Ok(()) => Ok(()),
         // Already off is the state that was asked for.
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(ApiError::io("Could not remove the launch agent", error)),
+        Err(error) => {
+            Err(ApiError::io("Could not remove the launch agent", error))
+        }
     }
 }
 
@@ -152,8 +159,9 @@ fn escape_xml(text: &str) -> String {
 
 #[cfg(target_os = "linux")]
 fn entry_path(rt: &Runtime) -> Result<std::path::PathBuf, ApiError> {
-    let config = dirs::config_dir()
-        .ok_or_else(|| ApiError::internal("This account has no config directory"))?;
+    let config = dirs::config_dir().ok_or_else(|| {
+        ApiError::internal("This account has no config directory")
+    })?;
     Ok(config
         .join("autostart")
         .join(format!("{}.desktop", rt.config.app.identifier)))
@@ -165,8 +173,9 @@ fn enable(rt: &Runtime) -> Result<(), ApiError> {
     let path = entry_path(rt)?;
 
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| ApiError::io("Could not create the autostart directory", e))?;
+        std::fs::create_dir_all(parent).map_err(|e| {
+            ApiError::io("Could not create the autostart directory", e)
+        })?;
     }
 
     // A desktop entry is line-based with no quoting, so a newline in a value
@@ -186,7 +195,8 @@ fn enable(rt: &Runtime) -> Result<(), ApiError> {
         exec = exe.to_string_lossy(),
     );
 
-    std::fs::write(&path, entry).map_err(|e| ApiError::io("Could not write the autostart entry", e))
+    std::fs::write(&path, entry)
+        .map_err(|e| ApiError::io("Could not write the autostart entry", e))
 }
 
 #[cfg(target_os = "linux")]
@@ -195,7 +205,9 @@ fn disable(rt: &Runtime) -> Result<(), ApiError> {
     match std::fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(ApiError::io("Could not remove the autostart entry", error)),
+        Err(error) => {
+            Err(ApiError::io("Could not remove the autostart entry", error))
+        }
     }
 }
 
@@ -242,7 +254,9 @@ mod windows_run_key {
     pub fn set(name: &str, command: Option<&str>) -> Result<(), ApiError> {
         let output = match command {
             Some(command) => std::process::Command::new("reg")
-                .args(["add", KEY, "/v", name, "/t", "REG_SZ", "/d", command, "/f"])
+                .args([
+                    "add", KEY, "/v", name, "/t", "REG_SZ", "/d", command, "/f",
+                ])
                 .output(),
             None => std::process::Command::new("reg")
                 .args(["delete", KEY, "/v", name, "/f"])
@@ -251,7 +265,8 @@ mod windows_run_key {
         .map_err(|e| ApiError::io("Could not run reg.exe", e))?;
 
         // Deleting something that is not there is the state that was asked for.
-        if output.status.success() || (command.is_none() && get(name).is_none()) {
+        if output.status.success() || (command.is_none() && get(name).is_none())
+        {
             return Ok(());
         }
 

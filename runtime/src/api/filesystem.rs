@@ -86,8 +86,9 @@ pub fn dispatch(rt: &Runtime, method: &str, params: Value) -> ApiResult {
 fn read_text(rt: &Runtime, params: Value) -> ApiResult {
     let PathParams { path } = Request::params("filesystem.readText", params)?;
     let path = rt.permissions.check_path(&path, Access::Read)?;
-    let text = std::fs::read_to_string(&path)
-        .map_err(|e| ApiError::io(&format!("Could not read {}", path.display()), e))?;
+    let text = std::fs::read_to_string(&path).map_err(|e| {
+        ApiError::io(&format!("Could not read {}", path.display()), e)
+    })?;
     Ok(Value::from(text))
 }
 
@@ -101,22 +102,27 @@ fn write_text(rt: &Runtime, params: Value) -> ApiResult {
     if create_dirs {
         create_parent(&path)?;
     }
-    std::fs::write(&path, contents)
-        .map_err(|e| ApiError::io(&format!("Could not write {}", path.display()), e))?;
+    std::fs::write(&path, contents).map_err(|e| {
+        ApiError::io(&format!("Could not write {}", path.display()), e)
+    })?;
     Ok(Value::Null)
 }
 
 fn append_text(rt: &Runtime, params: Value) -> ApiResult {
     use std::io::Write;
-    let WriteParams { path, contents, .. } = Request::params("filesystem.appendText", params)?;
+    let WriteParams { path, contents, .. } =
+        Request::params("filesystem.appendText", params)?;
     let path = rt.permissions.check_path(&path, Access::Write)?;
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&path)
-        .map_err(|e| ApiError::io(&format!("Could not open {}", path.display()), e))?;
-    file.write_all(contents.as_bytes())
-        .map_err(|e| ApiError::io(&format!("Could not append to {}", path.display()), e))?;
+        .map_err(|e| {
+            ApiError::io(&format!("Could not open {}", path.display()), e)
+        })?;
+    file.write_all(contents.as_bytes()).map_err(|e| {
+        ApiError::io(&format!("Could not append to {}", path.display()), e)
+    })?;
     Ok(Value::Null)
 }
 
@@ -125,14 +131,17 @@ fn read_binary(rt: &Runtime, params: Value) -> ApiResult {
     let path = rt.permissions.check_path(&path, Access::Read)?;
 
     let size = std::fs::metadata(&path)
-        .map_err(|e| ApiError::io(&format!("Could not read {}", path.display()), e))?
+        .map_err(|e| {
+            ApiError::io(&format!("Could not read {}", path.display()), e)
+        })?
         .len();
     if size > MAX_BINARY_BYTES {
         return Err(too_large(&path, size));
     }
 
-    let bytes = std::fs::read(&path)
-        .map_err(|e| ApiError::io(&format!("Could not read {}", path.display()), e))?;
+    let bytes = std::fs::read(&path).map_err(|e| {
+        ApiError::io(&format!("Could not read {}", path.display()), e)
+    })?;
     Ok(json!(BASE64.encode(bytes)))
 }
 
@@ -142,9 +151,9 @@ fn write_binary(rt: &Runtime, params: Value) -> ApiResult {
         data,
         create_dirs,
     } = Request::params("filesystem.writeBinary", params)?;
-    let bytes = BASE64
-        .decode(data.as_bytes())
-        .map_err(|e| ApiError::invalid_params(format!("`data` is not valid base64: {e}")))?;
+    let bytes = BASE64.decode(data.as_bytes()).map_err(|e| {
+        ApiError::invalid_params(format!("`data` is not valid base64: {e}"))
+    })?;
 
     let path = rt.permissions.check_path(&path, Access::Write)?;
     if bytes.len() as u64 > MAX_BINARY_BYTES {
@@ -153,8 +162,9 @@ fn write_binary(rt: &Runtime, params: Value) -> ApiResult {
     if create_dirs {
         create_parent(&path)?;
     }
-    std::fs::write(&path, bytes)
-        .map_err(|e| ApiError::io(&format!("Could not write {}", path.display()), e))?;
+    std::fs::write(&path, bytes).map_err(|e| {
+        ApiError::io(&format!("Could not write {}", path.display()), e)
+    })?;
     Ok(Value::Null)
 }
 
@@ -163,8 +173,9 @@ fn create_parent(path: &Path) -> Result<(), ApiError> {
     let Some(parent) = path.parent() else {
         return Ok(());
     };
-    std::fs::create_dir_all(parent)
-        .map_err(|e| ApiError::io(&format!("Could not create {}", parent.display()), e))
+    std::fs::create_dir_all(parent).map_err(|e| {
+        ApiError::io(&format!("Could not create {}", parent.display()), e)
+    })
 }
 
 fn list_dir(rt: &Runtime, params: Value) -> ApiResult {
@@ -184,25 +195,30 @@ fn exists(rt: &Runtime, params: Value) -> ApiResult {
 fn stat(rt: &Runtime, params: Value) -> ApiResult {
     let PathParams { path } = Request::params("filesystem.stat", params)?;
     let path = rt.permissions.check_path(&path, Access::Read)?;
-    let metadata = std::fs::symlink_metadata(&path)
-        .map_err(|e| ApiError::io(&format!("Could not stat {}", path.display()), e))?;
+    let metadata = std::fs::symlink_metadata(&path).map_err(|e| {
+        ApiError::io(&format!("Could not stat {}", path.display()), e)
+    })?;
     Ok(describe(&path, &metadata))
 }
 
 fn make_dir(rt: &Runtime, params: Value) -> ApiResult {
-    let RecursiveParams { path, recursive } = Request::params("filesystem.mkdir", params)?;
+    let RecursiveParams { path, recursive } =
+        Request::params("filesystem.mkdir", params)?;
     let path = rt.permissions.check_path(&path, Access::Write)?;
     let created = if recursive {
         std::fs::create_dir_all(&path)
     } else {
         std::fs::create_dir(&path)
     };
-    created.map_err(|e| ApiError::io(&format!("Could not create {}", path.display()), e))?;
+    created.map_err(|e| {
+        ApiError::io(&format!("Could not create {}", path.display()), e)
+    })?;
     Ok(Value::Null)
 }
 
 fn remove_path(rt: &Runtime, params: Value) -> ApiResult {
-    let RecursiveParams { path, recursive } = Request::params("filesystem.remove", params)?;
+    let RecursiveParams { path, recursive } =
+        Request::params("filesystem.remove", params)?;
     let path = rt.permissions.check_path(&path, Access::Write)?;
     remove(&path, recursive)
 }
@@ -211,17 +227,20 @@ fn copy(rt: &Runtime, params: Value) -> ApiResult {
     let FromToParams { from, to } = Request::params("filesystem.copy", params)?;
     // Copying reads the source and writes the destination.
     let (from, to) = check_pair(&rt.permissions, &from, &to, Access::Read)?;
-    std::fs::copy(&from, &to)
-        .map_err(|e| ApiError::io(&format!("Could not copy {}", from.display()), e))?;
+    std::fs::copy(&from, &to).map_err(|e| {
+        ApiError::io(&format!("Could not copy {}", from.display()), e)
+    })?;
     Ok(Value::Null)
 }
 
 fn rename(rt: &Runtime, params: Value) -> ApiResult {
-    let FromToParams { from, to } = Request::params("filesystem.rename", params)?;
+    let FromToParams { from, to } =
+        Request::params("filesystem.rename", params)?;
     // Renaming removes the original, so the source needs write too.
     let (from, to) = check_pair(&rt.permissions, &from, &to, Access::Write)?;
-    std::fs::rename(&from, &to)
-        .map_err(|e| ApiError::io(&format!("Could not rename {}", from.display()), e))?;
+    std::fs::rename(&from, &to).map_err(|e| {
+        ApiError::io(&format!("Could not rename {}", from.display()), e)
+    })?;
     Ok(Value::Null)
 }
 
@@ -262,13 +281,15 @@ fn too_large(path: &Path, size: u64) -> ApiError {
 }
 
 fn read_dir(path: &Path) -> ApiResult {
-    let entries = std::fs::read_dir(path)
-        .map_err(|e| ApiError::io(&format!("Could not read {}", path.display()), e))?;
+    let entries = std::fs::read_dir(path).map_err(|e| {
+        ApiError::io(&format!("Could not read {}", path.display()), e)
+    })?;
 
     let mut out = Vec::new();
     for entry in entries {
-        let entry =
-            entry.map_err(|e| ApiError::io(&format!("Could not read {}", path.display()), e))?;
+        let entry = entry.map_err(|e| {
+            ApiError::io(&format!("Could not read {}", path.display()), e)
+        })?;
         let entry_path = entry.path();
 
         // `file_type` does not follow symlinks, so a link to a directory is
@@ -296,8 +317,9 @@ fn read_dir(path: &Path) -> ApiResult {
 }
 
 fn remove(path: &PathBuf, recursive: bool) -> ApiResult {
-    let metadata = std::fs::symlink_metadata(path)
-        .map_err(|e| ApiError::io(&format!("Could not remove {}", path.display()), e))?;
+    let metadata = std::fs::symlink_metadata(path).map_err(|e| {
+        ApiError::io(&format!("Could not remove {}", path.display()), e)
+    })?;
 
     // A symlink is removed as a link, never followed - otherwise `remove` on a
     // link inside an allowed directory would delete something outside it.
@@ -312,7 +334,10 @@ fn remove(path: &PathBuf, recursive: bool) -> ApiResult {
     };
 
     removed.map_err(|e| {
-        if metadata.is_dir() && !recursive && e.kind() != std::io::ErrorKind::NotFound {
+        if metadata.is_dir()
+            && !recursive
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
             ApiError::new(
                 code::IO_ERROR,
                 format!(
@@ -377,7 +402,8 @@ mod tests {
 
     use super::*;
     use crate::permissions::{
-        normalize, FilesystemConfig, PathScopeConfig, PermissionsConfig, RawPath, Vars,
+        normalize, FilesystemConfig, PathScopeConfig, PermissionsConfig,
+        RawPath, Vars,
     };
 
     fn permissions(read: Vec<String>, write: Vec<String>) -> Permissions {
@@ -420,11 +446,15 @@ mod tests {
             vec![format!("{}/allowed/**", base.display())],
         );
 
-        let outside = RawPath::new(format!("{}/elsewhere/notes.txt", base.display()));
-        let inside = RawPath::new(format!("{}/allowed/notes.txt", base.display()));
+        let outside =
+            RawPath::new(format!("{}/elsewhere/notes.txt", base.display()));
+        let inside =
+            RawPath::new(format!("{}/allowed/notes.txt", base.display()));
 
         let error = check_pair(&permissions, &outside, &inside, Access::Write)
-            .expect_err("renamed a file out of a directory that is not writable");
+            .expect_err(
+                "renamed a file out of a directory that is not writable",
+            );
         assert_eq!(error.code, code::PERMISSION_DENIED);
     }
 
@@ -439,11 +469,19 @@ mod tests {
             vec![format!("{}/allowed/**", base.display())],
         );
 
-        let source = RawPath::new(format!("{}/elsewhere/notes.txt", base.display()));
-        let destination = RawPath::new(format!("{}/allowed/copy.txt", base.display()));
+        let source =
+            RawPath::new(format!("{}/elsewhere/notes.txt", base.display()));
+        let destination =
+            RawPath::new(format!("{}/allowed/copy.txt", base.display()));
 
-        assert!(check_pair(&permissions, &source, &destination, Access::Read).is_ok());
-        assert!(check_pair(&permissions, &source, &destination, Access::Write).is_err());
+        assert!(
+            check_pair(&permissions, &source, &destination, Access::Read)
+                .is_ok()
+        );
+        assert!(
+            check_pair(&permissions, &source, &destination, Access::Write)
+                .is_err()
+        );
     }
 
     #[test]
@@ -455,11 +493,14 @@ mod tests {
             vec![format!("{}/allowed/**", base.display())],
         );
 
-        let source = RawPath::new(format!("{}/allowed/notes.txt", base.display()));
-        let destination = RawPath::new(format!("{}/elsewhere/notes.txt", base.display()));
+        let source =
+            RawPath::new(format!("{}/allowed/notes.txt", base.display()));
+        let destination =
+            RawPath::new(format!("{}/elsewhere/notes.txt", base.display()));
 
-        let error = check_pair(&permissions, &source, &destination, Access::Write)
-            .expect_err("wrote outside the write scope");
+        let error =
+            check_pair(&permissions, &source, &destination, Access::Write)
+                .expect_err("wrote outside the write scope");
         assert_eq!(error.code, code::PERMISSION_DENIED);
     }
 
@@ -477,7 +518,8 @@ mod tests {
         let from = RawPath::new(format!("{}/allowed/../a.txt", base.display()));
         let to = RawPath::new(format!("{}/allowed/../b.txt", base.display()));
 
-        let (from, to) = check_pair(&permissions, &from, &to, Access::Write).expect("allowed");
+        let (from, to) = check_pair(&permissions, &from, &to, Access::Write)
+            .expect("allowed");
         assert_eq!(from, base.join("a.txt"));
         assert_eq!(to, base.join("b.txt"));
     }

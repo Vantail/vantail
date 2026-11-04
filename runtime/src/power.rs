@@ -63,16 +63,23 @@ fn observe(report: impl Fn(&'static str) + Clone + 'static) {
 
         for (name, event) in notifications {
             let report = report.clone();
-            let block = block2::RcBlock::new(move |_: core::ptr::NonNull<NSNotification>| {
-                report(event);
-            });
+            let block = block2::RcBlock::new(
+                move |_: core::ptr::NonNull<NSNotification>| {
+                    report(event);
+                },
+            );
 
             // `None` for the queue: the block then runs on whichever thread
             // posted, and `send` is safe from any of them because it routes
             // through the event loop. Waiting for the main queue would mean
             // the notification is missed if the loop is mid-tick.
             let observer: Retained<ProtocolObject<dyn NSObjectProtocol>> =
-                centre.addObserverForName_object_queue_usingBlock(Some(name), None, None, &block);
+                centre.addObserverForName_object_queue_usingBlock(
+                    Some(name),
+                    None,
+                    None,
+                    &block,
+                );
             // Deliberately leaked: an observer that is dropped stops
             // observing, and this one should last as long as the process.
             std::mem::forget(observer);
@@ -100,17 +107,25 @@ mod tests {
         use objc2_app_kit::NSWorkspace;
         use objc2_foundation::ns_string;
 
-        let heard: Arc<Mutex<Vec<&'static str>>> = Arc::new(Mutex::new(Vec::new()));
+        let heard: Arc<Mutex<Vec<&'static str>>> =
+            Arc::new(Mutex::new(Vec::new()));
 
         let recorder = heard.clone();
-        observe(move |event| recorder.lock().expect("heard poisoned").push(event));
+        observe(move |event| {
+            recorder.lock().expect("heard poisoned").push(event)
+        });
 
         // Safety: the same process-wide centre the observer registered with.
         unsafe {
             let centre = NSWorkspace::sharedWorkspace().notificationCenter();
-            centre
-                .postNotificationName_object(ns_string!("NSWorkspaceWillSleepNotification"), None);
-            centre.postNotificationName_object(ns_string!("NSWorkspaceDidWakeNotification"), None);
+            centre.postNotificationName_object(
+                ns_string!("NSWorkspaceWillSleepNotification"),
+                None,
+            );
+            centre.postNotificationName_object(
+                ns_string!("NSWorkspaceDidWakeNotification"),
+                None,
+            );
         }
 
         let heard = heard.lock().expect("heard poisoned");

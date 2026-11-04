@@ -57,7 +57,12 @@ pub mod hid {
         pub fn shutdown(&self) {}
     }
 
-    pub fn dispatch(_rt: &Arc<Runtime>, _source: &str, _method: &str, _params: Value) -> ApiResult {
+    pub fn dispatch(
+        _rt: &Arc<Runtime>,
+        _source: &str,
+        _method: &str,
+        _params: Value,
+    ) -> ApiResult {
         Err(ApiError::unsupported(
             "This runtime was built without HID access. Rebuild with the `hid` feature enabled.",
         ))
@@ -192,7 +197,11 @@ pub mod secrets {
         Err(unsupported())
     }
 
-    pub fn write(_rt: &Runtime, _key: &str, _value: &str) -> Result<(), ApiError> {
+    pub fn write(
+        _rt: &Runtime,
+        _key: &str,
+        _value: &str,
+    ) -> Result<(), ApiError> {
         Err(unsupported())
     }
 }
@@ -216,7 +225,12 @@ pub mod watch {
     #[derive(Default)]
     pub struct State;
 
-    pub fn dispatch(_rt: &Arc<Runtime>, _source: &str, _method: &str, _params: Value) -> ApiResult {
+    pub fn dispatch(
+        _rt: &Arc<Runtime>,
+        _source: &str,
+        _method: &str,
+        _params: Value,
+    ) -> ApiResult {
         Err(crate::error::ApiError::unsupported(
             "This runtime was built without filesystem watching. Rebuild with the `watch` feature enabled.",
         ))

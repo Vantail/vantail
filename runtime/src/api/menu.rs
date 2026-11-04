@@ -52,7 +52,11 @@ struct Popup {
     label: Option<String>,
 }
 
-pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult {
+pub fn dispatch(
+    ctx: &mut MainCtx<'_>,
+    method: &str,
+    params: Value,
+) -> ApiResult {
     ctx.rt
         .permissions
         .require(ctx.rt.permissions.menu, method)?;
@@ -151,7 +155,9 @@ fn popup(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
     // pin this type, so on a platform where none of them compile there is
     // nothing left to infer it from.
     let position: Option<muda::dpi::Position> = match (params.x, params.y) {
-        (Some(x), Some(y)) => Some(muda::dpi::LogicalPosition::new(x, y).into()),
+        (Some(x), Some(y)) => {
+            Some(muda::dpi::LogicalPosition::new(x, y).into())
+        }
         _ => None,
     };
 

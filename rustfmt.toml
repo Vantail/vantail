@@ -1,0 +1,7 @@
+# Lines of at most 80 columns, so code reads without scrolling and two files
+# fit side by side. Otherwise rustfmt's defaults - including its width
+# heuristics, which put a long call or chain on several lines. Turning them
+# off (`use_small_heuristics = "Off"`) would pack those back onto one line
+# whenever it fits, which is the opposite of what this is for.
+max_width = 80
+newline_style = "Unix"

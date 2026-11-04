@@ -113,9 +113,9 @@ impl Endpoint {
     /// fields matter here, and a parser that ignores everything else cannot
     /// disagree with the HTTP client about the rest.
     pub fn parse(url: &str) -> Result<Self, ApiError> {
-        let (scheme, rest) = url
-            .split_once("://")
-            .ok_or_else(|| ApiError::invalid_params(format!("`{url}` is not an absolute URL")))?;
+        let (scheme, rest) = url.split_once("://").ok_or_else(|| {
+            ApiError::invalid_params(format!("`{url}` is not an absolute URL"))
+        })?;
 
         if scheme.is_empty() || !is_scheme(scheme) {
             return Err(ApiError::invalid_params(format!(
@@ -136,7 +136,9 @@ impl Endpoint {
 
         let (host, port) = split_host_port(authority)?;
         if host.is_empty() {
-            return Err(ApiError::invalid_params(format!("`{url}` has no host")));
+            return Err(ApiError::invalid_params(format!(
+                "`{url}` has no host"
+            )));
         }
 
         Ok(Self {
@@ -172,9 +174,9 @@ fn is_scheme(text: &str) -> bool {
 fn split_host_port(authority: &str) -> Result<(String, Option<u16>), ApiError> {
     // A bracketed IPv6 literal keeps its colons.
     if let Some(rest) = authority.strip_prefix('[') {
-        let (host, tail) = rest
-            .split_once(']')
-            .ok_or_else(|| ApiError::invalid_params("Unterminated IPv6 address in URL"))?;
+        let (host, tail) = rest.split_once(']').ok_or_else(|| {
+            ApiError::invalid_params("Unterminated IPv6 address in URL")
+        })?;
         let port = match tail.strip_prefix(':') {
             Some(port) => Some(parse_port(port)?),
             None => None,
@@ -189,8 +191,9 @@ fn split_host_port(authority: &str) -> Result<(String, Option<u16>), ApiError> {
 }
 
 fn parse_port(text: &str) -> Result<u16, ApiError> {
-    text.parse()
-        .map_err(|_| ApiError::invalid_params(format!("`{text}` is not a port number")))
+    text.parse().map_err(|_| {
+        ApiError::invalid_params(format!("`{text}` is not a port number"))
+    })
 }
 
 /// One compiled rule.
@@ -215,9 +218,12 @@ impl Rule {
     fn compile(rule: &str) -> Result<Self, String> {
         if let Some((scheme, rest)) = rule.split_once("://") {
             let (host, port) = split_host_port(rest.trim_end_matches('/'))
-                .map_err(|e| format!("Invalid network rule `{rule}`: {}", e.message))?;
+                .map_err(|e| {
+                    format!("Invalid network rule `{rule}`: {}", e.message)
+                })?;
             return Ok(Rule::Origin {
-                scheme: http_equivalent(&scheme.to_ascii_lowercase()).to_string(),
+                scheme: http_equivalent(&scheme.to_ascii_lowercase())
+                    .to_string(),
                 host: Box::new(Rule::compile_host(&host)?),
                 port,
             });
@@ -238,7 +244,10 @@ impl Rule {
             if suffix.is_empty() {
                 return Err("`*.` is not a host rule".to_string());
             }
-            return Ok(Rule::Suffix(format!(".{}", suffix.to_ascii_lowercase())));
+            return Ok(Rule::Suffix(format!(
+                ".{}",
+                suffix.to_ascii_lowercase()
+            )));
         }
         if rule.contains('*') {
             return Err(format!(
@@ -370,7 +379,10 @@ struct CompiledProxy {
 }
 
 impl NetworkScope {
-    pub fn compile(config: &NetworkConfig, vars: &Vars) -> Result<Self, String> {
+    pub fn compile(
+        config: &NetworkConfig,
+        vars: &Vars,
+    ) -> Result<Self, String> {
         let mut certificates = Vec::new();
         for entry in &config.client_certificates {
             if entry.hosts.is_empty() {
@@ -413,7 +425,9 @@ impl NetworkScope {
         let endpoint = Endpoint::parse(url)?;
 
         if any_rule_matches(&self.deny, &endpoint) {
-            return Err(self.denied(&endpoint, "denied by `permissions.network.deny`"));
+            return Err(
+                self.denied(&endpoint, "denied by `permissions.network.deny`")
+            );
         }
         if any_rule_matches(&self.allow, &endpoint) {
             return Ok(endpoint);
@@ -458,7 +472,10 @@ impl NetworkScope {
 
     /// The client certificate to present to this host, if the config named
     /// one. The first matching entry wins, so order is the tie-breaker.
-    pub fn client_certificate(&self, endpoint: &Endpoint) -> Option<&CertificatePaths> {
+    pub fn client_certificate(
+        &self,
+        endpoint: &Endpoint,
+    ) -> Option<&CertificatePaths> {
         for entry in &self.certificates {
             if any_rule_matches(&entry.hosts, endpoint) {
                 return Some(&entry.paths);
@@ -544,12 +561,14 @@ mod tests {
 
     #[test]
     fn urls_split_into_scheme_host_and_port() {
-        let endpoint = Endpoint::parse("https://api.example.com/v1/users?id=1").unwrap();
+        let endpoint =
+            Endpoint::parse("https://api.example.com/v1/users?id=1").unwrap();
         assert_eq!(endpoint.scheme, "https");
         assert_eq!(endpoint.host, "api.example.com");
         assert_eq!(endpoint.port, None);
 
-        let with_port = Endpoint::parse("http://192.168.1.50:9123/api/lights").unwrap();
+        let with_port =
+            Endpoint::parse("http://192.168.1.50:9123/api/lights").unwrap();
         assert_eq!(with_port.port, Some(9123));
 
         let ipv6 = Endpoint::parse("http://[fd00::1]:8080/x").unwrap();
@@ -557,7 +576,8 @@ mod tests {
         assert_eq!(ipv6.port, Some(8080));
 
         // Credentials in the authority are not the host.
-        let userinfo = Endpoint::parse("http://user:pass@device.local/api").unwrap();
+        let userinfo =
+            Endpoint::parse("http://user:pass@device.local/api").unwrap();
         assert_eq!(userinfo.host, "device.local");
     }
 
@@ -608,7 +628,10 @@ mod tests {
         // `*` is a way to say "anywhere", not a way to switch the fence off.
         let scope = compile(NetworkConfig {
             allow: vec!["*".into()],
-            deny: vec!["metadata.google.internal".into(), "169.254.0.0/16".into()],
+            deny: vec![
+                "metadata.google.internal".into(),
+                "169.254.0.0/16".into(),
+            ],
             ..NetworkConfig::default()
         });
 
@@ -896,7 +919,10 @@ mod tests {
         // would be a suggestion rather than a rule.
         let scope = compile(NetworkConfig {
             allow: vec!["api.example.com".into()],
-            deny: vec!["169.254.0.0/16".into(), "metadata.google.internal".into()],
+            deny: vec![
+                "169.254.0.0/16".into(),
+                "metadata.google.internal".into(),
+            ],
             grant_from_prompt: true,
             ..NetworkConfig::default()
         });

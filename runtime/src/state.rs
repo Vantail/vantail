@@ -46,9 +46,14 @@ pub struct Runtime {
 }
 
 impl Runtime {
-    pub fn new(loaded: LoadedConfig, proxy: EventLoopProxy<UserEvent>) -> Result<Self, String> {
-        let vars = Vars::resolve(&loaded.config.app.identifier, &loaded.dist_dir);
-        let permissions = Permissions::compile(&loaded.config.permissions, &vars)?;
+    pub fn new(
+        loaded: LoadedConfig,
+        proxy: EventLoopProxy<UserEvent>,
+    ) -> Result<Self, String> {
+        let vars =
+            Vars::resolve(&loaded.config.app.identifier, &loaded.dist_dir);
+        let permissions =
+            Permissions::compile(&loaded.config.permissions, &vars)?;
         let shared = crate::api::shared_state::Store::new(
             &loaded.config.app.identifier,
             permissions.shared_state_persist,

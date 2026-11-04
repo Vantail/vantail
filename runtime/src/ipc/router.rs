@@ -112,7 +112,12 @@ fn run_blocking(
 }
 
 /// The namespaces answered on the event loop, before the next event.
-fn answer_now(ctx: &mut MainCtx<'_>, namespace: &str, method: &str, params: Value) -> ApiResult {
+fn answer_now(
+    ctx: &mut MainCtx<'_>,
+    namespace: &str,
+    method: &str,
+    params: Value,
+) -> ApiResult {
     match namespace {
         "app" => api::app::dispatch(ctx, method, params),
         "window" => api::window::dispatch(ctx, method, params),

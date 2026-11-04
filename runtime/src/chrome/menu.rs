@@ -207,7 +207,10 @@ pub struct Built {
 ///
 /// A failure from the platform itself is still an error - that is a broken
 /// menu rather than a typo in a config file.
-pub fn build(specs: &[MenuSpec], items: &mut HashMap<String, ItemHandle>) -> Result<Built, String> {
+pub fn build(
+    specs: &[MenuSpec],
+    items: &mut HashMap<String, ItemHandle>,
+) -> Result<Built, String> {
     let menu = Menu::new();
     let mut skipped = Vec::new();
     for spec in specs {
@@ -238,7 +241,8 @@ fn append(
                     return Ok(());
                 }
             };
-            let item = MenuItem::with_id(id.clone(), label, *enabled, accelerator);
+            let item =
+                MenuItem::with_id(id.clone(), label, *enabled, accelerator);
             menu.add(&item)?;
             items.insert(id.clone(), ItemHandle::Normal(item));
             Ok(())
@@ -258,7 +262,13 @@ fn append(
                     return Ok(());
                 }
             };
-            let item = CheckMenuItem::with_id(id.clone(), label, *enabled, *checked, accelerator);
+            let item = CheckMenuItem::with_id(
+                id.clone(),
+                label,
+                *enabled,
+                *checked,
+                accelerator,
+            );
             menu.add(&item)?;
             items.insert(id.clone(), ItemHandle::Checkbox(item));
             Ok(())
@@ -377,7 +387,9 @@ fn alias(text: &str) -> String {
         // `Ctrl++` means the `+` key itself: the split leaves no key name
         // behind, so there is nothing here to rewrite.
         Some((_, key)) if key.trim().is_empty() => text.to_string(),
-        Some((modifiers, key)) => format!("{modifiers}+{}", key_alias(key.trim())),
+        Some((modifiers, key)) => {
+            format!("{modifiers}+{}", key_alias(key.trim()))
+        }
         None => key_alias(text.trim()).to_string(),
     }
 }
@@ -389,7 +401,10 @@ fn key_alias(key: &str) -> &str {
     key
 }
 
-fn predefined(name: &str, label: Option<&str>) -> Result<PredefinedMenuItem, String> {
+fn predefined(
+    name: &str,
+    label: Option<&str>,
+) -> Result<PredefinedMenuItem, String> {
     Ok(match name {
         "separator" => PredefinedMenuItem::separator(),
         "copy" => PredefinedMenuItem::copy(label),

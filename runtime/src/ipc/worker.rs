@@ -53,7 +53,11 @@ impl Pool {
             // when this returns, and `claim` then finds nothing to take.
             match spawned {
                 Ok(handle) => workers.push(handle),
-                Err(error) => return Err(format!("Could not start a worker thread: {error}")),
+                Err(error) => {
+                    return Err(format!(
+                        "Could not start a worker thread: {error}"
+                    ))
+                }
             }
         }
 
@@ -63,7 +67,10 @@ impl Pool {
         })
     }
 
-    pub fn execute(&self, job: impl FnOnce() + Send + 'static) -> Result<(), ApiError> {
+    pub fn execute(
+        &self,
+        job: impl FnOnce() + Send + 'static,
+    ) -> Result<(), ApiError> {
         self.tx
             .send(Box::new(job))
             .map_err(|_| ApiError::internal("The worker pool has shut down"))

@@ -37,7 +37,11 @@ struct ProgressParams {
     state: Option<String>,
 }
 
-pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult {
+pub fn dispatch(
+    ctx: &mut MainCtx<'_>,
+    method: &str,
+    params: Value,
+) -> ApiResult {
     if method == "app.emit" {
         return emit(ctx, params);
     }
@@ -86,7 +90,8 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
 /// its events anything at all without colliding with `window.resized` and
 /// friends.
 fn emit(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
-    let EmitParams { event, payload, to } = Request::params("app.emit", params)?;
+    let EmitParams { event, payload, to } =
+        Request::params("app.emit", params)?;
 
     if let Some(label) = &to {
         ctx.windows.require(label)?;
@@ -106,8 +111,9 @@ fn emit(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
 /// The child is spawned before we quit so the new window appears as the old
 /// one goes away rather than after a visible gap.
 fn restart() -> ApiResult {
-    let exe = std::env::current_exe()
-        .map_err(|e| ApiError::io("Could not locate the running executable", e))?;
+    let exe = std::env::current_exe().map_err(|e| {
+        ApiError::io("Could not locate the running executable", e)
+    })?;
     // Everything but the program name, which the new process gets from `exe`.
     let mut args: Vec<String> = Vec::new();
     for arg in std::env::args().skip(1) {
@@ -169,7 +175,11 @@ fn set_badge(ctx: &mut MainCtx<'_>, label: Option<String>) -> ApiResult {
 }
 
 /// The bar drawn across the application's icon or taskbar button.
-fn set_progress(ctx: &mut MainCtx<'_>, value: Option<u64>, state: Option<&str>) -> ApiResult {
+fn set_progress(
+    ctx: &mut MainCtx<'_>,
+    value: Option<u64>,
+    state: Option<&str>,
+) -> ApiResult {
     use tao::window::{ProgressBarState, ProgressState};
 
     if let Some(value) = value {
@@ -194,14 +204,16 @@ fn set_progress(ctx: &mut MainCtx<'_>, value: Option<u64>, state: Option<&str>) 
         }
     };
 
-    ctx.windows
-        .require(ctx.source)?
-        .window
-        .set_progress_bar(ProgressBarState {
+    ctx.windows.require(ctx.source)?.window.set_progress_bar(
+        ProgressBarState {
             state,
             progress: value,
-            desktop_filename: Some(format!("{}.desktop", ctx.rt.config.app.identifier)),
-        });
+            desktop_filename: Some(format!(
+                "{}.desktop",
+                ctx.rt.config.app.identifier
+            )),
+        },
+    );
 
     Ok(Value::Null)
 }

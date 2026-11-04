@@ -20,7 +20,9 @@ impl Request {
         params: Value,
     ) -> Result<T, crate::error::ApiError> {
         serde_json::from_value(params).map_err(|e| {
-            crate::error::ApiError::invalid_params(format!("Bad params for `{method}`: {e}"))
+            crate::error::ApiError::invalid_params(format!(
+                "Bad params for `{method}`: {e}"
+            ))
         })
     }
 }

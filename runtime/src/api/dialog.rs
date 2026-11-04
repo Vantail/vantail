@@ -46,7 +46,11 @@ struct MessageParams {
     cancel_label: Option<String>,
 }
 
-pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult {
+pub fn dispatch(
+    ctx: &mut MainCtx<'_>,
+    method: &str,
+    params: Value,
+) -> ApiResult {
     let rt = ctx.rt;
     rt.permissions.require(rt.permissions.dialog, method)?;
 
@@ -109,7 +113,9 @@ fn message(params: Value) -> ApiResult {
 fn confirm(params: Value) -> ApiResult {
     let params: MessageParams = Request::params("dialog.confirm", params)?;
     let buttons = match (&params.ok_label, &params.cancel_label) {
-        (Some(ok), Some(cancel)) => rfd::MessageButtons::OkCancelCustom(ok.clone(), cancel.clone()),
+        (Some(ok), Some(cancel)) => {
+            rfd::MessageButtons::OkCancelCustom(ok.clone(), cancel.clone())
+        }
         _ => rfd::MessageButtons::OkCancel,
     };
     let answer = message_dialog(&params).set_buttons(buttons).show();
@@ -120,7 +126,9 @@ fn confirm(params: Value) -> ApiResult {
 fn accepted(answer: &rfd::MessageDialogResult, ok_label: Option<&str>) -> bool {
     match answer {
         rfd::MessageDialogResult::Ok | rfd::MessageDialogResult::Yes => true,
-        rfd::MessageDialogResult::Custom(label) => Some(label.as_str()) == ok_label,
+        rfd::MessageDialogResult::Custom(label) => {
+            Some(label.as_str()) == ok_label
+        }
         _ => false,
     }
 }

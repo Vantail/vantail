@@ -69,7 +69,12 @@ pub fn target() -> String {
 ///
 /// `None` means the response arrives later, from the download thread.
 #[cfg(feature = "updater")]
-pub fn dispatch(ctx: &mut MainCtx<'_>, id: &str, method: &str, params: Value) -> Option<ApiResult> {
+pub fn dispatch(
+    ctx: &mut MainCtx<'_>,
+    id: &str,
+    method: &str,
+    params: Value,
+) -> Option<ApiResult> {
     imp::dispatch(ctx, id, method, params)
 }
 
@@ -109,8 +114,9 @@ fn enclosing_bundle(exe: &std::path::Path) -> Option<&std::path::Path> {
 
 impl Installation {
     fn locate() -> Result<Self, ApiError> {
-        let exe = std::env::current_exe()
-            .map_err(|e| ApiError::io("Could not locate the running executable", e))?;
+        let exe = std::env::current_exe().map_err(|e| {
+            ApiError::io("Could not locate the running executable", e)
+        })?;
 
         // macOS: .../My App.app/Contents/MacOS/exe -> the bundle is the unit
         // that gets replaced.
@@ -129,11 +135,13 @@ impl Installation {
         // Portable layout: the executable sits at the top of its own folder.
         let root = exe
             .parent()
-            .ok_or_else(|| ApiError::internal("The executable has no containing directory"))?
+            .ok_or_else(|| {
+                ApiError::internal("The executable has no containing directory")
+            })?
             .to_path_buf();
-        let name = exe
-            .file_name()
-            .ok_or_else(|| ApiError::internal("The executable has no file name"))?;
+        let name = exe.file_name().ok_or_else(|| {
+            ApiError::internal("The executable has no file name")
+        })?;
         let executable_within_root = PathBuf::from(name);
 
         Ok(Self {

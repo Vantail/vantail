@@ -199,14 +199,16 @@ impl Job {
     /// point, and is what stops two callers sharing a `BEGIN`.
     fn transaction(&self) -> Option<u32> {
         match self {
-            Job::Query { transaction, .. } | Job::Execute { transaction, .. } => *transaction,
+            Job::Query { transaction, .. }
+            | Job::Execute { transaction, .. } => *transaction,
             Job::Begin { .. } => None,
-            Job::Commit { transaction, .. } | Job::Rollback { transaction, .. } => {
-                Some(*transaction)
-            }
+            Job::Commit { transaction, .. }
+            | Job::Rollback { transaction, .. } => Some(*transaction),
             // Closing, checkpointing and copying are connection-wide, so they
             // queue behind a transaction like anything else.
-            Job::Checkpoint { .. } | Job::Snapshot { .. } | Job::Close { .. } => None,
+            Job::Checkpoint { .. }
+            | Job::Snapshot { .. }
+            | Job::Close { .. } => None,
         }
     }
 
@@ -280,9 +282,15 @@ fn gone(id: u32) -> ApiError {
 /// Every call but `open` is handed to the connection's own thread, which
 /// answers for itself - so a slow query holds up neither the event loop nor
 /// the shared worker pool.
-pub fn dispatch(ctx: &mut MainCtx<'_>, id: &str, method: &str, params: Value) -> Option<ApiResult> {
+pub fn dispatch(
+    ctx: &mut MainCtx<'_>,
+    id: &str,
+    method: &str,
+    params: Value,
+) -> Option<ApiResult> {
     let rt = ctx.rt;
-    if let Err(error) = rt.permissions.require(rt.permissions.database, method) {
+    if let Err(error) = rt.permissions.require(rt.permissions.database, method)
+    {
         return Some(Err(error));
     }
 
@@ -360,7 +368,11 @@ fn execute_job(params: Value, reply: Reply) -> Result<(u32, Job), ApiError> {
     Ok((p.id, job))
 }
 
-fn begin_job(rt: &Runtime, params: Value, reply: Reply) -> Result<(u32, Job), ApiError> {
+fn begin_job(
+    rt: &Runtime,
+    params: Value,
+    reply: Reply,
+) -> Result<(u32, Job), ApiError> {
     let p: HandleParams = Request::params("database.begin", params)?;
     let transaction = rt
         .databases
@@ -393,7 +405,11 @@ fn checkpoint_job(params: Value, reply: Reply) -> Result<(u32, Job), ApiError> {
     Ok((p.id, Job::Checkpoint { reply }))
 }
 
-fn snapshot_job(rt: &Runtime, params: Value, reply: Reply) -> Result<(u32, Job), ApiError> {
+fn snapshot_job(
+    rt: &Runtime,
+    params: Value,
+    reply: Reply,
+) -> Result<(u32, Job), ApiError> {
     let p: SnapshotParams = Request::params("database.snapshot", params)?;
     // The copy is a new file, so it needs the same permission the database
     // itself did.
@@ -497,17 +513,18 @@ fn serve(
     ready: Sender<ApiResult>,
     inbox: Receiver<Job>,
 ) {
-    let connection = match connect(&target.path, target.read_only, target.key.as_deref()) {
-        Ok(connection) => {
-            let _ = ready.send(Ok(Value::Null));
-            connection
-        }
-        Err(error) => {
-            // `open` takes the registration back out on this path.
-            let _ = ready.send(Err(error));
-            return;
-        }
-    };
+    let connection =
+        match connect(&target.path, target.read_only, target.key.as_deref()) {
+            Ok(connection) => {
+                let _ = ready.send(Ok(Value::Null));
+                connection
+            }
+            Err(error) => {
+                // `open` takes the registration back out on this path.
+                let _ = ready.send(Err(error));
+                return;
+            }
+        };
 
     pump(&rt, connection, inbox);
     // However the loop ended - closed, or every sender dropped at shutdown -
@@ -515,7 +532,11 @@ fn serve(
     rt.databases.remove(id);
 }
 
-fn connect(path: &PathBuf, read_only: bool, key: Option<&str>) -> Result<Connection, ApiError> {
+fn connect(
+    path: &PathBuf,
+    read_only: bool,
+    key: Option<&str>,
+) -> Result<Connection, ApiError> {
     use rusqlite::OpenFlags;
 
     let flags = if read_only {
@@ -526,8 +547,9 @@ fn connect(path: &PathBuf, read_only: bool, key: Option<&str>) -> Result<Connect
             | OpenFlags::SQLITE_OPEN_NO_MUTEX
     };
 
-    let connection = Connection::open_with_flags(path, flags)
-        .map_err(|e| failed(&format!("Could not open `{}`", path.display()), &e))?;
+    let connection = Connection::open_with_flags(path, flags).map_err(|e| {
+        failed(&format!("Could not open `{}`", path.display()), &e)
+    })?;
 
     // Before anything else touches the file. SQLCipher will refuse a key
     // given after the connection has already read something.
@@ -605,7 +627,13 @@ fn pump(rt: &Runtime, connection: Connection, inbox: Receiver<Job>) {
         };
 
         if let Job::Close { reply } = job {
-            close_connection(rt, connection, transaction.is_some(), waiting, reply);
+            close_connection(
+                rt,
+                connection,
+                transaction.is_some(),
+                waiting,
+                reply,
+            );
             return;
         }
 
@@ -719,7 +747,12 @@ fn not_open(transaction: u32) -> ApiError {
 }
 
 /// Run a job that is allowed to run now, and answer it.
-fn run(rt: &Runtime, connection: &Connection, job: Job, transaction: &mut Option<OpenTransaction>) {
+fn run(
+    rt: &Runtime,
+    connection: &Connection,
+    job: Job,
+    transaction: &mut Option<OpenTransaction>,
+) {
     match job {
         Job::Query {
             sql,
@@ -739,16 +772,26 @@ fn run(rt: &Runtime, connection: &Connection, job: Job, transaction: &mut Option
             transaction: id,
             reply,
         } => reply.send(rt, begin(connection, id, transaction)),
-        Job::Commit { reply, .. } => reply.send(rt, commit(connection, transaction)),
-        Job::Rollback { reply, .. } => reply.send(rt, roll_back(connection, transaction)),
+        Job::Commit { reply, .. } => {
+            reply.send(rt, commit(connection, transaction))
+        }
+        Job::Rollback { reply, .. } => {
+            reply.send(rt, roll_back(connection, transaction))
+        }
         Job::Checkpoint { reply } => reply.send(rt, checkpoint(connection)),
-        Job::Snapshot { path, reply } => reply.send(rt, snapshot(connection, &path)),
+        Job::Snapshot { path, reply } => {
+            reply.send(rt, snapshot(connection, &path))
+        }
         // Handled by the caller, which has to stop the loop.
         Job::Close { reply } => reply.send(rt, Ok(Value::Null)),
     }
 }
 
-fn begin(connection: &Connection, id: u32, transaction: &mut Option<OpenTransaction>) -> ApiResult {
+fn begin(
+    connection: &Connection,
+    id: u32,
+    transaction: &mut Option<OpenTransaction>,
+) -> ApiResult {
     // IMMEDIATE, not DEFERRED: take the write lock now rather than discovering
     // at the first write that somebody else has it.
     connection
@@ -761,7 +804,10 @@ fn begin(connection: &Connection, id: u32, transaction: &mut Option<OpenTransact
     Ok(json!({ "transaction": id }))
 }
 
-fn commit(connection: &Connection, transaction: &mut Option<OpenTransaction>) -> ApiResult {
+fn commit(
+    connection: &Connection,
+    transaction: &mut Option<OpenTransaction>,
+) -> ApiResult {
     let result = match connection.execute_batch("COMMIT") {
         Ok(()) => Ok(Value::Null),
         Err(error) => Err(failed("Could not commit", &error)),
@@ -772,7 +818,10 @@ fn commit(connection: &Connection, transaction: &mut Option<OpenTransaction>) ->
     result
 }
 
-fn roll_back(connection: &Connection, transaction: &mut Option<OpenTransaction>) -> ApiResult {
+fn roll_back(
+    connection: &Connection,
+    transaction: &mut Option<OpenTransaction>,
+) -> ApiResult {
     let result = match connection.execute_batch("ROLLBACK") {
         Ok(()) => Ok(Value::Null),
         Err(error) => Err(failed("Could not roll back", &error)),
@@ -785,7 +834,12 @@ fn roll_back(connection: &Connection, transaction: &mut Option<OpenTransaction>)
 // Statements
 // ---------------------------------------------------------------------------
 
-fn query(connection: &Connection, sql: &str, params: &[Value], bigint: bool) -> ApiResult {
+fn query(
+    connection: &Connection,
+    sql: &str,
+    params: &[Value],
+    bigint: bool,
+) -> ApiResult {
     let mut statement = connection
         .prepare(sql)
         .map_err(|e| failed("Could not prepare the statement", &e))?;
@@ -818,7 +872,12 @@ fn query(connection: &Connection, sql: &str, params: &[Value], bigint: bool) -> 
     Ok(json!({ "rows": out, "columns": columns }))
 }
 
-fn execute(connection: &Connection, sql: &str, params: &[Value], bigint: bool) -> ApiResult {
+fn execute(
+    connection: &Connection,
+    sql: &str,
+    params: &[Value],
+    bigint: bool,
+) -> ApiResult {
     let bound = bind(params)?;
     let changed = connection
         .execute(sql, rusqlite::params_from_iter(bound))
@@ -882,16 +941,23 @@ const KEY_BYTES: usize = 32;
 /// this a wrong key would surface later as an unrelated-looking error in the
 /// middle of an application's first query.
 #[cfg(feature = "database-encryption")]
-fn apply_key(connection: &Connection, key: &str, path: &Path) -> Result<(), ApiError> {
+fn apply_key(
+    connection: &Connection,
+    key: &str,
+    path: &Path,
+) -> Result<(), ApiError> {
     connection
         .pragma_update(None, "key", format!("x'{key}'"))
         .map_err(|e| failed("Could not key the database", &e))?;
 
     // Reading the schema is what fails when the key does not fit.
-    let readable = match connection.prepare("select count(*) from sqlite_schema") {
-        Ok(mut statement) => statement.query_row([], |row| row.get::<_, i64>(0)).is_ok(),
-        Err(_) => false,
-    };
+    let readable =
+        match connection.prepare("select count(*) from sqlite_schema") {
+            Ok(mut statement) => {
+                statement.query_row([], |row| row.get::<_, i64>(0)).is_ok()
+            }
+            Err(_) => false,
+        };
     if readable {
         return Ok(());
     }
@@ -911,7 +977,11 @@ fn apply_key(connection: &Connection, key: &str, path: &Path) -> Result<(), ApiE
 /// unencrypted and hand back a working database, and the application would
 /// have no way to tell that its ledger was in the clear.
 #[cfg(not(feature = "database-encryption"))]
-fn apply_key(_connection: &Connection, _key: &str, _path: &Path) -> Result<(), ApiError> {
+fn apply_key(
+    _connection: &Connection,
+    _key: &str,
+    _path: &Path,
+) -> Result<(), ApiError> {
     Err(ApiError::unsupported(
         "This runtime was built without database encryption. Rebuild with the \
          `database-encryption` feature, or open the database without `keySecret`.",
@@ -957,8 +1027,9 @@ fn create_key(rt: &Runtime, secret: &str) -> ApiResult {
     }
 
     let mut bytes = [0_u8; KEY_BYTES];
-    getrandom::fill(&mut bytes)
-        .map_err(|e| ApiError::internal(format!("Could not generate a key: {e}")))?;
+    getrandom::fill(&mut bytes).map_err(|e| {
+        ApiError::internal(format!("Could not generate a key: {e}"))
+    })?;
 
     let mut hex = String::with_capacity(KEY_BYTES * 2);
     for byte in bytes {
@@ -1033,7 +1104,11 @@ fn one(value: &Value) -> Result<SqlValue, ApiError> {
 }
 
 /// Turn a column back into JSON.
-fn encode(value: ValueRef<'_>, bigint: bool, column: &str) -> Result<Value, ApiError> {
+fn encode(
+    value: ValueRef<'_>,
+    bigint: bool,
+    column: &str,
+) -> Result<Value, ApiError> {
     Ok(match value {
         ValueRef::Null => Value::Null,
         ValueRef::Integer(integer) => number(integer, bigint, column)?,
@@ -1086,7 +1161,8 @@ mod tests {
     use super::*;
 
     fn memory() -> Connection {
-        let connection = Connection::open_in_memory().expect("in-memory database");
+        let connection =
+            Connection::open_in_memory().expect("in-memory database");
         connection
             .pragma_update(None, "foreign_keys", true)
             .expect("foreign keys");
@@ -1220,7 +1296,13 @@ mod tests {
             .execute_batch("create table t(v integer)")
             .unwrap();
 
-        let out = execute(&connection, "insert into t values (?)", &[json!(7)], false).unwrap();
+        let out = execute(
+            &connection,
+            "insert into t values (?)",
+            &[json!(7)],
+            false,
+        )
+        .unwrap();
         assert_eq!(out["changes"], json!(1));
         assert_eq!(out["lastInsertRowId"], json!(1));
     }
@@ -1237,7 +1319,9 @@ mod tests {
             )
             .unwrap();
 
-        let error = execute(&connection, "insert into child values (9)", &[], false).unwrap_err();
+        let error =
+            execute(&connection, "insert into child values (9)", &[], false)
+                .unwrap_err();
         assert!(error.message.contains("FOREIGN KEY"), "{}", error.message);
     }
 
@@ -1282,7 +1366,8 @@ mod tests {
 
         // The right key reads it back.
         let reopened = connect(&path, false, Some(&key)).expect("reopens");
-        let out = query(&reopened, "select note from entry", &[], false).unwrap();
+        let out =
+            query(&reopened, "select note from entry", &[], false).unwrap();
         assert_eq!(out["rows"][0]["note"], json!("secret"));
         drop(reopened);
 
@@ -1316,7 +1401,10 @@ mod tests {
         fn was_refused(self) -> bool {
             match self {
                 Err(_) => true,
-                Ok(connection) => query(&connection, "select note from entry", &[], false).is_err(),
+                Ok(connection) => {
+                    query(&connection, "select note from entry", &[], false)
+                        .is_err()
+                }
             }
         }
     }
@@ -1328,7 +1416,8 @@ mod tests {
         // back a working database, so this has to be an error.
         let dir = scratch("nokey");
         let path = dir.join("ledger.sqlite");
-        let error = connect(&path, false, Some(&"0".repeat(64))).expect_err("no sqlcipher");
+        let error = connect(&path, false, Some(&"0".repeat(64)))
+            .expect_err("no sqlcipher");
         assert_eq!(error.code, crate::error::code::UNSUPPORTED);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1341,25 +1430,29 @@ mod tests {
         // saying so from the application actually takes.
         let connection = memory();
 
-        let before = query(&connection, "pragma synchronous", &[], false).unwrap();
+        let before =
+            query(&connection, "pragma synchronous", &[], false).unwrap();
         assert!(before["rows"][0]["synchronous"].is_number());
 
         execute(&connection, "pragma synchronous = FULL", &[], false).unwrap();
-        let after = query(&connection, "pragma synchronous", &[], false).unwrap();
+        let after =
+            query(&connection, "pragma synchronous", &[], false).unwrap();
         // 2 is FULL; 1 is NORMAL.
         assert_eq!(after["rows"][0]["synchronous"], json!(2));
     }
 
     #[test]
     fn a_snapshot_is_a_database_that_opens_on_its_own() {
-        let directory =
-            std::env::temp_dir().join(format!("vantail-db-test-{}", std::process::id()));
+        let directory = std::env::temp_dir()
+            .join(format!("vantail-db-test-{}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
         let copy = directory.join("copy.sqlite");
 
         let connection = memory();
         connection
-            .execute_batch("create table t(v text); insert into t values ('kept');")
+            .execute_batch(
+                "create table t(v text); insert into t values ('kept');",
+            )
             .unwrap();
 
         snapshot(&connection, &copy).unwrap();

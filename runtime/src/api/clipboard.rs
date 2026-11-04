@@ -64,9 +64,9 @@ fn write_text(rt: &Runtime, params: Value) -> ApiResult {
         .require(rt.permissions.clipboard_write, "clipboard.writeText")?;
     let TextParams { text } = Request::params("clipboard.writeText", params)?;
     with_clipboard(move |clipboard| {
-        clipboard
-            .set_text(text)
-            .map_err(|e| ApiError::internal(format!("Could not write the clipboard: {e}")))?;
+        clipboard.set_text(text).map_err(|e| {
+            ApiError::internal(format!("Could not write the clipboard: {e}"))
+        })?;
         Ok(Value::Null)
     })
 }
@@ -75,9 +75,9 @@ fn clear(rt: &Runtime) -> ApiResult {
     rt.permissions
         .require(rt.permissions.clipboard_write, "clipboard.clear")?;
     with_clipboard(|clipboard| {
-        clipboard
-            .clear()
-            .map_err(|e| ApiError::internal(format!("Could not clear the clipboard: {e}")))?;
+        clipboard.clear().map_err(|e| {
+            ApiError::internal(format!("Could not clear the clipboard: {e}"))
+        })?;
         Ok(Value::Null)
     })
 }
@@ -110,15 +110,15 @@ fn write_image(rt: &Runtime, params: Value) -> ApiResult {
     rt.permissions
         .require(rt.permissions.clipboard_write, "clipboard.writeImage")?;
     let ImageParams { data } = Request::params("clipboard.writeImage", params)?;
-    let bytes = BASE64
-        .decode(data.as_bytes())
-        .map_err(|e| ApiError::invalid_params(format!("`data` is not base64: {e}")))?;
+    let bytes = BASE64.decode(data.as_bytes()).map_err(|e| {
+        ApiError::invalid_params(format!("`data` is not base64: {e}"))
+    })?;
     let image = decode_png(&bytes)?;
 
     with_clipboard(move |clipboard| {
-        clipboard
-            .set_image(image)
-            .map_err(|e| ApiError::internal(format!("Could not write the image: {e}")))?;
+        clipboard.set_image(image).map_err(|e| {
+            ApiError::internal(format!("Could not write the image: {e}"))
+        })?;
         Ok(Value::Null)
     })
 }
@@ -132,19 +132,20 @@ fn has_image(rt: &Runtime) -> ApiResult {
 /// Clipboard RGBA -> PNG.
 fn encode_png(image: &arboard::ImageData<'_>) -> Result<Vec<u8>, ApiError> {
     let mut out = Vec::new();
-    let mut encoder = png::Encoder::new(&mut out, image.width as u32, image.height as u32);
+    let mut encoder =
+        png::Encoder::new(&mut out, image.width as u32, image.height as u32);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
 
-    let mut writer = encoder
-        .write_header()
-        .map_err(|e| ApiError::internal(format!("Could not encode the image: {e}")))?;
-    writer
-        .write_image_data(&image.bytes)
-        .map_err(|e| ApiError::internal(format!("Could not encode the image: {e}")))?;
-    writer
-        .finish()
-        .map_err(|e| ApiError::internal(format!("Could not encode the image: {e}")))?;
+    let mut writer = encoder.write_header().map_err(|e| {
+        ApiError::internal(format!("Could not encode the image: {e}"))
+    })?;
+    writer.write_image_data(&image.bytes).map_err(|e| {
+        ApiError::internal(format!("Could not encode the image: {e}"))
+    })?;
+    writer.finish().map_err(|e| {
+        ApiError::internal(format!("Could not encode the image: {e}"))
+    })?;
 
     Ok(out)
 }
@@ -157,21 +158,22 @@ fn encode_png(image: &arboard::ImageData<'_>) -> Result<Vec<u8>, ApiError> {
 fn decode_png(bytes: &[u8]) -> Result<arboard::ImageData<'static>, ApiError> {
     let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
     decoder.set_transformations(
-        png::Transformations::normalize_to_color8() | png::Transformations::ALPHA,
+        png::Transformations::normalize_to_color8()
+            | png::Transformations::ALPHA,
     );
 
-    let mut reader = decoder
-        .read_info()
-        .map_err(|e| ApiError::invalid_params(format!("That is not a PNG: {e}")))?;
+    let mut reader = decoder.read_info().map_err(|e| {
+        ApiError::invalid_params(format!("That is not a PNG: {e}"))
+    })?;
 
     let size = match reader.output_buffer_size() {
         Some(size) => size,
         None => 0,
     };
     let mut buffer = vec![0; size];
-    let info = reader
-        .next_frame(&mut buffer)
-        .map_err(|e| ApiError::invalid_params(format!("Could not read the PNG: {e}")))?;
+    let info = reader.next_frame(&mut buffer).map_err(|e| {
+        ApiError::invalid_params(format!("Could not read the PNG: {e}"))
+    })?;
 
     if info.color_type != png::ColorType::Rgba {
         return Err(ApiError::invalid_params(format!(
@@ -196,8 +198,11 @@ where
         let mut slot = cell.borrow_mut();
         let clipboard = match slot.take() {
             Some(clipboard) => clipboard,
-            None => arboard::Clipboard::new()
-                .map_err(|e| ApiError::unsupported(format!("The clipboard is unavailable: {e}")))?,
+            None => arboard::Clipboard::new().map_err(|e| {
+                ApiError::unsupported(format!(
+                    "The clipboard is unavailable: {e}"
+                ))
+            })?,
         };
         action(slot.insert(clipboard))
     })
@@ -213,7 +218,12 @@ mod tests {
             for x in 0..width {
                 // Something with structure, so a transposed or shifted image
                 // does not still compare equal.
-                bytes.extend_from_slice(&[(x * 8) as u8, (y * 8) as u8, 0x40, 0xff]);
+                bytes.extend_from_slice(&[
+                    (x * 8) as u8,
+                    (y * 8) as u8,
+                    0x40,
+                    0xff,
+                ]);
             }
         }
         arboard::ImageData {
@@ -263,7 +273,8 @@ mod tests {
 
     #[test]
     fn something_that_is_not_a_png_is_rejected_as_bad_input() {
-        let error = decode_png(b"definitely not a png").expect_err("should refuse");
+        let error =
+            decode_png(b"definitely not a png").expect_err("should refuse");
         assert_eq!(error.code, crate::error::code::INVALID_PARAMS);
     }
 }

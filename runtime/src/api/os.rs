@@ -19,14 +19,22 @@ pub fn dispatch(rt: &Runtime, method: &str, _params: Value) -> ApiResult {
         "os.homeDir" => path(dirs::home_dir(), "home directory"),
         "os.tempDir" => path(Some(std::env::temp_dir()), "temp directory"),
         "os.appDataDir" => path(
-            crate::permissions::app_dir(dirs::data_dir(), &rt.config.app.identifier),
+            crate::permissions::app_dir(
+                dirs::data_dir(),
+                &rt.config.app.identifier,
+            ),
             "application data directory",
         ),
         "os.appConfigDir" => path(
-            crate::permissions::app_dir(dirs::config_dir(), &rt.config.app.identifier),
+            crate::permissions::app_dir(
+                dirs::config_dir(),
+                &rt.config.app.identifier,
+            ),
             "application config directory",
         ),
-        "os.resourceDir" => path(Some(rt.resource_dir.clone()), "resource directory"),
+        "os.resourceDir" => {
+            path(Some(rt.resource_dir.clone()), "resource directory")
+        }
         "os.info" => Ok(json!({
             "platform": platform(),
             "arch": std::env::consts::ARCH,
@@ -48,6 +56,8 @@ fn platform() -> &'static str {
 fn path(value: Option<PathBuf>, what: &str) -> ApiResult {
     match value {
         Some(path) => Ok(json!(path.to_string_lossy())),
-        None => Err(ApiError::unsupported(format!("This system has no {what}"))),
+        None => {
+            Err(ApiError::unsupported(format!("This system has no {what}")))
+        }
     }
 }

@@ -27,7 +27,8 @@ pub mod code {
     /// A request with `redirect: "error"` was answered with a redirect.
     pub const REDIRECT_REFUSED: &str = "REDIRECT_REFUSED";
     /// A `sharedState.set` value that cannot be represented as JSON.
-    pub const SHARED_STATE_NOT_SERIALIZABLE: &str = "SHARED_STATE_NOT_SERIALIZABLE";
+    pub const SHARED_STATE_NOT_SERIALIZABLE: &str =
+        "SHARED_STATE_NOT_SERIALIZABLE";
     /// A `sharedState.set` for a key no `write` pattern covers.
     pub const SHARED_STATE_KEY_DENIED: &str = "SHARED_STATE_KEY_DENIED";
     /// The shared-state file under `$APPDATA` could not be read or written.

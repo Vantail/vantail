@@ -205,7 +205,12 @@ impl InFlight {
 // Dispatch
 // ---------------------------------------------------------------------------
 
-pub fn dispatch(ctx: &mut MainCtx<'_>, id: &str, method: &str, params: Value) -> Option<ApiResult> {
+pub fn dispatch(
+    ctx: &mut MainCtx<'_>,
+    id: &str,
+    method: &str,
+    params: Value,
+) -> Option<ApiResult> {
     match method {
         "network.request" => start(ctx, id, params),
         "network.stream" => start_stream(ctx, id, params),
@@ -256,7 +261,11 @@ fn start(ctx: &mut MainCtx<'_>, id: &str, params: Value) -> Option<ApiResult> {
 /// On its own thread rather than the network pool: a server-sent event stream
 /// stays open for as long as the application wants it, and a fixed pool would
 /// be starved by two of them.
-fn start_stream(ctx: &mut MainCtx<'_>, id: &str, params: Value) -> Option<ApiResult> {
+fn start_stream(
+    ctx: &mut MainCtx<'_>,
+    id: &str,
+    params: Value,
+) -> Option<ApiResult> {
     let rt = ctx.rt.clone();
     let request_id = id.to_string();
     let window = ctx.source.to_string();
@@ -301,7 +310,8 @@ fn cancel(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
 
 /// Stop a stream that is already delivering.
 fn cancel_stream(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
-    let StreamIdParams { id } = Request::params("network.cancelStream", params)?;
+    let StreamIdParams { id } =
+        Request::params("network.cancelStream", params)?;
     Ok(json!(ctx.rt.requests.cancel_stream(id)))
 }
 
@@ -309,7 +319,11 @@ fn cancel_stream(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
 // Doing the work
 // ---------------------------------------------------------------------------
 
-fn perform(rt: &Arc<Runtime>, params: Value, cancelled: &AtomicBool) -> ApiResult {
+fn perform(
+    rt: &Arc<Runtime>,
+    params: Value,
+    cancelled: &AtomicBool,
+) -> ApiResult {
     let params: RequestParams = Request::params("network.request", params)?;
     let binary = wants_bytes(params.response_type.as_deref())?;
 
@@ -384,7 +398,9 @@ fn run_stream(
     );
     let failure = match forwarded {
         Ok(()) => None,
-        Err(error) => Some(format!("Could not read the stream from `{url}`: {error}")),
+        Err(error) => {
+            Some(format!("Could not read the stream from `{url}`: {error}"))
+        }
     };
 
     let was_cancelled = cancelled.load(Ordering::SeqCst);
@@ -500,9 +516,13 @@ struct Outbound {
 impl Outbound {
     fn new(params: &RequestParams) -> Result<Self, ApiError> {
         let body = match (&params.body_base64, &params.body) {
-            (Some(encoded), _) => BASE64.decode(encoded.as_bytes()).map_err(|e| {
-                ApiError::invalid_params(format!("`bodyBase64` is not valid base64: {e}"))
-            })?,
+            (Some(encoded), _) => {
+                BASE64.decode(encoded.as_bytes()).map_err(|e| {
+                    ApiError::invalid_params(format!(
+                        "`bodyBase64` is not valid base64: {e}"
+                    ))
+                })?
+            }
             (None, Some(text)) => text.as_bytes().to_vec(),
             (None, None) => Vec::new(),
         };
@@ -591,7 +611,13 @@ fn negotiate(
                     started,
                 })
             }
-            Redirect::Error => return Err(redirect_refused(&request.url, &head, &sent_location)),
+            Redirect::Error => {
+                return Err(redirect_refused(
+                    &request.url,
+                    &head,
+                    &sent_location,
+                ))
+            }
             Redirect::Follow => {}
         }
 
@@ -610,7 +636,9 @@ fn drop_credentials(headers: &mut BTreeMap<String, String>) -> Vec<String> {
     let mut dropped: Vec<String> = Vec::new();
     headers.retain(|name, _| {
         let lower = name.to_ascii_lowercase();
-        let keep = lower != "authorization" && lower != "cookie" && lower != "proxy-authorization";
+        let keep = lower != "authorization"
+            && lower != "cookie"
+            && lower != "proxy-authorization";
         if !keep {
             dropped.push(lower);
         }
@@ -642,7 +670,8 @@ fn send_hop(
     // Both are looked up per hop rather than once: a redirect to another host
     // must get that host's certificate and that host's proxy, not the ones the
     // first hop happened to match.
-    let certificate = match rt.permissions.network.client_certificate(endpoint) {
+    let certificate = match rt.permissions.network.client_certificate(endpoint)
+    {
         Some(paths) => Some(client_certificate(paths)?),
         None => None,
     };
@@ -684,7 +713,11 @@ fn redirect_refused(url: &str, head: &Head, location: &str) -> ApiError {
 
 /// Out of hops. Not a transport failure, so not `IO_ERROR`: the redirects
 /// followed so far, the last of them the one that was not, go with it.
-fn too_many_redirects(url: &str, allowed_hops: u32, redirects: Vec<Value>) -> ApiError {
+fn too_many_redirects(
+    url: &str,
+    allowed_hops: u32,
+    redirects: Vec<Value>,
+) -> ApiError {
     ApiError::new(
         crate::error::code::TOO_MANY_REDIRECTS,
         format!(
@@ -709,7 +742,10 @@ static PROMPT: OnceLock<Mutex<()>> = OnceLock::new();
 /// nobody could have listed at build time can still be written, and a page
 /// that has been taken over still cannot reach an attacker's server without a
 /// person reading its name and agreeing.
-pub(crate) fn authorise(rt: &Arc<Runtime>, url: &str) -> Result<Endpoint, ApiError> {
+pub(crate) fn authorise(
+    rt: &Arc<Runtime>,
+    url: &str,
+) -> Result<Endpoint, ApiError> {
     match rt.permissions.network.check(url) {
         Ok(endpoint) => Ok(endpoint),
         // A host the config never named. If the application asked to be able
@@ -718,7 +754,11 @@ pub(crate) fn authorise(rt: &Arc<Runtime>, url: &str) -> Result<Endpoint, ApiErr
     }
 }
 
-fn ask_to_grant(rt: &Arc<Runtime>, url: &str, denial: ApiError) -> Result<Endpoint, ApiError> {
+fn ask_to_grant(
+    rt: &Arc<Runtime>,
+    url: &str,
+    denial: ApiError,
+) -> Result<Endpoint, ApiError> {
     let Some(endpoint) = rt.permissions.network.promptable(url) else {
         return Err(denial);
     };
@@ -784,10 +824,13 @@ struct Head {
 /// Loaded on first use rather than at startup: a certificate under `$APPDATA`
 /// may not be provisioned until the user does it, and an application that
 /// will not launch is a worse failure than a request that will not send.
-static CERTIFICATES: OnceLock<Mutex<HashMap<(PathBuf, PathBuf), ureq::tls::ClientCert>>> =
-    OnceLock::new();
+static CERTIFICATES: OnceLock<
+    Mutex<HashMap<(PathBuf, PathBuf), ureq::tls::ClientCert>>,
+> = OnceLock::new();
 
-fn client_certificate(paths: &CertificatePaths) -> Result<ureq::tls::ClientCert, ApiError> {
+fn client_certificate(
+    paths: &CertificatePaths,
+) -> Result<ureq::tls::ClientCert, ApiError> {
     let cache = CERTIFICATES.get_or_init(Mutex::default);
     let key = (paths.certificate.clone(), paths.key.clone());
 
@@ -827,14 +870,16 @@ fn client_certificate(paths: &CertificatePaths) -> Result<ureq::tls::ClientCert,
         )));
     }
 
-    let private_key = ureq::tls::PrivateKey::from_pem(&key_pem).map_err(|e| {
-        ApiError::invalid_params(format!(
-            "`{}` is not a PEM private key: {e}",
-            paths.key.display()
-        ))
-    })?;
+    let private_key =
+        ureq::tls::PrivateKey::from_pem(&key_pem).map_err(|e| {
+            ApiError::invalid_params(format!(
+                "`{}` is not a PEM private key: {e}",
+                paths.key.display()
+            ))
+        })?;
 
-    let certificate = ureq::tls::ClientCert::new_with_certs(&chain, private_key);
+    let certificate =
+        ureq::tls::ClientCert::new_with_certs(&chain, private_key);
     lock(cache).insert(key, certificate.clone());
     Ok(certificate)
 }
@@ -862,9 +907,9 @@ fn open(
     })?;
 
     let started = Instant::now();
-    let response = agent
-        .run(built)
-        .map_err(|e| ApiError::new(crate::error::code::IO_ERROR, describe(&request.url, &e)))?;
+    let response = agent.run(built).map_err(|e| {
+        ApiError::new(crate::error::code::IO_ERROR, describe(&request.url, &e))
+    })?;
     // `run` returns once the head is readable; the body is still streaming.
     let elapsed = started.elapsed();
 
@@ -906,7 +951,10 @@ fn agent(
 }
 
 /// The response's head, and its body still unread.
-fn read_head(response: http::Response<ureq::Body>, elapsed: Duration) -> (Head, ureq::Body) {
+fn read_head(
+    response: http::Response<ureq::Body>,
+    elapsed: Duration,
+) -> (Head, ureq::Body) {
     let status = response.status();
     let mut collected = BTreeMap::new();
     let mut pairs = Vec::new();
@@ -1041,7 +1089,12 @@ fn decode_text(carry: &mut Vec<u8>, chunk: &[u8]) -> String {
 // Rendering
 // ---------------------------------------------------------------------------
 
-fn render(negotiated: Negotiated, body: Vec<u8>, binary: bool, download: Duration) -> Value {
+fn render(
+    negotiated: Negotiated,
+    body: Vec<u8>,
+    binary: bool,
+    download: Duration,
+) -> Value {
     // The body has been read into `body` by now; what is left is the head and
     // the record of how it was reached.
     let Negotiated {
@@ -1130,7 +1183,10 @@ fn millis(duration: Duration) -> f64 {
 /// Turn a transport failure into something worth reading.
 fn describe(url: &str, error: &ureq::Error) -> String {
     let text = error.to_string();
-    if text.contains("certificate") || text.contains("Tls") || text.contains("tls") {
+    if text.contains("certificate")
+        || text.contains("Tls")
+        || text.contains("tls")
+    {
         return format!(
             "Could not reach `{url}`: {text}. If this is a device on your own network with a \
              self-signed certificate, add its host to `permissions.network.allowInvalidCertificates`."

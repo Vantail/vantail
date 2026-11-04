@@ -66,7 +66,9 @@ pub fn dispatch(
     Some(match method {
         "updater.check" => match check(&rt) {
             Ok(Some(update)) => Ok(update),
-            Ok(None) => Ok(json!({ "available": false, "currentVersion": rt.config.app.version })),
+            Ok(None) => Ok(
+                json!({ "available": false, "currentVersion": rt.config.app.version }),
+            ),
             Err(error) => Err(error),
         },
 
@@ -133,18 +135,17 @@ fn fetch_manifest(rt: &Runtime) -> Result<(Manifest, UpdaterConfig), ApiError> {
         .replace("{{currentVersion}}", &rt.config.app.version);
 
     let agent = agent(config.timeout_ms);
-    let mut response = agent
-        .get(&url)
-        .call()
-        .map_err(|e| ApiError::internal(format!("Could not reach the update endpoint: {e}")))?;
+    let mut response = agent.get(&url).call().map_err(|e| {
+        ApiError::internal(format!("Could not reach the update endpoint: {e}"))
+    })?;
 
-    let body = response
-        .body_mut()
-        .read_to_string()
-        .map_err(|e| ApiError::internal(format!("Could not read the update manifest: {e}")))?;
+    let body = response.body_mut().read_to_string().map_err(|e| {
+        ApiError::internal(format!("Could not read the update manifest: {e}"))
+    })?;
 
-    let manifest: Manifest = serde_json::from_str(&body)
-        .map_err(|e| ApiError::internal(format!("The update manifest is not valid: {e}")))?;
+    let manifest: Manifest = serde_json::from_str(&body).map_err(|e| {
+        ApiError::internal(format!("The update manifest is not valid: {e}"))
+    })?;
 
     Ok((manifest, config))
 }
@@ -218,15 +219,19 @@ fn download(rt: &Arc<Runtime>, source: &str) -> ApiResult {
         )
     })?;
 
-    let archive = staging_dir(rt)?.join(format!("update-{}.tar.gz", manifest.version));
-    std::fs::write(&archive, &bytes).map_err(|e| ApiError::io("Could not save the update", e))?;
+    let archive =
+        staging_dir(rt)?.join(format!("update-{}.tar.gz", manifest.version));
+    std::fs::write(&archive, &bytes)
+        .map_err(|e| ApiError::io("Could not save the update", e))?;
 
     rt.updates.set(Pending {
         version: manifest.version.clone(),
         archive,
     });
 
-    Ok(json!({ "ready": true, "version": manifest.version, "bytes": bytes.len() }))
+    Ok(
+        json!({ "ready": true, "version": manifest.version, "bytes": bytes.len() }),
+    )
 }
 
 fn fetch_archive(
@@ -236,10 +241,9 @@ fn fetch_archive(
     url: &str,
 ) -> Result<Vec<u8>, ApiError> {
     let agent = agent(config.timeout_ms);
-    let mut response = agent
-        .get(url)
-        .call()
-        .map_err(|e| ApiError::internal(format!("Could not download the update: {e}")))?;
+    let mut response = agent.get(url).call().map_err(|e| {
+        ApiError::internal(format!("Could not download the update: {e}"))
+    })?;
 
     let total = announced_length(response.headers().get("content-length"));
 
@@ -296,29 +300,37 @@ fn fetch_archive(
     Ok(bytes)
 }
 
-fn decode_signature(encoded: &str) -> Result<ed25519_dalek::Signature, ApiError> {
-    let bytes = BASE64
-        .decode(encoded.trim().as_bytes())
-        .map_err(|e| ApiError::internal(format!("The signature is not valid base64: {e}")))?;
-    let bytes: [u8; 64] = bytes
-        .try_into()
-        .map_err(|_| ApiError::internal("An ed25519 signature must be 64 bytes"))?;
+fn decode_signature(
+    encoded: &str,
+) -> Result<ed25519_dalek::Signature, ApiError> {
+    let bytes = BASE64.decode(encoded.trim().as_bytes()).map_err(|e| {
+        ApiError::internal(format!("The signature is not valid base64: {e}"))
+    })?;
+    let bytes: [u8; 64] = bytes.try_into().map_err(|_| {
+        ApiError::internal("An ed25519 signature must be 64 bytes")
+    })?;
     Ok(ed25519_dalek::Signature::from_bytes(&bytes))
 }
 
-fn verifying_key(encoded: &str) -> Result<ed25519_dalek::VerifyingKey, ApiError> {
-    let bytes = BASE64
-        .decode(encoded.trim().as_bytes())
-        .map_err(|e| ApiError::internal(format!("`publicKey` is not valid base64: {e}")))?;
-    let bytes: [u8; 32] = bytes
-        .try_into()
-        .map_err(|_| ApiError::internal("An ed25519 public key must be 32 bytes"))?;
-    ed25519_dalek::VerifyingKey::from_bytes(&bytes)
-        .map_err(|e| ApiError::internal(format!("`publicKey` is not a valid ed25519 key: {e}")))
+fn verifying_key(
+    encoded: &str,
+) -> Result<ed25519_dalek::VerifyingKey, ApiError> {
+    let bytes = BASE64.decode(encoded.trim().as_bytes()).map_err(|e| {
+        ApiError::internal(format!("`publicKey` is not valid base64: {e}"))
+    })?;
+    let bytes: [u8; 32] = bytes.try_into().map_err(|_| {
+        ApiError::internal("An ed25519 public key must be 32 bytes")
+    })?;
+    ed25519_dalek::VerifyingKey::from_bytes(&bytes).map_err(|e| {
+        ApiError::internal(format!(
+            "`publicKey` is not a valid ed25519 key: {e}"
+        ))
+    })
 }
 
 fn staging_dir(rt: &Runtime) -> Result<PathBuf, ApiError> {
-    let dir = std::env::temp_dir().join(format!("vantail-update-{}", rt.config.app.identifier));
+    let dir = std::env::temp_dir()
+        .join(format!("vantail-update-{}", rt.config.app.identifier));
     std::fs::create_dir_all(&dir)
         .map_err(|e| ApiError::io("Could not create a staging directory", e))?;
     Ok(dir)
@@ -351,7 +363,9 @@ fn install(rt: &Runtime) -> ApiResult {
     std::process::Command::new(&executable)
         .args(std::env::args().skip(1))
         .spawn()
-        .map_err(|e| ApiError::io("The update is installed but would not start", e))?;
+        .map_err(|e| {
+            ApiError::io("The update is installed but would not start", e)
+        })?;
 
     // The retired copy is removed on the next start, once nothing is running
     // out of it any more.
@@ -370,8 +384,9 @@ fn swap(installed: &Installation, replacement: &Path) -> Result<(), ApiError> {
     // new one fails, putting it back is the recovery.
     let retired = installed.root.with_extension("old");
     let _ = std::fs::remove_dir_all(&retired);
-    std::fs::rename(&installed.root, &retired)
-        .map_err(|e| ApiError::io("Could not move the current version aside", e))?;
+    std::fs::rename(&installed.root, &retired).map_err(|e| {
+        ApiError::io("Could not move the current version aside", e)
+    })?;
 
     if let Err(error) = std::fs::rename(replacement, &installed.root) {
         let _ = std::fs::rename(&retired, &installed.root);
@@ -557,7 +572,8 @@ mod tests {
 
         fn file(&self, path: &str, contents: &str) -> PathBuf {
             let full = self.0.join(path);
-            std::fs::create_dir_all(full.parent().expect("parent")).expect("parents");
+            std::fs::create_dir_all(full.parent().expect("parent"))
+                .expect("parents");
             std::fs::write(&full, contents).expect("write");
             full
         }
@@ -581,7 +597,8 @@ mod tests {
         scratch.file("old/app.exe", "1.0.0");
         scratch.file("old/dist/index.html", "old page");
 
-        replace_entries(&scratch.0.join("new"), &scratch.0.join("old")).expect("swap");
+        replace_entries(&scratch.0.join("new"), &scratch.0.join("old"))
+            .expect("swap");
 
         assert_eq!(scratch.read("old/app.exe"), "1.1.0");
         assert_eq!(scratch.read("old/dist/index.html"), "new page");
@@ -597,7 +614,8 @@ mod tests {
         scratch.file("old/app.exe", "1.0.0");
         scratch.file("old/app.exe.WebView2/lockfile", "held");
 
-        replace_entries(&scratch.0.join("new"), &scratch.0.join("old")).expect("swap");
+        replace_entries(&scratch.0.join("new"), &scratch.0.join("old"))
+            .expect("swap");
 
         assert_eq!(scratch.read("old/app.exe.WebView2/lockfile"), "held");
     }
@@ -634,8 +652,11 @@ mod tests {
         let scratch = Scratch::new("unreadable");
         std::fs::create_dir_all(scratch.0.join("into")).expect("dir");
 
-        let error = replace_entries(&scratch.0.join("missing"), &scratch.0.join("into"))
-            .expect_err("there is nothing to move");
+        let error = replace_entries(
+            &scratch.0.join("missing"),
+            &scratch.0.join("into"),
+        )
+        .expect_err("there is nothing to move");
         assert_eq!(error.code, crate::error::code::NOT_FOUND);
     }
 

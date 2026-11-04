@@ -254,7 +254,11 @@ mod hook {
     );
 
     impl Hook {
-        pub fn new(mtm: MainThreadMarker, ivars: Ivars, frame: NSRect) -> Retained<Self> {
+        pub fn new(
+            mtm: MainThreadMarker,
+            ivars: Ivars,
+            frame: NSRect,
+        ) -> Retained<Self> {
             let this = Self::alloc(mtm).set_ivars(ivars);
             // Safety: `Hook` is declared above as a subclass of `NSView`, so
             // the superclass initialiser is `NSView`'s `initWithFrame:`, sent
@@ -303,7 +307,8 @@ pub fn keep(window: &tao::window::Window, keeper: &Keeper) -> Watch {
     // Follow the container, so it is asked to draw whenever the title bar is -
     // which is every frame of a resize.
     view.setAutoresizingMask(
-        NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
+        NSAutoresizingMaskOptions::ViewWidthSizable
+            | NSAutoresizingMaskOptions::ViewHeightSizable,
     );
     container.addSubview(&view);
     Watch(Some(view))
@@ -321,7 +326,9 @@ pub fn keep(_window: &tao::window::Window, _keeper: &Keeper) -> Watch {
 /// Call on the main thread, which owns the window. The reference borrows from
 /// `window`, so it cannot outlive it.
 #[cfg(target_os = "macos")]
-unsafe fn ns_of(window: &tao::window::Window) -> Option<&objc2_app_kit::NSWindow> {
+unsafe fn ns_of(
+    window: &tao::window::Window,
+) -> Option<&objc2_app_kit::NSWindow> {
     use tao::platform::macos::WindowExtMacOS;
     let p = window.ns_window() as *mut objc2_app_kit::NSWindow;
     if p.is_null() {
@@ -394,7 +401,11 @@ pub fn set_buttons_hidden(_window: &tao::window::Window, _hidden: bool) {}
 /// loses them along with the title bar - means nothing is reserved and there
 /// is nothing to line up with, which is the signal an application uses to
 /// decide it has to draw its own.
-pub fn metrics_for(native: Native, height: f64, system_buttons: bool) -> Metrics {
+pub fn metrics_for(
+    native: Native,
+    height: f64,
+    system_buttons: bool,
+) -> Metrics {
     if !system_buttons {
         return Metrics {
             height,

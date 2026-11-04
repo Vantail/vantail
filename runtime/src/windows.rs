@@ -17,7 +17,9 @@ use wry::{WebView, WebViewBuilder};
 use std::sync::Arc;
 
 use crate::chrome::titlebar;
-use crate::config::{CloseBehavior, TitleBarButtons, TitleBarStyle, WindowConfig};
+use crate::config::{
+    CloseBehavior, TitleBarButtons, TitleBarStyle, WindowConfig,
+};
 use crate::error::ApiError;
 use crate::ipc::{Outgoing, Request, UserEvent};
 use crate::state::Runtime;
@@ -120,7 +122,10 @@ impl WindowEntry {
     /// The page is told: the CSS variables and the bridge are updated in
     /// place, so a toolbar sized from them resizes with the change instead of
     /// keeping numbers that are no longer true.
-    pub fn set_title_bar_style(&mut self, style: TitleBarStyle) -> titlebar::Metrics {
+    pub fn set_title_bar_style(
+        &mut self,
+        style: TitleBarStyle,
+    ) -> titlebar::Metrics {
         let hidden = style == TitleBarStyle::Hidden;
 
         #[cfg(target_os = "macos")]
@@ -134,8 +139,11 @@ impl WindowEntry {
 
         #[cfg(not(target_os = "macos"))]
         {
-            self.window
-                .set_decorations(if hidden { false } else { self.decorations });
+            self.window.set_decorations(if hidden {
+                false
+            } else {
+                self.decorations
+            });
         }
 
         self.title_bar_style = style;
@@ -147,7 +155,10 @@ impl WindowEntry {
     /// Taller is the browser-toolbar case, and the traffic lights move to the
     /// middle of it - the part that is easy to get wrong by hand, and obvious
     /// the moment it is wrong.
-    pub fn set_title_bar_height(&mut self, height: Option<f64>) -> titlebar::Metrics {
+    pub fn set_title_bar_height(
+        &mut self,
+        height: Option<f64>,
+    ) -> titlebar::Metrics {
         self.title_bar_height = height;
         self.remeasure()
     }
@@ -215,7 +226,9 @@ impl WindowEntry {
     /// there is no container worth growing - the application draws the bar and
     /// everything in it - and the height it asked for is simply the answer.
     fn refit(&mut self) -> f64 {
-        let wanted = if self.title_bar_style == TitleBarStyle::Hidden && !self.buttons_hidden {
+        let wanted = if self.title_bar_style == TitleBarStyle::Hidden
+            && !self.buttons_hidden
+        {
             self.title_bar_height
         } else {
             None
@@ -235,9 +248,11 @@ impl WindowEntry {
     fn remeasure(&mut self) -> titlebar::Metrics {
         let height = self.refit();
         let metrics = match self.title_bar_style {
-            TitleBarStyle::Hidden => {
-                titlebar::metrics_for(self.native_title_bar, height, !self.buttons_hidden)
-            }
+            TitleBarStyle::Hidden => titlebar::metrics_for(
+                self.native_title_bar,
+                height,
+                !self.buttons_hidden,
+            ),
             TitleBarStyle::Default => titlebar::Metrics::none(),
         };
         self.publish_title_bar(metrics);
@@ -275,8 +290,12 @@ impl WindowEntry {
         if !on_own_page {
             return;
         }
-        if let Err(error) = self.webview.evaluate_script(&outgoing.to_script()) {
-            eprintln!("vantail: could not reach window `{}`: {error}", self.label);
+        if let Err(error) = self.webview.evaluate_script(&outgoing.to_script())
+        {
+            eprintln!(
+                "vantail: could not reach window `{}`: {error}",
+                self.label
+            );
         }
     }
 }
@@ -320,7 +339,10 @@ impl WindowManager {
         self.get(label).ok_or_else(|| self.unknown(label))
     }
 
-    pub fn require_mut(&mut self, label: &str) -> Result<&mut WindowEntry, ApiError> {
+    pub fn require_mut(
+        &mut self,
+        label: &str,
+    ) -> Result<&mut WindowEntry, ApiError> {
         // Asked first, and with a shared borrow, because the error lists the
         // open windows - which needs `self` again.
         if self.get(label).is_none() {
@@ -514,7 +536,9 @@ fn set_up_title_bar(window: &Window, config: &WindowConfig) -> TitleBarSetup {
     let height = fit_title_bar(window, config, platform, &shape);
     let native = titlebar::native(window);
     let metrics = match config.title_bar_style {
-        TitleBarStyle::Hidden => titlebar::metrics_for(native, height, !buttons_hidden),
+        TitleBarStyle::Hidden => {
+            titlebar::metrics_for(native, height, !buttons_hidden)
+        }
         TitleBarStyle::Default => titlebar::Metrics::none(),
     };
     TitleBarSetup {
@@ -535,11 +559,12 @@ fn fit_title_bar(
     shape: &titlebar::Keeper,
 ) -> f64 {
     let buttons_hidden = config.title_bar_buttons == TitleBarButtons::Hidden;
-    let requested = if config.title_bar_style == TitleBarStyle::Hidden && !buttons_hidden {
-        config.title_bar_height
-    } else {
-        None
-    };
+    let requested =
+        if config.title_bar_style == TitleBarStyle::Hidden && !buttons_hidden {
+            config.title_bar_height
+        } else {
+            None
+        };
     titlebar::fit(window, requested, platform, traffic_lights(config), shape)
 }
 
@@ -706,7 +731,10 @@ fn build_window(
 /// height of the window, the bar itself is transparent, and the title text is
 /// gone.
 #[cfg(target_os = "macos")]
-fn hide_title_bar(builder: WindowBuilder, config: &WindowConfig) -> WindowBuilder {
+fn hide_title_bar(
+    builder: WindowBuilder,
+    config: &WindowConfig,
+) -> WindowBuilder {
     use tao::platform::macos::WindowBuilderExtMacOS;
 
     // Deliberately not `with_traffic_light_inset`. tao has its own version of
@@ -715,7 +743,9 @@ fn hide_title_bar(builder: WindowBuilder, config: &WindowConfig) -> WindowBuilde
     // set would put a second actor on the same three buttons for no benefit;
     // `chrome::titlebar` owns them.
     builder
-        .with_titlebar_buttons_hidden(config.title_bar_buttons == TitleBarButtons::Hidden)
+        .with_titlebar_buttons_hidden(
+            config.title_bar_buttons == TitleBarButtons::Hidden,
+        )
         .with_fullsize_content_view(true)
         .with_titlebar_transparent(true)
         .with_title_hidden(true)
@@ -734,13 +764,20 @@ fn window_icon(rt: &Runtime) -> Option<tao::window::Icon> {
     };
 
     match crate::chrome::icon::load_png(&resolved) {
-        Ok(image) => match tao::window::Icon::from_rgba(image.bytes, image.width, image.height) {
+        Ok(image) => match tao::window::Icon::from_rgba(
+            image.bytes,
+            image.width,
+            image.height,
+        ) {
             Ok(icon) => Some(icon),
             Err(_) => None,
         },
         Err(error) => {
             // A missing icon is cosmetic; refusing to open the window is not.
-            eprintln!("vantail: could not load the window icon: {}", error.message);
+            eprintln!(
+                "vantail: could not load the window icon: {}",
+                error.message
+            );
             None
         }
     }
@@ -810,9 +847,10 @@ fn build_webview(
         // a window created while the app is not frontmost can sit suspended.
         .with_background_throttling(wry::BackgroundThrottlingPolicy::Disabled)
         .with_transparent(rt.config.window.transparent)
-        .with_custom_protocol(webview::SCHEME.to_string(), move |_id, request| {
-            resources.serve(&request)
-        })
+        .with_custom_protocol(
+            webview::SCHEME.to_string(),
+            move |_id, request| resources.serve(&request),
+        )
         .with_drag_drop_handler({
             let rt = Arc::clone(rt);
             let label = label.to_string();
@@ -880,7 +918,9 @@ fn forward_call(
         },
         Err(error) => UserEvent::Outgoing {
             window: Some(source.to_string()),
-            outgoing: crate::ipc::malformed(format!("Could not parse an IPC message: {error}")),
+            outgoing: crate::ipc::malformed(format!(
+                "Could not parse an IPC message: {error}"
+            )),
         },
     };
     // A closed event loop means we are shutting down; the message has nowhere
@@ -893,7 +933,11 @@ fn forward_call(
 /// manage it. A web page or a mail link goes to the user's browser or mail
 /// client instead, where it has an address bar; anything else is refused. A
 /// window of the application's own is `createWindow`.
-fn refuse_new_window(popups: &webview::Origins, label: &str, url: &str) -> wry::NewWindowResponse {
+fn refuse_new_window(
+    popups: &webview::Origins,
+    label: &str,
+    url: &str,
+) -> wry::NewWindowResponse {
     if !popups.allows(url) && webview::opens_externally(url) {
         webview::open_externally(url);
     } else {
@@ -908,7 +952,11 @@ fn refuse_new_window(popups: &webview::Origins, label: &str, url: &str) -> wry::
 /// A window exists before its page does. Announcing readiness is what lets
 /// `createWindow` resolve at a point where the new window can actually
 /// receive a message.
-fn announce_loaded(proxy: &EventLoopProxy<UserEvent>, label: &str, event: wry::PageLoadEvent) {
+fn announce_loaded(
+    proxy: &EventLoopProxy<UserEvent>,
+    label: &str,
+    event: wry::PageLoadEvent,
+) {
     if !matches!(event, wry::PageLoadEvent::Finished) {
         return;
     }
@@ -968,7 +1016,8 @@ fn round_corners(
                 return;
             };
             let _: () = objc2::msg_send![&*content, setWantsLayer: true];
-            let layer: *mut objc2::runtime::AnyObject = objc2::msg_send![&*content, layer];
+            let layer: *mut objc2::runtime::AnyObject =
+                objc2::msg_send![&*content, layer];
             if layer.is_null() {
                 return;
             }
@@ -984,7 +1033,8 @@ fn round_corners(
                 let clear: *mut objc2::runtime::AnyObject =
                     objc2::msg_send![objc2::class!(NSColor), clearColor];
                 let _: () = objc2::msg_send![&*ns_window, setOpaque: false];
-                let _: () = objc2::msg_send![&*ns_window, setBackgroundColor: clear];
+                let _: () =
+                    objc2::msg_send![&*ns_window, setBackgroundColor: clear];
 
                 let colour = CGColorCreateGenericRGB(
                     f64::from(red) / 255.0,
@@ -1065,7 +1115,8 @@ fn apply_region(window: &Window, radii: crate::config::Radii) {
     let Some(visible) = visible_rect(hwnd, &outer) else {
         return;
     };
-    let region = notched_region(width, height, &visible, radii, window.scale_factor());
+    let region =
+        notched_region(width, height, &visible, radii, window.scale_factor());
 
     // The window owns the region from here: it must not be deleted, and the
     // next call replaces it.
@@ -1087,7 +1138,8 @@ fn apply_region(window: &Window, radii: crate::config::Radii) {
 #[cfg(target_os = "windows")]
 fn prefer_square_corners(hwnd: windows::Win32::Foundation::HWND) {
     use windows::Win32::Graphics::Dwm::{
-        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
+        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE,
+        DWMWCP_DONOTROUND,
     };
 
     let preference = DWMWCP_DONOTROUND;
@@ -1105,7 +1157,9 @@ fn prefer_square_corners(hwnd: windows::Win32::Foundation::HWND) {
 
 /// The window rect, resize margin and all, in screen coordinates.
 #[cfg(target_os = "windows")]
-fn window_rect(hwnd: windows::Win32::Foundation::HWND) -> Option<windows::Win32::Foundation::RECT> {
+fn window_rect(
+    hwnd: windows::Win32::Foundation::HWND,
+) -> Option<windows::Win32::Foundation::RECT> {
     use windows::Win32::Foundation::RECT;
     use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
 
@@ -1141,7 +1195,8 @@ fn visible_rect(
     // Safety: `hwnd` is the handle of a live window, and both out-parameters
     // are locals for the calls to fill.
     let measured = unsafe {
-        GetClientRect(hwnd, &mut client).is_ok() && ClientToScreen(hwnd, &mut origin).as_bool()
+        GetClientRect(hwnd, &mut client).is_ok()
+            && ClientToScreen(hwnd, &mut origin).as_bool()
     };
     if !measured {
         return None;
@@ -1167,7 +1222,8 @@ fn notched_region(
     radii: crate::config::Radii,
     scale: f64,
 ) -> windows::Win32::Graphics::Gdi::HRGN {
-    let (left, top, right, bottom) = (visible.left, visible.top, visible.right, visible.bottom);
+    let (left, top, right, bottom) =
+        (visible.left, visible.top, visible.right, visible.bottom);
 
     // The radii are logical pixels, as everything in the config is, and a
     // region is physical ones.
@@ -1193,9 +1249,17 @@ fn notched_region(
 /// disc that fills the part of it the window keeps. Both are described from
 /// the corner outwards, so the same arithmetic does all four.
 #[cfg(target_os = "windows")]
-fn notch(region: windows::Win32::Graphics::Gdi::HRGN, r: i32, x: i32, y: i32, dx: i32, dy: i32) {
+fn notch(
+    region: windows::Win32::Graphics::Gdi::HRGN,
+    r: i32,
+    x: i32,
+    y: i32,
+    dx: i32,
+    dy: i32,
+) {
     use windows::Win32::Graphics::Gdi::{
-        CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, RGN_AND, RGN_DIFF, RGN_OR,
+        CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, RGN_AND,
+        RGN_DIFF, RGN_OR,
     };
 
     let square = rect_rgn(x, y, x + dx * r, y + dy * r);
@@ -1223,11 +1287,18 @@ fn notch(region: windows::Win32::Graphics::Gdi::HRGN, r: i32, x: i32, y: i32, dx
 /// A rectangle region from two corners in any order, which is how the corner
 /// arithmetic above hands them over.
 #[cfg(target_os = "windows")]
-fn rect_rgn(x1: i32, y1: i32, x2: i32, y2: i32) -> windows::Win32::Graphics::Gdi::HRGN {
+fn rect_rgn(
+    x1: i32,
+    y1: i32,
+    x2: i32,
+    y2: i32,
+) -> windows::Win32::Graphics::Gdi::HRGN {
     use windows::Win32::Graphics::Gdi::CreateRectRgn;
     // Safety: `CreateRectRgn` takes only integers, so there is nothing to
     // uphold. The region it returns is the caller's to hand over or delete.
-    unsafe { CreateRectRgn(x1.min(x2), y1.min(y2), x1.max(x2) + 1, y1.max(y2) + 1) }
+    unsafe {
+        CreateRectRgn(x1.min(x2), y1.min(y2), x1.max(x2) + 1, y1.max(y2) + 1)
+    }
 }
 
 /// Mask a layer with a rounded-rectangle path of four independent radii.
@@ -1240,7 +1311,10 @@ fn rect_rgn(x1: i32, y1: i32, x2: i32, y2: i32) -> windows::Win32::Graphics::Gdi
 ///
 /// `layer` must be a live `CALayer`, and this must run on the main thread.
 #[cfg(target_os = "macos")]
-unsafe fn apply_shape(layer: *mut objc2::runtime::AnyObject, radii: crate::config::Radii) {
+unsafe fn apply_shape(
+    layer: *mut objc2::runtime::AnyObject,
+    radii: crate::config::Radii,
+) {
     use objc2_foundation::NSRect;
 
     // Safety: `layer` is a live `CALayer`, as the caller guarantees.
@@ -1293,7 +1367,12 @@ unsafe fn apply_shape(layer: *mut objc2::runtime::AnyObject, radii: crate::confi
 #[link(name = "CoreGraphics", kind = "framework")]
 unsafe extern "C" {
     fn CGPathCreateMutable() -> *mut std::ffi::c_void;
-    fn CGPathMoveToPoint(path: *mut std::ffi::c_void, m: *const std::ffi::c_void, x: f64, y: f64);
+    fn CGPathMoveToPoint(
+        path: *mut std::ffi::c_void,
+        m: *const std::ffi::c_void,
+        x: f64,
+        y: f64,
+    );
     fn CGPathAddLineToPoint(
         path: *mut std::ffi::c_void,
         m: *const std::ffi::c_void,
@@ -1311,7 +1390,12 @@ unsafe extern "C" {
     );
     fn CGPathCloseSubpath(path: *mut std::ffi::c_void);
     fn CGPathRelease(path: *mut std::ffi::c_void);
-    fn CGColorCreateGenericRGB(r: f64, g: f64, b: f64, a: f64) -> *mut std::ffi::c_void;
+    fn CGColorCreateGenericRGB(
+        r: f64,
+        g: f64,
+        b: f64,
+        a: f64,
+    ) -> *mut std::ffi::c_void;
     fn CGColorRelease(colour: *mut std::ffi::c_void);
 }
 
@@ -1326,7 +1410,8 @@ fn recalculate_frame(window: &Window) {
     use tao::platform::windows::WindowExtWindows;
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{
-        SetWindowPos, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+        SetWindowPos, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        SWP_NOZORDER,
     };
 
     let hwnd = HWND(window.hwnd() as *mut std::ffi::c_void);
@@ -1340,7 +1425,11 @@ fn recalculate_frame(window: &Window) {
             0,
             0,
             0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            SWP_NOMOVE
+                | SWP_NOSIZE
+                | SWP_NOZORDER
+                | SWP_NOACTIVATE
+                | SWP_FRAMECHANGED,
         );
     }
 }
@@ -1350,7 +1439,9 @@ fn recalculate_frame(window: &Window) {
 /// A framed window already has the platform's corners; rounding the content
 /// inside them leaves a notch where the two shapes disagree, so the setting
 /// only applies without a frame.
-fn corner_radii(config: &crate::config::WindowConfig) -> Option<crate::config::Radii> {
+fn corner_radii(
+    config: &crate::config::WindowConfig,
+) -> Option<crate::config::Radii> {
     if has_decorations(config) {
         return None;
     }
@@ -1382,14 +1473,20 @@ fn has_decorations(config: &crate::config::WindowConfig) -> bool {
 /// handle, which does not exist under Wayland - where it fails with "the
 /// underlying handle is not available" and no window ever appears.
 #[cfg(not(target_os = "linux"))]
-fn attach(builder: WebViewBuilder<'_>, window: &Window) -> Result<WebView, String> {
+fn attach(
+    builder: WebViewBuilder<'_>,
+    window: &Window,
+) -> Result<WebView, String> {
     builder
         .build(window)
         .map_err(|e| format!("Could not create the webview: {e}"))
 }
 
 #[cfg(target_os = "linux")]
-fn attach(builder: WebViewBuilder<'_>, window: &Window) -> Result<WebView, String> {
+fn attach(
+    builder: WebViewBuilder<'_>,
+    window: &Window,
+) -> Result<WebView, String> {
     use tao::platform::unix::WindowExtUnix;
     use wry::WebViewBuilderExtUnix;
 
@@ -1417,7 +1514,11 @@ fn path_strings(paths: &[std::path::PathBuf]) -> Vec<String> {
 /// drop; returning `false` lets WebKit do what it always did, which is deliver
 /// HTML5 drag events carrying file *contents* but no paths. So an application
 /// that has not asked for `dragDrop` keeps exactly the behaviour it had.
-fn drag_drop(rt: &Arc<Runtime>, label: &str, event: wry::DragDropEvent) -> bool {
+fn drag_drop(
+    rt: &Arc<Runtime>,
+    label: &str,
+    event: wry::DragDropEvent,
+) -> bool {
     if !rt.permissions.drag_drop {
         return false;
     }

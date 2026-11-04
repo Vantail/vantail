@@ -124,7 +124,8 @@ mod tests {
         let close = script.rfind("))").expect("call is closed");
         let literal = &script[open..close];
 
-        let json: String = serde_json::from_str(literal).expect("literal is a JSON string");
+        let json: String =
+            serde_json::from_str(literal).expect("literal is a JSON string");
         serde_json::from_str(&json).expect("payload is JSON")
     }
 
@@ -164,13 +165,17 @@ mod tests {
         let ok = Response::from_result("a".into(), Ok(json!(1)));
         assert!(ok.result.is_some() && ok.error.is_none());
 
-        let failed = Response::from_result("b".into(), Err(ApiError::denied("no")));
+        let failed =
+            Response::from_result("b".into(), Err(ApiError::denied("no")));
         assert!(failed.result.is_none() && failed.error.is_some());
     }
 
     #[test]
     fn events_and_responses_are_told_apart_by_shape() {
-        let event = Outgoing::Event(Event::new("window.resized", json!({ "width": 1 })));
+        let event = Outgoing::Event(Event::new(
+            "window.resized",
+            json!({ "width": 1 }),
+        ));
         let serialised = serde_json::to_string(&event).expect("serialises");
         assert!(serialised.contains("\"event\":\"window.resized\""));
         assert!(!serialised.contains("\"id\""));

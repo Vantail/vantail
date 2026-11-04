@@ -65,7 +65,9 @@ impl Discovery {
         let daemon = match slot.take() {
             Some(daemon) => daemon,
             None => ServiceDaemon::new().map_err(|e| {
-                ApiError::unsupported(format!("Could not start mDNS discovery: {e}"))
+                ApiError::unsupported(format!(
+                    "Could not start mDNS discovery: {e}"
+                ))
             })?,
         };
         // The daemon is a handle around a shared thread, so cloning it is how
@@ -86,7 +88,12 @@ impl Discovery {
 }
 
 /// `None` means the response arrives later, from the discovery thread.
-pub fn dispatch(ctx: &mut MainCtx<'_>, id: &str, method: &str, params: Value) -> Option<ApiResult> {
+pub fn dispatch(
+    ctx: &mut MainCtx<'_>,
+    id: &str,
+    method: &str,
+    params: Value,
+) -> Option<ApiResult> {
     let rt = ctx.rt.clone();
     let source = ctx.source.to_string();
 
@@ -100,7 +107,9 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, id: &str, method: &str, params: Value) ->
         }
         "mdns.browse" => Some(browse(&rt, &source, params)),
         "mdns.stop" => Some(stop(&rt, method, params)),
-        "mdns.browsing" => Some(Ok(json!(lock(&rt.discovery.browsing).clone()))),
+        "mdns.browsing" => {
+            Some(Ok(json!(lock(&rt.discovery.browsing).clone())))
+        }
         _ => Some(Err(ApiError::unknown_method(method))),
     }
 }
@@ -114,7 +123,9 @@ fn normalise(service: &str) -> Result<String, ApiError> {
     if trimmed.is_empty() {
         return Err(ApiError::invalid_params("A service type cannot be empty"));
     }
-    if !trimmed.starts_with('_') || !trimmed.contains("._tcp") && !trimmed.contains("._udp") {
+    if !trimmed.starts_with('_')
+        || !trimmed.contains("._tcp") && !trimmed.contains("._udp")
+    {
         return Err(ApiError::invalid_params(format!(
             "`{service}` is not a service type. They look like `_hub._tcp.local`."
         )));
@@ -126,10 +137,14 @@ fn normalise(service: &str) -> Result<String, ApiError> {
     })
 }
 
-fn permitted(rt: &Runtime, service: &str, method: &str) -> Result<(), ApiError> {
-    rt.permissions
-        .check_service(service)
-        .map_err(|error| error.with_data(json!({ "method": method, "service": service })))
+fn permitted(
+    rt: &Runtime,
+    service: &str,
+    method: &str,
+) -> Result<(), ApiError> {
+    rt.permissions.check_service(service).map_err(|error| {
+        error.with_data(json!({ "method": method, "service": service }))
+    })
 }
 
 fn start_discovery(
@@ -149,9 +164,9 @@ fn start_discovery(
     let timeout = Duration::from_millis(requested.min(MAX_TIMEOUT_MS));
 
     let daemon = rt.discovery.daemon()?;
-    let receiver = daemon
-        .browse(&service)
-        .map_err(|e| ApiError::internal(format!("Could not browse for `{service}`: {e}")))?;
+    let receiver = daemon.browse(&service).map_err(|e| {
+        ApiError::internal(format!("Could not browse for `{service}`: {e}"))
+    })?;
 
     let rt = Arc::clone(rt);
     let source = source.to_string();
@@ -165,10 +180,15 @@ fn start_discovery(
             let mut found: BTreeMap<String, Value> = BTreeMap::new();
             let deadline = Instant::now() + timeout;
 
-            while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
+            while let Some(remaining) =
+                deadline.checked_duration_since(Instant::now())
+            {
                 match receiver.recv_timeout(remaining) {
                     Ok(ServiceEvent::ServiceResolved(resolved)) => {
-                        found.insert(resolved.fullname.clone(), describe(&resolved));
+                        found.insert(
+                            resolved.fullname.clone(),
+                            describe(&resolved),
+                        );
                     }
                     Ok(_) => continue,
                     Err(_) => break,
@@ -185,7 +205,9 @@ fn start_discovery(
             );
         });
 
-    spawned.map_err(|e| ApiError::internal(format!("Could not start discovery: {e}")))?;
+    spawned.map_err(|e| {
+        ApiError::internal(format!("Could not start discovery: {e}"))
+    })?;
     Ok(())
 }
 
@@ -212,9 +234,9 @@ fn browse(rt: &Arc<Runtime>, source: &str, params: Value) -> ApiResult {
     }
 
     let daemon = rt.discovery.daemon()?;
-    let receiver = daemon
-        .browse(&service)
-        .map_err(|e| ApiError::internal(format!("Could not browse for `{service}`: {e}")))?;
+    let receiver = daemon.browse(&service).map_err(|e| {
+        ApiError::internal(format!("Could not browse for `{service}`: {e}"))
+    })?;
 
     let rt_for_thread = Arc::clone(rt);
     let source = source.to_string();

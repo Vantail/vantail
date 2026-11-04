@@ -218,7 +218,12 @@ pub struct HidRule {
 }
 
 impl HidRule {
-    fn matches(&self, vendor_id: u16, product_id: u16, usage_page: u16) -> bool {
+    fn matches(
+        &self,
+        vendor_id: u16,
+        product_id: u16,
+        usage_page: u16,
+    ) -> bool {
         // A product id or usage page the rule leaves out matches any.
         let product_matches = match self.product_id {
             Some(expected) => expected == product_id,
@@ -518,7 +523,10 @@ fn current_dir() -> Option<PathBuf> {
 
 /// The application's own directory inside a platform one, where the platform
 /// has it.
-pub(crate) fn app_dir(base: Option<PathBuf>, identifier: &str) -> Option<PathBuf> {
+pub(crate) fn app_dir(
+    base: Option<PathBuf>,
+    identifier: &str,
+) -> Option<PathBuf> {
     match base {
         Some(base) => Some(base.join(identifier)),
         None => None,
@@ -549,8 +557,12 @@ impl PathScope {
     fn compile(config: &PathScopeConfig, vars: &Vars) -> Result<Self, String> {
         let (allow_all, allow_patterns, deny_patterns) = match config {
             PathScopeConfig::All(all) => (*all, Vec::new(), Vec::new()),
-            PathScopeConfig::Patterns(patterns) => (false, patterns.clone(), Vec::new()),
-            PathScopeConfig::Detailed { allow, deny } => (false, allow.clone(), deny.clone()),
+            PathScopeConfig::Patterns(patterns) => {
+                (false, patterns.clone(), Vec::new())
+            }
+            PathScopeConfig::Detailed { allow, deny } => {
+                (false, allow.clone(), deny.clone())
+            }
         };
 
         let expanded = expand_all(&allow_patterns, vars);
@@ -782,7 +794,10 @@ impl Access {
     }
 }
 
-fn compile_shell(rules: &[ShellRule], vars: &Vars) -> Result<Vec<CompiledRule>, String> {
+fn compile_shell(
+    rules: &[ShellRule],
+    vars: &Vars,
+) -> Result<Vec<CompiledRule>, String> {
     let mut shell = Vec::with_capacity(rules.len());
     let no_cwd = PathScopeConfig::All(false);
     for rule in rules {
@@ -831,7 +846,10 @@ fn refuse_impossible(config: &PermissionsConfig) -> Result<(), String> {
 }
 
 impl Permissions {
-    pub fn compile(config: &PermissionsConfig, vars: &Vars) -> Result<Self, String> {
+    pub fn compile(
+        config: &PermissionsConfig,
+        vars: &Vars,
+    ) -> Result<Self, String> {
         let (clipboard_read, clipboard_write) = match &config.clipboard {
             ClipboardConfig::All(all) => (*all, *all),
             ClipboardConfig::Detailed { read, write } => (*read, *write),
@@ -871,7 +889,11 @@ impl Permissions {
         })
     }
 
-    pub fn require(&self, allowed: bool, capability: &str) -> Result<(), ApiError> {
+    pub fn require(
+        &self,
+        allowed: bool,
+        capability: &str,
+    ) -> Result<(), ApiError> {
         if allowed {
             Ok(())
         } else {
@@ -885,7 +907,11 @@ impl Permissions {
     ///
     /// Returns the normalised path; callers must use it for the actual
     /// operation so that what was checked is what gets touched.
-    pub fn check_path(&self, raw: &RawPath, access: Access) -> Result<PathBuf, ApiError> {
+    pub fn check_path(
+        &self,
+        raw: &RawPath,
+        access: Access,
+    ) -> Result<PathBuf, ApiError> {
         // The only read of `RawPath.0` in the codebase. Everything downstream
         // works from the `PathBuf` this returns.
         let path = normalize(Path::new(&raw.0))?;
@@ -911,7 +937,9 @@ impl Permissions {
         };
         Err(
             ApiError::denied(format!("{detail}. Allowed: {}", describe(scope)))
-                .with_data(serde_json::json!({ "path": path, "access": label })),
+                .with_data(
+                    serde_json::json!({ "path": path, "access": label }),
+                ),
         )
     }
 
@@ -945,7 +973,11 @@ impl Permissions {
     ///
     /// Returns the matching rule so the caller can also validate the working
     /// directory against the scope that rule carries.
-    pub fn check_program(&self, program: &str, args: &[String]) -> Result<&CompiledRule, ApiError> {
+    pub fn check_program(
+        &self,
+        program: &str,
+        args: &[String],
+    ) -> Result<&CompiledRule, ApiError> {
         let Some(rule) = self.shell_rule(program) else {
             let mut known: Vec<&str> = Vec::new();
             for rule in &self.shell {
@@ -972,7 +1004,8 @@ impl Permissions {
                 args.len()
             )));
         }
-        for (index, (rule_arg, value)) in expected.iter().zip(args).enumerate() {
+        for (index, (rule_arg, value)) in expected.iter().zip(args).enumerate()
+        {
             if !rule_arg.allows(value) {
                 return Err(ApiError::denied(format!(
                     "Argument {index} of `{program}` is not allowed: `{value}`"
@@ -984,7 +1017,11 @@ impl Permissions {
     }
 
     /// Check a working directory against the rule that permitted the program.
-    pub fn check_cwd(&self, rule: &CompiledRule, raw: &str) -> Result<PathBuf, ApiError> {
+    pub fn check_cwd(
+        &self,
+        rule: &CompiledRule,
+        raw: &str,
+    ) -> Result<PathBuf, ApiError> {
         let path = normalize(Path::new(raw))?;
         if rule.cwd.allows(&path) {
             return Ok(path);
@@ -1015,10 +1052,17 @@ impl Permissions {
     }
 
     /// Whether a device may be opened, by what it reports about itself.
-    pub fn allows_device(&self, vendor_id: u16, product_id: u16, usage_page: u16) -> bool {
+    pub fn allows_device(
+        &self,
+        vendor_id: u16,
+        product_id: u16,
+        usage_page: u16,
+    ) -> bool {
         match &self.hid {
             HidConfig::All(all) => *all,
-            HidConfig::Devices(rules) => any_rule_matches(rules, vendor_id, product_id, usage_page),
+            HidConfig::Devices(rules) => {
+                any_rule_matches(rules, vendor_id, product_id, usage_page)
+            }
         }
     }
 
@@ -1146,16 +1190,21 @@ fn compile_args(args: &[ArgRule]) -> Result<Vec<CompiledArg>, String> {
     for arg in args {
         let rule = match arg {
             ArgRule::Exact(value) => CompiledArg::Exact(value.clone()),
-            ArgRule::Pattern { pattern } => {
-                CompiledArg::Pattern(build_text_globset(std::slice::from_ref(pattern))?)
-            }
+            ArgRule::Pattern { pattern } => CompiledArg::Pattern(
+                build_text_globset(std::slice::from_ref(pattern))?,
+            ),
         };
         compiled.push(rule);
     }
     Ok(compiled)
 }
 
-fn any_rule_matches(rules: &[HidRule], vendor_id: u16, product_id: u16, usage_page: u16) -> bool {
+fn any_rule_matches(
+    rules: &[HidRule],
+    vendor_id: u16,
+    product_id: u16,
+    usage_page: u16,
+) -> bool {
     for rule in rules {
         if rule.matches(vendor_id, product_id, usage_page) {
             return true;
@@ -1223,7 +1272,9 @@ pub fn normalize(path: &Path) -> Result<PathBuf, ApiError> {
         path.to_path_buf()
     } else {
         std::env::current_dir()
-            .map_err(|e| ApiError::io("Could not resolve the current directory", e))?
+            .map_err(|e| {
+                ApiError::io("Could not resolve the current directory", e)
+            })?
             .join(path)
     };
 
@@ -1344,7 +1395,10 @@ mod tests {
         let base = temp_dir();
         let permissions = permissions(PermissionsConfig {
             filesystem: FilesystemConfig {
-                read: PathScopeConfig::Patterns(vec![format!("{}/allowed/**", base.display())]),
+                read: PathScopeConfig::Patterns(vec![format!(
+                    "{}/allowed/**",
+                    base.display()
+                )]),
                 ..FilesystemConfig::default()
             },
             ..PermissionsConfig::default()
@@ -1402,7 +1456,8 @@ mod tests {
 
     #[test]
     fn a_single_star_does_not_cross_directories() {
-        let scope = scope(PathScopeConfig::Patterns(vec!["/data/*.txt".into()]));
+        let scope =
+            scope(PathScopeConfig::Patterns(vec!["/data/*.txt".into()]));
         assert!(scope.allows(Path::new("/data/a.txt")));
         assert!(!scope.allows(Path::new("/data/nested/a.txt")));
     }
@@ -1413,7 +1468,10 @@ mod tests {
         let base = temp_dir();
 
         assert!(permissions
-            .check_path(&sent(format!("{}/a.txt", base.display())), Access::Read)
+            .check_path(
+                &sent(format!("{}/a.txt", base.display())),
+                Access::Read
+            )
             .is_err());
         assert!(!permissions.dialog);
         assert!(!permissions.clipboard_read);
@@ -1558,7 +1616,7 @@ mod tests {
     #[test]
     fn a_pattern_naming_a_directory_that_does_not_exist_is_kept_as_written() {
         let scope = scope(PathScopeConfig::Patterns(vec![
-            "/definitely/not/here/**".into()
+            "/definitely/not/here/**".into(),
         ]));
         assert!(scope.allows(Path::new("/definitely/not/here/file.txt")));
         assert!(!scope.allows(Path::new("/somewhere/else/file.txt")));
@@ -1797,7 +1855,11 @@ mod shared_state_tests {
         owned
     }
 
-    fn shared_state(read: bool, write: Vec<&str>, persist: bool) -> Permissions {
+    fn shared_state(
+        read: bool,
+        write: Vec<&str>,
+        persist: bool,
+    ) -> Permissions {
         permissions_with(PermissionsConfig {
             shared_state: SharedStateConfig {
                 read,
@@ -1871,7 +1933,8 @@ mod shared_state_tests {
         let permissions = shared_state(true, vec!["demo.*"], false);
         assert!(permissions.check_shared_write("demo.counter").is_ok());
 
-        let error = permissions.check_shared_write("other.counter").unwrap_err();
+        let error =
+            permissions.check_shared_write("other.counter").unwrap_err();
         assert_eq!(error.code, crate::error::code::SHARED_STATE_KEY_DENIED);
         assert!(error.message.contains("demo.*"));
 
@@ -1948,18 +2011,18 @@ mod shared_state_tests {
                 "persist": false,
             },
         });
-        let config: PermissionsConfig =
-            serde_json::from_value(written).expect("sharedState block should load");
+        let config: PermissionsConfig = serde_json::from_value(written)
+            .expect("sharedState block should load");
         assert!(config.shared_state.read);
         assert_eq!(config.shared_state.write, vec!["demo.*"]);
         assert!(!config.shared_state.persist);
 
         // And an unknown key inside it is refused, not silently kept.
-        assert!(
-            serde_json::from_value::<PermissionsConfig>(serde_json::json!({
+        assert!(serde_json::from_value::<PermissionsConfig>(
+            serde_json::json!({
                 "sharedState": { "read": true, "writes": ["demo.*"] },
-            }))
-            .is_err()
-        );
+            })
+        )
+        .is_err());
     }
 }

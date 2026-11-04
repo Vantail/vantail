@@ -155,7 +155,12 @@ impl Sockets {
     }
 }
 
-pub fn dispatch(ctx: &mut MainCtx<'_>, id: &str, method: &str, params: Value) -> Option<ApiResult> {
+pub fn dispatch(
+    ctx: &mut MainCtx<'_>,
+    id: &str,
+    method: &str,
+    params: Value,
+) -> Option<ApiResult> {
     match method {
         "network.socket" => open(ctx, id, params),
         "network.socketSend" => Some(post(ctx, params)),
@@ -189,11 +194,12 @@ fn open(ctx: &mut MainCtx<'_>, id: &str, params: Value) -> Option<ApiResult> {
 }
 
 fn post(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
-    let SendParams { id, data, binary } = Request::params("network.socketSend", params)?;
+    let SendParams { id, data, binary } =
+        Request::params("network.socketSend", params)?;
     let message = if binary {
-        let bytes = BASE64
-            .decode(data.as_bytes())
-            .map_err(|e| ApiError::invalid_params(format!("`data` is not valid base64: {e}")))?;
+        let bytes = BASE64.decode(data.as_bytes()).map_err(|e| {
+            ApiError::invalid_params(format!("`data` is not valid base64: {e}"))
+        })?;
         Message::Binary(Bytes::from(bytes))
     } else {
         Message::Text(data.into())
@@ -204,7 +210,8 @@ fn post(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
 }
 
 fn shut(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
-    let CloseParams { id, code, reason } = Request::params("network.socketClose", params)?;
+    let CloseParams { id, code, reason } =
+        Request::params("network.socketClose", params)?;
     let reason = match reason {
         Some(reason) => reason,
         None => String::new(),
@@ -239,7 +246,10 @@ fn run(
             if let Some(entry) = rt.requests.claim(&request_id) {
                 rt.send(
                     Some(entry.window),
-                    Outgoing::Response(Response::from_result(request_id, Err(error))),
+                    Outgoing::Response(Response::from_result(
+                        request_id,
+                        Err(error),
+                    )),
                 );
             }
             return;
@@ -269,7 +279,10 @@ fn run(
 
 type Socket = WebSocket<MaybeTlsStream<TcpStream>>;
 
-fn connect(rt: &Arc<Runtime>, params: Value) -> Result<(Socket, String, Option<String>), ApiError> {
+fn connect(
+    rt: &Arc<Runtime>,
+    params: Value,
+) -> Result<(Socket, String, Option<String>), ApiError> {
     let params: OpenParams = Request::params("network.socket", params)?;
 
     // The same check, and the same prompt, an HTTP request goes through.
@@ -294,7 +307,10 @@ fn connect(rt: &Arc<Runtime>, params: Value) -> Result<(Socket, String, Option<S
     // and `Connection` to be right, and a request missing any of them is
     // rejected by the client before it reaches the wire.
     let uri: tungstenite::http::Uri = params.url.parse().map_err(|e| {
-        ApiError::invalid_params(format!("`{}` is not a usable URL: {e}", params.url))
+        ApiError::invalid_params(format!(
+            "`{}` is not a usable URL: {e}",
+            params.url
+        ))
     })?;
     let mut request = tungstenite::ClientRequestBuilder::new(uri);
     for (name, value) in &params.headers {
@@ -304,16 +320,21 @@ fn connect(rt: &Arc<Runtime>, params: Value) -> Result<(Socket, String, Option<S
         request = request.with_sub_protocol(protocol);
     }
 
-    let (socket, response) = tungstenite::client_tls(request, stream).map_err(|e| {
-        ApiError::new(
-            crate::error::code::IO_ERROR,
-            format!("The WebSocket handshake with `{}` failed: {e}", params.url),
-        )
-    })?;
+    let (socket, response) =
+        tungstenite::client_tls(request, stream).map_err(|e| {
+            ApiError::new(
+                crate::error::code::IO_ERROR,
+                format!(
+                    "The WebSocket handshake with `{}` failed: {e}",
+                    params.url
+                ),
+            )
+        })?;
 
     // Which subprotocol the server actually picked, which is not necessarily
     // the first one offered.
-    let protocol = header_text(response.headers().get("sec-websocket-protocol"));
+    let protocol =
+        header_text(response.headers().get("sec-websocket-protocol"));
 
     Ok((socket, params.url, protocol))
 }
@@ -330,7 +351,12 @@ struct Ending {
 ///
 /// Connected by hand rather than by `tungstenite::connect`, which has no
 /// timeout: a device that is off would otherwise hang until the OS gave up.
-fn open_tcp(host: &str, port: u16, timeout: Duration, url: &str) -> Result<TcpStream, ApiError> {
+fn open_tcp(
+    host: &str,
+    port: u16,
+    timeout: Duration,
+    url: &str,
+) -> Result<TcpStream, ApiError> {
     let address = (host, port)
         .to_socket_addrs()
         .map_err(|e| {
@@ -347,12 +373,13 @@ fn open_tcp(host: &str, port: u16, timeout: Duration, url: &str) -> Result<TcpSt
             )
         })?;
 
-    let stream = TcpStream::connect_timeout(&address, timeout).map_err(|e| {
-        ApiError::new(
-            crate::error::code::IO_ERROR,
-            format!("Could not reach `{url}`: {e}"),
-        )
-    })?;
+    let stream =
+        TcpStream::connect_timeout(&address, timeout).map_err(|e| {
+            ApiError::new(
+                crate::error::code::IO_ERROR,
+                format!("Could not reach `{url}`: {e}"),
+            )
+        })?;
     // A socket is usually many small messages, and Nagle would sit on them.
     let _ = stream.set_nodelay(true);
     // Covers the handshake. Cleared once the socket is up, where `POLL` takes
@@ -363,7 +390,9 @@ fn open_tcp(host: &str, port: u16, timeout: Duration, url: &str) -> Result<TcpSt
 }
 
 /// A header's value as text, when it is there and readable as text.
-fn header_text(value: Option<&tungstenite::http::HeaderValue>) -> Option<String> {
+fn header_text(
+    value: Option<&tungstenite::http::HeaderValue>,
+) -> Option<String> {
     let value = value?;
     match value.to_str() {
         Ok(text) => Some(text.to_string()),
@@ -462,7 +491,9 @@ fn read_next(
 ) -> bool {
     match socket.read() {
         Ok(Message::Text(text)) => emit(rt, window, id, text.as_str(), false),
-        Ok(Message::Binary(bytes)) => emit(rt, window, id, &BASE64.encode(&bytes), true),
+        Ok(Message::Binary(bytes)) => {
+            emit(rt, window, id, &BASE64.encode(&bytes), true)
+        }
         Ok(Message::Close(frame)) => {
             if let Some(frame) = frame {
                 ending.code = Some(frame.code.into());
@@ -475,7 +506,8 @@ fn read_next(
         // or close. Pong and raw frames are not the application's business.
         Ok(_) => {}
         Err(tungstenite::Error::Io(error)) if waiting(&error) => {}
-        Err(tungstenite::Error::ConnectionClosed) | Err(tungstenite::Error::AlreadyClosed) => {
+        Err(tungstenite::Error::ConnectionClosed)
+        | Err(tungstenite::Error::AlreadyClosed) => {
             return false;
         }
         Err(error) => {

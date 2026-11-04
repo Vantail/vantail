@@ -14,7 +14,8 @@ use std::io::{BufRead, BufReader, Write};
 
 use interprocess::local_socket::traits::{ListenerExt as _, Stream as _};
 use interprocess::local_socket::{
-    GenericFilePath, GenericNamespaced, ListenerOptions, Name, Stream, ToFsName, ToNsName,
+    GenericFilePath, GenericNamespaced, ListenerOptions, Name, Stream,
+    ToFsName, ToNsName,
 };
 use serde::{Deserialize, Serialize};
 use tao::event_loop::EventLoopProxy;
@@ -43,7 +44,8 @@ pub enum Claim {
 /// too, and fakes the namespace there with a file in /tmp - a file that
 /// outlives any process that does not unlink it, and one this module would
 /// not know to clean up.
-const NAMESPACED: bool = cfg!(any(target_os = "linux", target_os = "android", windows));
+const NAMESPACED: bool =
+    cfg!(any(target_os = "linux", target_os = "android", windows));
 
 /// The longest socket name that is safe to bind. `sun_path` is 104 bytes on
 /// macOS including the terminating NUL, and 108 on Linux including the
@@ -107,7 +109,9 @@ fn remove_stale_socket(identifier: &str) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => {
-            eprintln!("vantail: could not clear stale instance socket: {error}");
+            eprintln!(
+                "vantail: could not clear stale instance socket: {error}"
+            );
         }
     }
 }
@@ -118,7 +122,10 @@ fn remove_stale_socket(identifier: &str) {
 /// is listening. A connection proves a primary is alive, so a handover that
 /// connected still counts as handed over even if the message itself failed to
 /// send - opening a second copy would be worse than losing the arguments.
-fn try_handover(name: &Name<'static>, args: &[String]) -> std::io::Result<bool> {
+fn try_handover(
+    name: &Name<'static>,
+    args: &[String],
+) -> std::io::Result<bool> {
     let Ok(mut stream) = Stream::connect(name.clone()) else {
         return Ok(false);
     };
@@ -141,7 +148,9 @@ fn try_handover(name: &Name<'static>, args: &[String]) -> std::io::Result<bool> 
         Err(error) => Err(error),
     };
     if let Err(error) = written {
-        eprintln!("vantail: could not hand over to the running instance: {error}");
+        eprintln!(
+            "vantail: could not hand over to the running instance: {error}"
+        );
     }
     Ok(true)
 }
@@ -200,7 +209,10 @@ pub fn claim(identifier: &str, args: Vec<String>) -> std::io::Result<Claim> {
 }
 
 /// Forward everything later instances say into the event loop.
-pub fn listen(listener: interprocess::local_socket::Listener, proxy: EventLoopProxy<UserEvent>) {
+pub fn listen(
+    listener: interprocess::local_socket::Listener,
+    proxy: EventLoopProxy<UserEvent>,
+) {
     let spawned = std::thread::Builder::new()
         .name("vantail-instance".into())
         .spawn(move || {
@@ -217,7 +229,8 @@ pub fn listen(listener: interprocess::local_socket::Listener, proxy: EventLoopPr
                     continue;
                 };
 
-                if proxy.send_event(UserEvent::SecondInstance(launch)).is_err() {
+                if proxy.send_event(UserEvent::SecondInstance(launch)).is_err()
+                {
                     // The event loop has gone; so should this thread.
                     break;
                 }
@@ -249,12 +262,17 @@ mod tests {
     #[test]
     fn a_second_claim_hands_over_to_the_first() {
         let id = unique_id("handover");
-        let primary = claim(&id, vec!["first".into()]).expect("first claim is primary");
+        let primary =
+            claim(&id, vec!["first".into()]).expect("first claim is primary");
         assert!(matches!(primary, Claim::Primary(_)));
 
-        match claim(&id, vec!["second".into()]).expect("second claim should not error") {
+        match claim(&id, vec!["second".into()])
+            .expect("second claim should not error")
+        {
             Claim::HandedOver => {}
-            Claim::Primary(_) => panic!("second claim should hand over, not become primary"),
+            Claim::Primary(_) => {
+                panic!("second claim should hand over, not become primary")
+            }
         }
 
         // Dropping the primary releases the name; a later claim is primary
@@ -281,7 +299,8 @@ mod tests {
         // what a crashed or SIGKILLed process leaves behind: a socket file
         // with nobody listening.
         {
-            let stale = std::os::unix::net::UnixListener::bind(&path).expect("plant stale socket");
+            let stale = std::os::unix::net::UnixListener::bind(&path)
+                .expect("plant stale socket");
             drop(stale);
         }
         assert!(path.exists(), "stale socket file should exist");
@@ -331,7 +350,8 @@ mod tests {
         );
         assert_ne!(path, socket_path(&format!("{id}x")));
 
-        let primary = claim(&id, vec![]).expect("a long identifier can still claim");
+        let primary =
+            claim(&id, vec![]).expect("a long identifier can still claim");
         assert!(matches!(primary, Claim::Primary(_)));
         drop(primary);
     }
