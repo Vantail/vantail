@@ -201,11 +201,6 @@ pub fn title_bar_script(metrics: crate::chrome::titlebar::Metrics) -> String {
     )
 }
 
-/// The bridge, injected before any page script runs.
-///
-/// It deliberately knows nothing about methods or promises - it is a pipe.
-/// `@vantail/api` subscribes to it and builds the typed surface on top, so
-/// the protocol can grow without the runtime shipping a new bridge.
 /// Makes the window a fixed frame rather than a page.
 ///
 /// Three things, and they are all furniture rather than behaviour: the
@@ -227,6 +222,15 @@ html, body { overflow: hidden; overscroll-behavior: none; }\n\
 [data-vantail-scrollbar]::-webkit-scrollbar,\n\
 [data-vantail-scrollbar] *::-webkit-scrollbar { width: revert; height: revert; }\n";
 
+/// The bridge, injected before any page script runs.
+///
+/// It deliberately knows nothing about methods or promises - it is a pipe.
+/// `@vantail/api` subscribes to it and builds the typed surface on top, so
+/// the protocol can grow without the runtime shipping a new bridge.
+// Nearly all of this is the bridge's JavaScript, which is one template: its
+// pieces share variables, and splitting it across functions would make the
+// script harder to follow, not easier.
+#[allow(clippy::too_many_lines)]
 pub fn init_script(
     rt: &Runtime,
     label: &str,
@@ -491,21 +495,25 @@ pub fn serve(root: &Path, request: &Request<Vec<u8>>) -> Response<Cow<'static, [
         );
     };
 
-    match std::fs::read(&file) {
-        Ok(bytes) => ok(&file, bytes),
-        Err(_) => {
-            // A path with no extension is almost always a client-side route,
-            // so fall back to the shell document and let the router handle it.
-            if Path::new(target).extension().is_none() {
-                if let Some(index) = resolve(root, "index.html") {
-                    if let Ok(bytes) = std::fs::read(&index) {
-                        return ok(&index, bytes);
-                    }
-                }
-            }
-            status(StatusCode::NOT_FOUND, &format!("Not found: /{target}"))
+    if let Ok(bytes) = std::fs::read(&file) {
+        return ok(&file, bytes);
+    }
+
+    // A path with no extension is almost always a client-side route, so fall
+    // back to the shell document and let the router handle it.
+    if Path::new(target).extension().is_none() {
+        if let Some(response) = shell_document(root) {
+            return response;
         }
     }
+    status(StatusCode::NOT_FOUND, &format!("Not found: /{target}"))
+}
+
+/// The application's `index.html`, if it has one.
+fn shell_document(root: &Path) -> Option<Response<Cow<'static, [u8]>>> {
+    let index = resolve(root, "index.html")?;
+    let bytes = std::fs::read(&index).ok()?;
+    Some(ok(&index, bytes))
 }
 
 /// Resolve a request path inside `root`, or `None` if it escapes.
