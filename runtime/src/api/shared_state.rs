@@ -206,19 +206,22 @@ impl Store {
     pub fn set(&self, key: &str, value: Value) -> Result<(), ApiError> {
         let mut inner = self.inner.lock().expect("shared-state store poisoned");
         inner.values.insert(key.to_string(), value);
-        if inner.persist {
-            if let Some(path) = inner.path.clone() {
-                // Serialised before the lock is needed again, so a slow disk
-                // holds nothing but a buffer.
-                let snapshot = serde_json::to_value(&inner.values).map_err(|e| {
-                    ApiError::new(
-                        code::SHARED_STATE_NOT_SERIALIZABLE,
-                        format!("Shared state could not be persisted: {e}"),
-                    )
-                })?;
-                save(&path, &snapshot)?;
-            }
+        if !inner.persist {
+            return Ok(());
         }
+        let Some(path) = inner.path.clone() else {
+            return Ok(());
+        };
+
+        // Serialised before the lock is needed again, so a slow disk holds
+        // nothing but a buffer.
+        let snapshot = serde_json::to_value(&inner.values).map_err(|e| {
+            ApiError::new(
+                code::SHARED_STATE_NOT_SERIALIZABLE,
+                format!("Shared state could not be persisted: {e}"),
+            )
+        })?;
+        save(&path, &snapshot)?;
         Ok(())
     }
 }
@@ -408,6 +411,16 @@ mod tests {
         let _ = std::fs::remove_file(&anchor);
     }
 
+    /// One of the writers below: fifty sets of the same key, each read back.
+    fn race(store: &Store, writer: u32) {
+        for round in 0..50 {
+            store
+                .set("demo.race", json!({ "writer": writer, "round": round }))
+                .expect("set");
+            let _ = store.get("demo.race");
+        }
+    }
+
     #[test]
     fn concurrent_writes_do_not_panic_and_one_of_them_wins() {
         use std::sync::Arc;
@@ -416,14 +429,7 @@ mod tests {
         let mut handles = Vec::new();
         for writer in 0..8 {
             let store = Arc::clone(&store);
-            handles.push(std::thread::spawn(move || {
-                for round in 0..50 {
-                    store
-                        .set("demo.race", json!({ "writer": writer, "round": round }))
-                        .expect("set");
-                    let _ = store.get("demo.race");
-                }
-            }));
+            handles.push(std::thread::spawn(move || race(&store, writer)));
         }
         for handle in handles {
             handle.join().expect("no writer panics");

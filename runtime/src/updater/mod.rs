@@ -94,6 +94,19 @@ struct Installation {
     executable_within_root: PathBuf,
 }
 
+/// The `.app` an executable is inside, if it is inside one.
+#[cfg(target_os = "macos")]
+fn enclosing_bundle(exe: &std::path::Path) -> Option<&std::path::Path> {
+    let mut ancestor = exe;
+    while let Some(parent) = ancestor.parent() {
+        if parent.extension().is_some_and(|ext| ext == "app") {
+            return Some(parent);
+        }
+        ancestor = parent;
+    }
+    None
+}
+
 impl Installation {
     fn locate() -> Result<Self, ApiError> {
         let exe = std::env::current_exe()
@@ -102,20 +115,14 @@ impl Installation {
         // macOS: .../My App.app/Contents/MacOS/exe -> the bundle is the unit
         // that gets replaced.
         #[cfg(target_os = "macos")]
-        {
-            let mut ancestor = exe.as_path();
-            while let Some(parent) = ancestor.parent() {
-                if parent.extension().is_some_and(|ext| ext == "app") {
-                    return Ok(Self {
-                        executable_within_root: exe
-                            .strip_prefix(parent)
-                            .unwrap_or(std::path::Path::new("Contents/MacOS"))
-                            .to_path_buf(),
-                        root: parent.to_path_buf(),
-                    });
-                }
-                ancestor = parent;
-            }
+        if let Some(bundle) = enclosing_bundle(&exe) {
+            return Ok(Self {
+                executable_within_root: exe
+                    .strip_prefix(bundle)
+                    .unwrap_or(std::path::Path::new("Contents/MacOS"))
+                    .to_path_buf(),
+                root: bundle.to_path_buf(),
+            });
         }
 
         // Portable layout: the executable sits at the top of its own folder.

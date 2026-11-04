@@ -169,6 +169,13 @@ mod tests {
 
     use super::*;
 
+    fn mentions_note(event: &notify::Event) -> bool {
+        event
+            .paths
+            .iter()
+            .any(|path| path.to_string_lossy().ends_with("note.txt"))
+    }
+
     /// The backend itself, with no Vantail around it.
     ///
     /// If this passes and the integration test does not, the fault is in the
@@ -207,16 +214,8 @@ mod tests {
         let event = loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             match rx.recv_timeout(remaining) {
-                Ok(event) => {
-                    if event
-                        .paths
-                        .iter()
-                        .any(|path| path.to_string_lossy().ends_with("note.txt"))
-                    {
-                        break event;
-                    }
-                    other.extend(event.paths);
-                }
+                Ok(event) if mentions_note(&event) => break event,
+                Ok(event) => other.extend(event.paths),
                 Err(_) => panic!("nothing reported note.txt; only {other:?}"),
             }
         };

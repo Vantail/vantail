@@ -417,13 +417,7 @@ impl LoadedConfig {
         let mut candidates: Vec<PathBuf> = Vec::new();
 
         if let Ok(exe) = std::env::current_exe() {
-            if let Some(dir) = exe.parent() {
-                candidates.push(dir.join("vantail.json"));
-                candidates.push(dir.join("resources").join("vantail.json"));
-                if let Some(contents) = dir.parent() {
-                    candidates.push(contents.join("Resources").join("vantail.json"));
-                }
-            }
+            candidates.extend(beside_executable(&exe));
         }
         if let Ok(cwd) = std::env::current_dir() {
             candidates.push(cwd.join("vantail.json"));
@@ -431,6 +425,22 @@ impl LoadedConfig {
 
         candidates.into_iter().find(|p| p.is_file())
     }
+}
+
+/// The places a config can sit relative to the executable: next to it, in a
+/// `resources` folder beside it, and in a macOS bundle's `Resources`.
+fn beside_executable(exe: &Path) -> Vec<PathBuf> {
+    let Some(dir) = exe.parent() else {
+        return Vec::new();
+    };
+    let mut candidates = vec![
+        dir.join("vantail.json"),
+        dir.join("resources").join("vantail.json"),
+    ];
+    if let Some(contents) = dir.parent() {
+        candidates.push(contents.join("Resources").join("vantail.json"));
+    }
+    candidates
 }
 
 #[cfg(test)]

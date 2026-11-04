@@ -16,6 +16,23 @@ pub struct Pool {
     _workers: Vec<std::thread::JoinHandle<()>>,
 }
 
+/// One worker: run jobs until there are no more to come.
+fn work(rx: &Mutex<Receiver<Job>>) {
+    while let Some(job) = claim(rx) {
+        job();
+    }
+}
+
+/// The next job. The lock is held only long enough to claim it, so workers
+/// do not serialise on each other while running.
+///
+/// `None` when the sender is gone - the runtime is shutting down - or the
+/// lock is poisoned.
+fn claim(rx: &Mutex<Receiver<Job>>) -> Option<Job> {
+    let guard = rx.lock().ok()?;
+    guard.recv().ok()
+}
+
 impl Pool {
     pub fn new(size: usize) -> Self {
         let (tx, rx) = channel::<Job>();
@@ -26,22 +43,7 @@ impl Pool {
             let rx: Arc<Mutex<Receiver<Job>>> = Arc::clone(&rx);
             let handle = std::thread::Builder::new()
                 .name(format!("vantail-worker-{index}"))
-                .spawn(move || loop {
-                    // Take the lock only long enough to claim a job, so
-                    // workers do not serialise on each other while running.
-                    let job = {
-                        let guard = match rx.lock() {
-                            Ok(guard) => guard,
-                            Err(_) => break,
-                        };
-                        guard.recv()
-                    };
-                    match job {
-                        Ok(job) => job(),
-                        // The sender is gone: the runtime is shutting down.
-                        Err(_) => break,
-                    }
-                })
+                .spawn(move || work(&rx))
                 .expect("could not start a Vantail worker thread");
             workers.push(handle);
         }
