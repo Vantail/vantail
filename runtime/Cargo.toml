@@ -93,7 +93,7 @@ notify = { version = "8.2", optional = true }
 ureq = { version = "3.4", optional = true }
 # The system CSPRNG, for generating a database key the application never sees.
 getrandom = "0.4"
-rusqlite = { version = "0.40", optional = true, default-features = false }
+rusqlite = { version = "0.41", optional = true, default-features = false }
 tungstenite = { version = "0.30", optional = true, default-features = false, features = [
   "handshake",
   # Shares the rustls and webpki-roots that `ureq` already brings in, so the
