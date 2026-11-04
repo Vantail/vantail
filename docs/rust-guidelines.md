@@ -142,6 +142,28 @@ When a loop or a match would make a function too long or too deep, it goes
 into a small named function: `any_rule_matches`, `has_control_character`,
 `default_port`.
 
+### 80 columns
+
+`rustfmt.toml` sets `max_width = 80`; everything else is rustfmt's default,
+and CI's `cargo fmt --all --check` holds the code to it. Run `cargo fmt --all`
+before committing.
+
+Three things rustfmt does not do, which are left to the person writing:
+
+- **Comments are not rewrapped.** Keep them inside 80 columns by hand.
+- **A string literal is never broken.** A message stays on one line, so
+  searching the code for an error a user reported finds it. The exception is
+  a string so long that rustfmt gives up on the whole statement around it -
+  it then leaves that statement as it found it. Split such a string with a
+  `\` continuation, which removes the line break and the next line's indent,
+  so the text does not change.
+- **Macros with their own syntax** - `thread_local!`, `msg_send!`, `json!` -
+  are left alone. A local variable usually shortens the line.
+
+The reformat itself is listed in `.git-blame-ignore-revs`. GitHub skips it in
+blame by itself; locally, run `git config blame.ignoreRevsFile
+.git-blame-ignore-revs` once.
+
 ## Platform-only code
 
 Clippy only sees the code for the platform it runs on, and CI lints on Linux.
@@ -163,15 +185,9 @@ These are not checked, but are expected in review.
 - **An `#[allow(...)]` carries a comment** saying why the lint is wrong here.
   A lint is never silenced for a whole file or crate to get past it.
 
-## Planned
+## Left out
 
-Each of these lands as its own change: the code brought into line first, then
-the lint switched on once nothing trips it.
-
-1. **Formatting at 80 columns.** Last, in one change, when no other branch is
-   open, and listed in `.git-blame-ignore-revs` so `git blame` looks past it.
-
-Two things were considered and left out:
+Three things from the original proposal were considered and not adopted:
 
 - **`clippy::implicit_return`**, which would put `return` in front of the last
   expression of every function and closure. It would add over a thousand
@@ -179,3 +195,7 @@ Two things were considered and left out:
 - **`forbid(unsafe_code)`**, which is not possible while the window chrome and
   the permission prompts are OS calls. The `Safety` rules above are what is
   enforced instead.
+- **`use_small_heuristics = "Off"`** in `rustfmt.toml`. It sets every width
+  rustfmt uses to the full line, so a call or a chain that fits in 80 columns
+  goes on one line instead of several - the opposite of the vertical layout it
+  was proposed for.

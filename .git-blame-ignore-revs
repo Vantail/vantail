@@ -1,0 +1,11 @@
+# Commits that only reformat, which `git blame` should look past.
+#
+# GitHub reads this file by itself. Locally, run once in your clone:
+#
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# A hash here only means something while the commit keeps it, so a branch
+# carrying one is merged with a merge commit - not squashed or rebased.
+
+# Format the runtime at 80 columns
+492053c62cd1eccfcb62e033870ee8dd40c76f6a
