@@ -51,5 +51,8 @@ expect_used = "deny"
 # that clippy.toml's `disallowed-methods` rules out, so they are off. Each
 # one names the combinator it would ask for.
 manual_find = "allow"
+manual_flatten = "allow"
 manual_map = "allow"
 manual_ok_err = "allow"
+manual_unwrap_or = "allow"
+manual_unwrap_or_default = "allow"

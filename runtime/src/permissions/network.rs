@@ -117,11 +117,7 @@ impl Endpoint {
             .split_once("://")
             .ok_or_else(|| ApiError::invalid_params(format!("`{url}` is not an absolute URL")))?;
 
-        if scheme.is_empty()
-            || !scheme
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.')
-        {
+        if scheme.is_empty() || !is_scheme(scheme) {
             return Err(ApiError::invalid_params(format!(
                 "`{url}` has no usable scheme"
             )));
@@ -129,8 +125,14 @@ impl Endpoint {
 
         // Everything from the first `/`, `?` or `#` is the path; before it,
         // anything after an `@` is the authority.
-        let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
-        let authority = authority.rsplit('@').next().unwrap_or(authority);
+        let authority = match rest.split(['/', '?', '#']).next() {
+            Some(authority) => authority,
+            None => rest,
+        };
+        let authority = match authority.rsplit_once('@') {
+            Some((_credentials, host)) => host,
+            None => authority,
+        };
 
         let (host, port) = split_host_port(authority)?;
         if host.is_empty() {
@@ -145,12 +147,26 @@ impl Endpoint {
     }
 
     fn ip(&self) -> Option<IpAddr> {
-        self.host
-            .trim_start_matches('[')
-            .trim_end_matches(']')
-            .parse()
-            .ok()
+        let literal = self.host.trim_start_matches('[').trim_end_matches(']');
+        match literal.parse() {
+            Ok(address) => Some(address),
+            Err(_) => None,
+        }
     }
+}
+
+/// Letters, digits, `+`, `-` and `.`: what RFC 3986 allows in a scheme.
+fn is_scheme(text: &str) -> bool {
+    for character in text.chars() {
+        let allowed = character.is_ascii_alphanumeric()
+            || character == '+'
+            || character == '-'
+            || character == '.';
+        if !allowed {
+            return false;
+        }
+    }
+    true
 }
 
 fn split_host_port(authority: &str) -> Result<(String, Option<u16>), ApiError> {
@@ -259,13 +275,19 @@ impl Rule {
             Rule::AnyHost => true,
             Rule::Host(host) => &endpoint.host == host,
             Rule::Suffix(suffix) => endpoint.host.ends_with(suffix.as_str()),
-            Rule::Cidr { network, prefix } => endpoint
-                .ip()
-                .is_some_and(|address| in_network(address, *network, *prefix)),
+            Rule::Cidr { network, prefix } => match endpoint.ip() {
+                Some(address) => in_network(address, *network, *prefix),
+                None => false,
+            },
             Rule::Origin { scheme, host, port } => {
+                // A rule that names no port matches any.
+                let port_matches = match port {
+                    Some(expected) => endpoint.port == Some(*expected),
+                    None => true,
+                };
                 http_equivalent(&endpoint.scheme) == scheme
                     && host.matches(endpoint)
-                    && port.is_none_or(|expected| endpoint.port == Some(expected))
+                    && port_matches
             }
         }
     }
@@ -390,10 +412,10 @@ impl NetworkScope {
     pub fn check(&self, url: &str) -> Result<Endpoint, ApiError> {
         let endpoint = Endpoint::parse(url)?;
 
-        if self.deny.iter().any(|rule| rule.matches(&endpoint)) {
+        if any_rule_matches(&self.deny, &endpoint) {
             return Err(self.denied(&endpoint, "denied by `permissions.network.deny`"));
         }
-        if self.allow.iter().any(|rule| rule.matches(&endpoint)) {
+        if any_rule_matches(&self.allow, &endpoint) {
             return Ok(endpoint);
         }
         if self.is_granted(&endpoint.host) {
@@ -411,8 +433,10 @@ impl NetworkScope {
         if !self.grant_from_prompt {
             return None;
         }
-        let endpoint = Endpoint::parse(url).ok()?;
-        if self.deny.iter().any(|rule| rule.matches(&endpoint)) {
+        let Ok(endpoint) = Endpoint::parse(url) else {
+            return None;
+        };
+        if any_rule_matches(&self.deny, &endpoint) {
             return None;
         }
         Some(endpoint)
@@ -429,16 +453,18 @@ impl NetworkScope {
 
     /// Whether this host may be reached without a trusted certificate.
     pub fn allows_invalid_certificate(&self, endpoint: &Endpoint) -> bool {
-        self.insecure.iter().any(|rule| rule.matches(endpoint))
+        any_rule_matches(&self.insecure, endpoint)
     }
 
     /// The client certificate to present to this host, if the config named
     /// one. The first matching entry wins, so order is the tie-breaker.
     pub fn client_certificate(&self, endpoint: &Endpoint) -> Option<&CertificatePaths> {
-        self.certificates
-            .iter()
-            .find(|entry| entry.hosts.iter().any(|rule| rule.matches(endpoint)))
-            .map(|entry| &entry.paths)
+        for entry in &self.certificates {
+            if any_rule_matches(&entry.hosts, endpoint) {
+                return Some(&entry.paths);
+            }
+        }
+        None
     }
 
     /// The proxy this host should be reached through, if any.
@@ -446,7 +472,7 @@ impl NetworkScope {
         let proxy = self.proxy.as_ref()?;
         // No `for` list is "everything", which is what a debugging proxy or a
         // corporate egress usually means.
-        if proxy.hosts.is_empty() || proxy.hosts.iter().any(|rule| rule.matches(endpoint)) {
+        if proxy.hosts.is_empty() || any_rule_matches(&proxy.hosts, endpoint) {
             Some(&proxy.url)
         } else {
             None
@@ -469,7 +495,20 @@ impl NetworkScope {
 }
 
 fn compile_all(rules: &[String]) -> Result<Vec<Rule>, String> {
-    rules.iter().map(|rule| Rule::compile(rule)).collect()
+    let mut compiled = Vec::with_capacity(rules.len());
+    for rule in rules {
+        compiled.push(Rule::compile(rule)?);
+    }
+    Ok(compiled)
+}
+
+fn any_rule_matches(rules: &[Rule], endpoint: &Endpoint) -> bool {
+    for rule in rules {
+        if rule.matches(endpoint) {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -480,9 +519,17 @@ mod tests {
         scope(allow)
     }
 
+    fn owned(rules: &[&str]) -> Vec<String> {
+        let mut owned = Vec::with_capacity(rules.len());
+        for rule in rules {
+            owned.push(rule.to_string());
+        }
+        owned
+    }
+
     fn scope(allow: &[&str]) -> NetworkScope {
         compile(NetworkConfig {
-            allow: allow.iter().map(|rule| rule.to_string()).collect(),
+            allow: owned(allow),
             ..NetworkConfig::default()
         })
     }

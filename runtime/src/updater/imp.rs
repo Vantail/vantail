@@ -64,10 +64,11 @@ pub fn dispatch(
     let source = ctx.source.to_string();
 
     Some(match method {
-        "updater.check" => check(&rt).map(|found| match found {
-            Some(update) => update,
-            None => json!({ "available": false, "currentVersion": rt.config.app.version }),
-        }),
+        "updater.check" => match check(&rt) {
+            Ok(Some(update)) => Ok(update),
+            Ok(None) => Ok(json!({ "available": false, "currentVersion": rt.config.app.version })),
+            Err(error) => Err(error),
+        },
 
         "updater.download" => {
             start_download(&rt, id, &source);
@@ -240,12 +241,7 @@ fn fetch_archive(
         .call()
         .map_err(|e| ApiError::internal(format!("Could not download the update: {e}")))?;
 
-    let total: u64 = response
-        .headers()
-        .get("content-length")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(0);
+    let total = announced_length(response.headers().get("content-length"));
 
     if total > MAX_ARCHIVE_BYTES {
         return Err(ApiError::internal(format!(
@@ -404,11 +400,15 @@ fn swap(installed: &Installation, replacement: &Path) -> Result<(), ApiError> {
 /// displaces to a `<name>.old` beside it. Either all of them move or none do.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn replace_entries(from: &Path, into: &Path) -> Result<(), ApiError> {
-    let mut names = std::fs::read_dir(from)
-        .map_err(|e| ApiError::io("Could not read the extracted update", e))?
-        .filter_map(Result::ok)
-        .map(|entry| entry.file_name())
-        .collect::<Vec<_>>();
+    let listing = std::fs::read_dir(from)
+        .map_err(|e| ApiError::io("Could not read the extracted update", e))?;
+    let mut names = Vec::new();
+    for entry in listing {
+        // An entry that cannot be read is not one there is anything to move.
+        if let Ok(entry) = entry {
+            names.push(entry.file_name());
+        }
+    }
     names.sort();
 
     let mut retired: Vec<(PathBuf, PathBuf)> = Vec::new();
@@ -469,7 +469,10 @@ fn remove(path: &Path) {
 /// recoverable by dropping the suffix.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn retired_name(path: &Path) -> PathBuf {
-    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    let mut name = match path.file_name() {
+        Some(name) => name.to_os_string(),
+        None => std::ffi::OsString::new(),
+    };
     name.push(".old");
     path.with_file_name(name)
 }
@@ -488,24 +491,50 @@ fn unpack(archive: &Path, into: &Path) -> Result<(), ApiError> {
         .map_err(|e| ApiError::io("Could not extract the update", e))
 }
 
+/// macOS archives routinely carry these; they are not the application.
+fn is_metadata_file(path: &Path) -> bool {
+    let Some(name) = path.file_name() else {
+        return false;
+    };
+    let Some(name) = name.to_str() else {
+        return false;
+    };
+    name.starts_with("._") || name == ".DS_Store"
+}
+
+/// The size a download announced, or 0 when it announced none that parses.
+fn announced_length(header: Option<&ureq::http::HeaderValue>) -> u64 {
+    let Some(header) = header else {
+        return 0;
+    };
+    let Ok(text) = header.to_str() else {
+        return 0;
+    };
+    match text.parse() {
+        Ok(length) => length,
+        Err(_) => 0,
+    }
+}
+
 /// An update archive holds exactly one thing: the new application.
 fn single_entry(directory: &Path) -> Result<PathBuf, ApiError> {
-    let mut entries = std::fs::read_dir(directory)
-        .map_err(|e| ApiError::io("Could not read the extracted update", e))?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        // macOS archives routinely carry these; they are not the application.
-        .filter(|path| {
-            !path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("._") || name == ".DS_Store")
-        })
-        .collect::<Vec<_>>();
+    let listing = std::fs::read_dir(directory)
+        .map_err(|e| ApiError::io("Could not read the extracted update", e))?;
+    let mut entries = Vec::new();
+    for entry in listing {
+        let Ok(entry) = entry else {
+            continue;
+        };
+        let path = entry.path();
+        if !is_metadata_file(&path) {
+            entries.push(path);
+        }
+    }
 
-    match entries.len() {
-        1 => Ok(entries.remove(0)),
-        found => Err(ApiError::internal(format!(
+    let found = entries.len();
+    match (entries.pop(), found) {
+        (Some(entry), 1) => Ok(entry),
+        _ => Err(ApiError::internal(format!(
             "The update archive should contain exactly one application, but it has {found} entries"
         ))),
     }
