@@ -573,7 +573,7 @@ fn ask_to_grant_host(host: &str, app: &str) -> bool {
         .set_level(rfd::MessageLevel::Warning)
         .set_title(app)
         .set_description(format!(
-            "{app} wants to connect to {host}.\n\n                         Allow it for as long as {app} is running?"
+            "{app} wants to connect to {host}.\n\nAllow it for as long as {app} is running?"
         ))
         .set_buttons(rfd::MessageButtons::YesNo)
         .show();
