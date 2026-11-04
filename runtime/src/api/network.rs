@@ -76,6 +76,22 @@ struct RequestParams {
     response_type: Option<String>,
 }
 
+impl RequestParams {
+    fn timeout(&self) -> Duration {
+        match self.timeout_ms {
+            Some(timeout_ms) => Duration::from_millis(timeout_ms),
+            None => Duration::from_millis(DEFAULT_TIMEOUT_MS),
+        }
+    }
+
+    fn allowed_hops(&self) -> u32 {
+        match self.max_redirects {
+            Some(hops) => hops,
+            None => DEFAULT_MAX_REDIRECTS,
+        }
+    }
+}
+
 /// What a 3xx with a `Location` does, named and meaning what `fetch`'s
 /// `redirect` option does.
 #[derive(Deserialize, Default, Clone, Copy, PartialEq, Eq, Debug)]
@@ -501,8 +517,8 @@ fn negotiate(
     cancelled: &AtomicBool,
 ) -> Result<Negotiated, ApiError> {
     let mut request = Outbound::new(params)?;
-    let timeout = Duration::from_millis(params.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS));
-    let allowed_hops = params.max_redirects.unwrap_or(DEFAULT_MAX_REDIRECTS);
+    let timeout = params.timeout();
+    let allowed_hops = params.allowed_hops();
 
     let mut previous: Option<Endpoint> = None;
     // Every hop that redirected, in the order they were followed. Discarding
@@ -534,9 +550,12 @@ fn negotiate(
         let status = head.status;
         // A 3xx without a `Location` - a 304, say - is not a redirect, and is
         // an answer like any other status.
-        let Some(location) =
-            redirect_target(&head, &request.url).filter(|_| status.is_redirection())
-        else {
+        let location = if status.is_redirection() {
+            redirect_target(&head, &request.url)
+        } else {
+            None
+        };
+        let Some(location) = location else {
             return Ok(Negotiated {
                 url: request.url,
                 head,
@@ -547,7 +566,10 @@ fn negotiate(
         };
         // The header as sent, which may be relative; `url` on the next hop is
         // where it actually resolved to.
-        let sent_location = head.headers.get("location").cloned().unwrap_or_default();
+        let sent_location = match head.headers.get("location") {
+            Some(location) => location.clone(),
+            None => String::new(),
+        };
 
         match params.redirect {
             // The 3xx is the answer. Nothing further is requested, so there is
@@ -616,8 +638,8 @@ fn send_hop(
         Some(paths) => Some(client_certificate(paths)?),
         None => None,
     };
-    let proxy = rt.permissions.network.proxy(endpoint).map(str::to_string);
-    open(request, timeout, insecure, certificate, proxy.as_deref())
+    let proxy = rt.permissions.network.proxy(endpoint);
+    open(request, timeout, insecure, certificate, proxy)
 }
 
 /// What a followed redirect said, for `redirects[]`.
@@ -713,7 +735,7 @@ fn ask_to_grant(rt: &Arc<Runtime>, url: &str, denial: ApiError) -> Result<Endpoi
     }
 
     // A closed channel means the loop exited before answering, which is a no.
-    if reply.recv().unwrap_or(false) {
+    if matches!(reply.recv(), Ok(true)) {
         rt.permissions.network.grant(&endpoint.host);
         Ok(endpoint)
     } else {
@@ -881,7 +903,10 @@ fn read_head(response: http::Response<ureq::Body>, elapsed: Duration) -> (Head, 
     let mut collected = BTreeMap::new();
     let mut pairs = Vec::new();
     for (name, value) in response.headers() {
-        let text = value.to_str().unwrap_or_default().to_string();
+        let text = match value.to_str() {
+            Ok(text) => text.to_string(),
+            Err(_) => String::new(),
+        };
         let name = name.as_str().to_ascii_lowercase();
         pairs.push((name.clone(), text.clone()));
         collected
@@ -905,6 +930,17 @@ fn read_head(response: http::Response<ureq::Body>, elapsed: Duration) -> (Head, 
     (head, response.into_body())
 }
 
+/// A path up to and including its last `/`, or `/` when it has none.
+fn directory_of(path: &str) -> &str {
+    let Some(at) = path.rfind('/') else {
+        return "/";
+    };
+    match path.get(..=at) {
+        Some(directory) => directory,
+        None => "/",
+    }
+}
+
 fn redirect_target(head: &Head, base: &str) -> Option<String> {
     let location = head.headers.get("location")?;
     Some(resolve(base, location))
@@ -919,20 +955,25 @@ fn resolve(base: &str, location: &str) -> String {
         return location.to_string();
     }
 
-    let (scheme, rest) = base.split_once("://").unwrap_or(("http", base));
-    let authority = rest.split(['/', '?', '#']).next().unwrap_or(rest);
+    let (scheme, rest) = match base.split_once("://") {
+        Some(parts) => parts,
+        None => ("http", base),
+    };
+    let authority = match rest.split(['/', '?', '#']).next() {
+        Some(authority) => authority,
+        None => rest,
+    };
     let origin = format!("{scheme}://{authority}");
 
     if location.starts_with('/') {
         return format!("{origin}{location}");
     }
 
-    let path = &rest[authority.len()..];
-    let directory = match path.rfind('/') {
-        Some(at) => &path[..=at],
-        None => "/",
+    let path = match rest.strip_prefix(authority) {
+        Some(path) => path,
+        None => "",
     };
-    format!("{origin}{directory}{location}")
+    format!("{origin}{}{location}", directory_of(path))
 }
 
 /// Decode a chunk as UTF-8, keeping back the start of a character the next
@@ -1036,7 +1077,10 @@ fn head_json(
     object.insert("status".into(), json!(status));
     object.insert(
         "statusText".into(),
-        json!(head.status.canonical_reason().unwrap_or("")),
+        json!(match head.status.canonical_reason() {
+            Some(reason) => reason,
+            None => "",
+        }),
     );
     object.insert("ok".into(), json!((200..300).contains(&status)));
     object.insert("headers".into(), json!(head.headers));

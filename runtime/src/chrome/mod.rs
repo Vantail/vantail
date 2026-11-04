@@ -270,7 +270,10 @@ impl Chrome {
             return Ok(());
         };
 
-        let hotkeys: Vec<_> = taken.values().map(|shortcut| shortcut.hotkey).collect();
+        let mut hotkeys = Vec::with_capacity(taken.len());
+        for shortcut in taken.values() {
+            hotkeys.push(shortcut.hotkey);
+        }
         manager
             .unregister_all(&hotkeys)
             .map_err(|e| ApiError::internal(format!("Could not release the shortcuts: {e}")))
@@ -282,13 +285,10 @@ impl Chrome {
 
     /// Every live shortcut, as `{ id, accelerator }`.
     pub fn shortcuts(&self) -> Vec<serde_json::Value> {
-        let mut listed: Vec<_> = self
-            .shortcuts
-            .iter()
-            .map(|(accelerator, shortcut)| {
-                serde_json::json!({ "id": shortcut.id, "accelerator": accelerator })
-            })
-            .collect();
+        let mut listed = Vec::with_capacity(self.shortcuts.len());
+        for (accelerator, shortcut) in &self.shortcuts {
+            listed.push(serde_json::json!({ "id": shortcut.id, "accelerator": accelerator }));
+        }
         // A map has no order, and a list that reshuffles between calls is
         // tiresome to assert on.
         listed.sort_by(|a, b| a["accelerator"].as_str().cmp(&b["accelerator"].as_str()));
@@ -297,10 +297,12 @@ impl Chrome {
 
     /// What to report when the window server says a combination was pressed.
     pub fn shortcut_by_hotkey(&self, id: u32) -> Option<(&str, &str)> {
-        self.shortcuts
-            .iter()
-            .find(|(_, shortcut)| shortcut.hotkey.id() == id)
-            .map(|(accelerator, shortcut)| (shortcut.id.as_str(), accelerator.as_str()))
+        for (accelerator, shortcut) in &self.shortcuts {
+            if shortcut.hotkey.id() == id {
+                return Some((shortcut.id.as_str(), accelerator.as_str()));
+            }
+        }
+        None
     }
 
     pub fn has_tray(&self) -> bool {
@@ -315,7 +317,7 @@ impl Chrome {
             menu::build(specs, &mut items).map_err(ApiError::invalid_params)?;
 
         self.forget(Scope::App);
-        self.app_menu_ids = items.keys().cloned().collect();
+        self.app_menu_ids = item_ids(&items);
         self.items.extend(items);
 
         #[cfg(target_os = "macos")]
@@ -420,7 +422,7 @@ impl Chrome {
                 let built = menu::build(specs, &mut items).map_err(ApiError::invalid_params)?;
                 skipped = built.skipped;
                 self.forget(Scope::Tray);
-                self.tray_menu_ids = items.keys().cloned().collect();
+                self.tray_menu_ids = item_ids(&items);
                 self.items.extend(items);
                 Some(built.menu)
             }
@@ -479,7 +481,10 @@ impl Chrome {
 
     /// The window a tray click should bring back.
     pub fn tray_window(&self) -> &str {
-        self.tray_window.as_deref().unwrap_or(crate::windows::MAIN)
+        match self.tray_window.as_deref() {
+            Some(label) => label,
+            None => crate::windows::MAIN,
+        }
     }
 
     /// Pop the tray menu open without waiting for a click on the icon.
@@ -503,7 +508,7 @@ impl Chrome {
             menu::build(specs, &mut items).map_err(ApiError::invalid_params)?;
 
         self.forget(Scope::Tray);
-        self.tray_menu_ids = items.keys().cloned().collect();
+        self.tray_menu_ids = item_ids(&items);
         self.items.extend(items);
 
         self.tray()?.set_menu(Some(Box::new(menu.clone())));
@@ -553,6 +558,15 @@ pub fn load_icon(rt: &Runtime, path: &str) -> Result<tray_icon::Icon, ApiError> 
     let image = icon::load_png(&resolved)?;
     tray_icon::Icon::from_rgba(image.bytes, image.width, image.height)
         .map_err(|e| ApiError::invalid_params(format!("Could not use {path} as an icon: {e}")))
+}
+
+/// The ids of the items a menu was built with.
+fn item_ids(items: &HashMap<String, ItemHandle>) -> Vec<String> {
+    let mut ids = Vec::with_capacity(items.len());
+    for id in items.keys() {
+        ids.push(id.clone());
+    }
+    ids
 }
 
 #[cfg(test)]

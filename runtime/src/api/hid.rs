@@ -187,29 +187,44 @@ fn list(rt: &Runtime) -> ApiResult {
         api.refresh_devices()
             .map_err(|e| ApiError::internal(format!("Could not enumerate HID devices: {e}")))?;
 
-        let devices: Vec<Value> = api
-            .device_list()
-            .filter(|info| {
-                rt.permissions
-                    .allows_device(info.vendor_id(), info.product_id(), info.usage_page())
-            })
-            .map(|info| {
-                json!({
-                    "id": info.path().to_string_lossy(),
-                    "vendorId": info.vendor_id(),
-                    "productId": info.product_id(),
-                    "manufacturer": info.manufacturer_string(),
-                    "product": info.product_string(),
-                    "serialNumber": info.serial_number(),
-                    "usagePage": info.usage_page(),
-                    "usage": info.usage(),
-                    "interface": info.interface_number(),
-                })
-            })
-            .collect();
-
-        Ok(Value::Array(devices))
+        Ok(Value::Array(permitted_devices(rt, api)))
     })
+}
+
+/// The devices the config lets the application see, described for the page.
+fn permitted_devices(rt: &Runtime, api: &HidApi) -> Vec<Value> {
+    let mut devices = Vec::new();
+    for info in api.device_list() {
+        let permitted =
+            rt.permissions
+                .allows_device(info.vendor_id(), info.product_id(), info.usage_page());
+        if !permitted {
+            continue;
+        }
+        devices.push(json!({
+            "id": info.path().to_string_lossy(),
+            "vendorId": info.vendor_id(),
+            "productId": info.product_id(),
+            "manufacturer": info.manufacturer_string(),
+            "product": info.product_string(),
+            "serialNumber": info.serial_number(),
+            "usagePage": info.usage_page(),
+            "usage": info.usage(),
+            "interface": info.interface_number(),
+        }));
+    }
+    devices
+}
+
+/// What the device with this id reports about itself: its vendor id,
+/// product id and usage page.
+fn find_device(api: &HidApi, id: &str) -> Option<(u16, u16, u16)> {
+    for info in api.device_list() {
+        if info.path().to_string_lossy() == id {
+            return Some((info.vendor_id(), info.product_id(), info.usage_page()));
+        }
+    }
+    None
 }
 
 fn open(rt: &Arc<Runtime>, source: &str, method: &str, params: Value) -> ApiResult {
@@ -220,9 +235,7 @@ fn open(rt: &Arc<Runtime>, source: &str, method: &str, params: Value) -> ApiResu
     let (vendor_id, product_id, usage_page) = rt.devices.api(|api| {
         api.refresh_devices()
             .map_err(|e| ApiError::internal(format!("Could not enumerate HID devices: {e}")))?;
-        api.device_list()
-            .find(|info| info.path().to_string_lossy() == id)
-            .map(|info| (info.vendor_id(), info.product_id(), info.usage_page()))
+        find_device(api, &id)
             .ok_or_else(|| ApiError::new(code::NOT_FOUND, format!("No HID device with id `{id}`")))
     })?;
 
@@ -382,17 +395,17 @@ fn close(rt: &Runtime, method: &str, params: Value) -> ApiResult {
 }
 
 fn opened(rt: &Runtime) -> Vec<Value> {
-    lock(&rt.devices.open)
-        .iter()
-        .map(|(handle, entry)| {
-            json!({
-                "handle": handle,
-                "id": entry.path,
-                "vendorId": entry.vendor_id,
-                "productId": entry.product_id,
-            })
-        })
-        .collect()
+    let open = lock(&rt.devices.open);
+    let mut described = Vec::with_capacity(open.len());
+    for (handle, entry) in open.iter() {
+        described.push(json!({
+            "handle": handle,
+            "id": entry.path,
+            "vendorId": entry.vendor_id,
+            "productId": entry.product_id,
+        }));
+    }
+    described
 }
 
 fn write(rt: &Runtime, method: &str, params: Value) -> ApiResult {
@@ -402,12 +415,13 @@ fn write(rt: &Runtime, method: &str, params: Value) -> ApiResult {
 
     let written = borrow(&entry, |device| device.write(&bytes));
 
-    written.map(|count| json!(count)).map_err(|e| {
+    let count = written.map_err(|e| {
         ApiError::new(
             code::IO_ERROR,
             format!("Could not write to the device: {e}"),
         )
-    })
+    })?;
+    Ok(json!(count))
 }
 
 fn send_feature(rt: &Runtime, method: &str, params: Value) -> ApiResult {
@@ -417,12 +431,13 @@ fn send_feature(rt: &Runtime, method: &str, params: Value) -> ApiResult {
 
     let sent = borrow(&entry, |device| device.send_feature_report(&bytes));
 
-    sent.map(|()| Value::Null).map_err(|e| {
+    sent.map_err(|e| {
         ApiError::new(
             code::IO_ERROR,
             format!("Could not send the feature report: {e}"),
         )
-    })
+    })?;
+    Ok(Value::Null)
 }
 
 fn get_feature(rt: &Runtime, method: &str, params: Value) -> ApiResult {
@@ -445,13 +460,13 @@ fn get_feature(rt: &Runtime, method: &str, params: Value) -> ApiResult {
 
     let read = borrow(&entry, |device| device.get_feature_report(&mut buffer));
 
-    read.map(|count| json!(BASE64.encode(filled(&buffer, count))))
-        .map_err(|e| {
-            ApiError::new(
-                code::IO_ERROR,
-                format!("Could not read the feature report: {e}"),
-            )
-        })
+    let count = read.map_err(|e| {
+        ApiError::new(
+            code::IO_ERROR,
+            format!("Could not read the feature report: {e}"),
+        )
+    })?;
+    Ok(json!(BASE64.encode(filled(&buffer, count))))
 }
 
 fn require(rt: &Runtime, handle: u32) -> Result<Arc<Open>, ApiError> {
@@ -522,7 +537,7 @@ mod tests {
     ) {
         let mut taken = 0;
         while running.load(Ordering::Relaxed) {
-            if holds.is_some_and(|limit| taken >= limit) {
+            if matches!(holds, Some(limit) if taken >= limit) {
                 return;
             }
             if polling && turnstile.busy() {

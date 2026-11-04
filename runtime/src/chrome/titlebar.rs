@@ -120,14 +120,16 @@ fn parts(
 )> {
     use objc2_app_kit::NSWindowButton;
 
-    let buttons: Vec<_> = [
+    let mut buttons = Vec::new();
+    for kind in [
         NSWindowButton::CloseButton,
         NSWindowButton::MiniaturizeButton,
         NSWindowButton::ZoomButton,
-    ]
-    .into_iter()
-    .filter_map(|kind| ns.standardWindowButton(kind))
-    .collect();
+    ] {
+        if let Some(button) = ns.standardWindowButton(kind) {
+            buttons.push(button);
+        }
+    }
     // Safety: `superview` is a plain getter, and the buttons belong to `ns`,
     // a live window read on the main thread.
     let inner = unsafe { buttons.first()?.superview() }?;
@@ -169,9 +171,14 @@ fn apply(
 
     // Only the group moves; the gaps between the three stay the platform's.
     let start = first.frame().origin.x;
-    let offsets: Vec<f64> = buttons.iter().map(|b| b.frame().origin.x - start).collect();
-    let leading = shape.lights.map(|(x, _)| x).unwrap_or(shape.home_x);
-    for (button, offset) in buttons.iter().zip(offsets) {
+    let leading = match shape.lights {
+        Some((x, _)) => x,
+        None => shape.home_x,
+    };
+    for button in buttons {
+        // Each button's own frame is read before it moves; moving one does
+        // not move the others.
+        let offset = button.frame().origin.x - start;
         button.setFrameOrigin(NSPoint::new(leading + offset, y));
     }
 
@@ -427,7 +434,10 @@ pub fn fit(
     keeper: &Keeper,
 ) -> f64 {
     let shape = Shape {
-        height: requested.filter(|h| *h > 0.0).unwrap_or(platform.height),
+        height: match requested {
+            Some(height) if height > 0.0 => height,
+            _ => platform.height,
+        },
         lights,
         home_x: platform.button_x,
     };
@@ -497,9 +507,11 @@ pub fn native(window: &tao::window::Window) -> Native {
             //
             // Safety: `superview` is a plain getter, on a button of the window
             // the pointer above was checked for.
-            let container = unsafe { close.superview() }
-                .map(|view| view.frame().size.height)
-                .unwrap_or_default();
+            let superview = unsafe { close.superview() };
+            let container = match superview {
+                Some(view) => view.frame().size.height,
+                None => 0.0,
+            };
             let close = close.frame();
             let zoom = zoom.frame();
             // The gap to the left of the first light, repeated after the last
