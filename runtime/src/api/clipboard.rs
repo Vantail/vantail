@@ -37,90 +37,97 @@ const BASE64: base64::engine::general_purpose::GeneralPurpose =
 
 pub fn dispatch(rt: &Runtime, method: &str, params: Value) -> ApiResult {
     match method {
-        "clipboard.readText" => {
-            rt.permissions
-                .require(rt.permissions.clipboard_read, method)?;
-            with_clipboard(|clipboard| {
-                clipboard
-                    .get_text()
-                    .map(Value::from)
-                    // An empty clipboard is not an error; it is empty.
-                    .or_else(|_| Ok(Value::String(String::new())))
-            })
-        }
-
-        "clipboard.writeText" => {
-            rt.permissions
-                .require(rt.permissions.clipboard_write, method)?;
-            let TextParams { text } = Request::params(method, params)?;
-            with_clipboard(move |clipboard| {
-                clipboard
-                    .set_text(text)
-                    .map(|_| Value::Null)
-                    .map_err(|e| ApiError::internal(format!("Could not write the clipboard: {e}")))
-            })
-        }
-
-        "clipboard.clear" => {
-            rt.permissions
-                .require(rt.permissions.clipboard_write, method)?;
-            with_clipboard(|clipboard| {
-                clipboard
-                    .clear()
-                    .map(|_| Value::Null)
-                    .map_err(|e| ApiError::internal(format!("Could not clear the clipboard: {e}")))
-            })
-        }
-
-        "clipboard.hasText" => {
-            rt.permissions
-                .require(rt.permissions.clipboard_read, method)?;
-            with_clipboard(|clipboard| Ok(json!(clipboard.get_text().is_ok())))
-        }
-
-        "clipboard.readImage" => {
-            rt.permissions
-                .require(rt.permissions.clipboard_read, method)?;
-            with_clipboard(|clipboard| match clipboard.get_image() {
-                Ok(image) => {
-                    let png = encode_png(&image)?;
-                    Ok(json!({
-                        "width": image.width,
-                        "height": image.height,
-                        "data": BASE64.encode(png),
-                    }))
-                }
-                // No image on the clipboard is an ordinary answer, not a
-                // failure - the same way empty text is.
-                Err(_) => Ok(Value::Null),
-            })
-        }
-
-        "clipboard.writeImage" => {
-            rt.permissions
-                .require(rt.permissions.clipboard_write, method)?;
-            let ImageParams { data } = Request::params(method, params)?;
-            let bytes = BASE64
-                .decode(data.as_bytes())
-                .map_err(|e| ApiError::invalid_params(format!("`data` is not base64: {e}")))?;
-            let image = decode_png(&bytes)?;
-
-            with_clipboard(move |clipboard| {
-                clipboard
-                    .set_image(image)
-                    .map(|_| Value::Null)
-                    .map_err(|e| ApiError::internal(format!("Could not write the image: {e}")))
-            })
-        }
-
-        "clipboard.hasImage" => {
-            rt.permissions
-                .require(rt.permissions.clipboard_read, method)?;
-            with_clipboard(|clipboard| Ok(json!(clipboard.get_image().is_ok())))
-        }
-
+        "clipboard.readText" => read_text(rt),
+        "clipboard.writeText" => write_text(rt, params),
+        "clipboard.clear" => clear(rt),
+        "clipboard.hasText" => has_text(rt),
+        "clipboard.readImage" => read_image(rt),
+        "clipboard.writeImage" => write_image(rt, params),
+        "clipboard.hasImage" => has_image(rt),
         _ => Err(ApiError::unknown_method(method)),
     }
+}
+
+fn read_text(rt: &Runtime) -> ApiResult {
+    rt.permissions
+        .require(rt.permissions.clipboard_read, "clipboard.readText")?;
+    with_clipboard(|clipboard| {
+        clipboard
+            .get_text()
+            .map(Value::from)
+            // An empty clipboard is not an error; it is empty.
+            .or_else(|_| Ok(Value::String(String::new())))
+    })
+}
+
+fn write_text(rt: &Runtime, params: Value) -> ApiResult {
+    rt.permissions
+        .require(rt.permissions.clipboard_write, "clipboard.writeText")?;
+    let TextParams { text } = Request::params("clipboard.writeText", params)?;
+    with_clipboard(move |clipboard| {
+        clipboard
+            .set_text(text)
+            .map(|_| Value::Null)
+            .map_err(|e| ApiError::internal(format!("Could not write the clipboard: {e}")))
+    })
+}
+
+fn clear(rt: &Runtime) -> ApiResult {
+    rt.permissions
+        .require(rt.permissions.clipboard_write, "clipboard.clear")?;
+    with_clipboard(|clipboard| {
+        clipboard
+            .clear()
+            .map(|_| Value::Null)
+            .map_err(|e| ApiError::internal(format!("Could not clear the clipboard: {e}")))
+    })
+}
+
+fn has_text(rt: &Runtime) -> ApiResult {
+    rt.permissions
+        .require(rt.permissions.clipboard_read, "clipboard.hasText")?;
+    with_clipboard(|clipboard| Ok(json!(clipboard.get_text().is_ok())))
+}
+
+fn read_image(rt: &Runtime) -> ApiResult {
+    rt.permissions
+        .require(rt.permissions.clipboard_read, "clipboard.readImage")?;
+    with_clipboard(|clipboard| match clipboard.get_image() {
+        Ok(image) => {
+            let png = encode_png(&image)?;
+            Ok(json!({
+                "width": image.width,
+                "height": image.height,
+                "data": BASE64.encode(png),
+            }))
+        }
+        // No image on the clipboard is an ordinary answer, not a failure -
+        // the same way empty text is.
+        Err(_) => Ok(Value::Null),
+    })
+}
+
+fn write_image(rt: &Runtime, params: Value) -> ApiResult {
+    rt.permissions
+        .require(rt.permissions.clipboard_write, "clipboard.writeImage")?;
+    let ImageParams { data } = Request::params("clipboard.writeImage", params)?;
+    let bytes = BASE64
+        .decode(data.as_bytes())
+        .map_err(|e| ApiError::invalid_params(format!("`data` is not base64: {e}")))?;
+    let image = decode_png(&bytes)?;
+
+    with_clipboard(move |clipboard| {
+        clipboard
+            .set_image(image)
+            .map(|_| Value::Null)
+            .map_err(|e| ApiError::internal(format!("Could not write the image: {e}")))
+    })
+}
+
+fn has_image(rt: &Runtime) -> ApiResult {
+    rt.permissions
+        .require(rt.permissions.clipboard_read, "clipboard.hasImage")?;
+    with_clipboard(|clipboard| Ok(json!(clipboard.get_image().is_ok())))
 }
 
 /// Clipboard RGBA -> PNG.
