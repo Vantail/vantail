@@ -84,9 +84,16 @@ enum Source {
 ///
 /// An empty string counts as absent - it names no content - so exactly one
 /// non-empty source must be present.
+fn non_empty(text: Option<&str>) -> Option<&str> {
+    match text {
+        Some(text) if !text.is_empty() => Some(text),
+        _ => None,
+    }
+}
+
 fn split_source(params: &DocumentParams) -> Result<Source, ApiError> {
-    let html = params.html.as_deref().filter(|s| !s.is_empty());
-    let pdf = params.pdf_path.as_deref().filter(|s| !s.is_empty());
+    let html = non_empty(params.html.as_deref());
+    let pdf = non_empty(params.pdf_path.as_deref());
     match (html, pdf) {
         (Some(html), None) => Ok(Source::Html(html.to_string())),
         (None, Some(pdf)) => Ok(Source::PdfPath(pdf.to_string())),
@@ -168,7 +175,10 @@ impl PrintState {
 
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     fn phase(&self, job: u64) -> Option<Phase> {
-        self.inner.live.borrow().get(&job).map(|entry| entry.phase)
+        match self.inner.live.borrow().get(&job) {
+            Some(entry) => Some(entry.phase),
+            None => None,
+        }
     }
 }
 
@@ -333,7 +343,10 @@ fn on_ready(rt: &Arc<Runtime>, state: &PrintState, job: u64) {
     // Windows only gets here under the stub: it previewed above.
     #[cfg(not(target_os = "windows"))]
     if !entry.stub {
-        let result = platform_print(&entry.webview).map(|printed| json!({ "printed": printed }));
+        let result = match platform_print(&entry.webview) {
+            Ok(printed) => Ok(json!({ "printed": printed })),
+            Err(error) => Err(error),
+        };
         answer(rt, entry, result);
         return;
     }
@@ -737,10 +750,17 @@ mod tests {
     use super::*;
     use std::path::Path;
 
+    fn owned(text: Option<&str>) -> Option<String> {
+        match text {
+            Some(text) => Some(text.to_string()),
+            None => None,
+        }
+    }
+
     fn params(html: Option<&str>, pdf_path: Option<&str>) -> DocumentParams {
         DocumentParams {
-            html: html.map(str::to_string),
-            pdf_path: pdf_path.map(str::to_string),
+            html: owned(html),
+            pdf_path: owned(pdf_path),
         }
     }
 

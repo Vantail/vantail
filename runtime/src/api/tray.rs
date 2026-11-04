@@ -75,7 +75,12 @@ fn set_icon(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
     // plain `set_icon` would quietly turn a template icon into a coloured
     // one, so the current state has to be read first.
     #[cfg(target_os = "macos")]
-    let set = if template.unwrap_or_else(|| tray.icon_is_template()) {
+    let templated = match template {
+        Some(templated) => templated,
+        None => tray.icon_is_template(),
+    };
+    #[cfg(target_os = "macos")]
+    let set = if templated {
         tray.set_icon_templated(Some(icon))
     } else {
         tray.set_icon(Some(icon))

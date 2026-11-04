@@ -518,7 +518,7 @@ fn current_dir() -> Option<PathBuf> {
 
 /// The application's own directory inside a platform one, where the platform
 /// has it.
-fn app_dir(base: Option<PathBuf>, identifier: &str) -> Option<PathBuf> {
+pub(crate) fn app_dir(base: Option<PathBuf>, identifier: &str) -> Option<PathBuf> {
     match base {
         Some(base) => Some(base.join(identifier)),
         None => None,
@@ -1163,7 +1163,7 @@ fn any_rule_matches(rules: &[HidRule], vendor_id: u16, product_id: u16, usage_pa
     false
 }
 
-fn has_control_character(text: &str) -> bool {
+pub(crate) fn has_control_character(text: &str) -> bool {
     for character in text.chars() {
         if character.is_control() {
             return true;

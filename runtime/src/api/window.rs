@@ -317,8 +317,7 @@ fn one_window(entry: &mut WindowEntry, method: &str, params: Value) -> ApiResult
 }
 
 fn exists(ctx: &MainCtx<'_>, params: Value) -> ApiResult {
-    let target: Target = serde_json::from_value(params).unwrap_or_default();
-    let label = target.label.unwrap_or_else(|| ctx.source.to_string());
+    let label = target_label(ctx, &params);
     Ok(json!(ctx.windows.get(&label).is_some()))
 }
 
@@ -397,7 +396,12 @@ fn center(window: &Window) -> ApiResult {
 
 fn set_fullscreen(window: &Window, params: Value) -> ApiResult {
     let Flag { value } = Request::params("window.setFullscreen", params)?;
-    window.set_fullscreen(value.then_some(Fullscreen::Borderless(None)));
+    let mode = if value {
+        Some(Fullscreen::Borderless(None))
+    } else {
+        None
+    };
+    window.set_fullscreen(mode);
     Ok(Value::Null)
 }
 
@@ -539,10 +543,14 @@ fn open_devtools(entry: &WindowEntry) -> ApiResult {
 
 /// The window a call is about: the one it names, or the one that made it.
 fn target_label(ctx: &MainCtx<'_>, params: &Value) -> String {
-    serde_json::from_value::<Target>(params.clone())
-        .unwrap_or_default()
-        .label
-        .unwrap_or_else(|| ctx.source.to_string())
+    let named = match serde_json::from_value::<Target>(params.clone()) {
+        Ok(target) => target.label,
+        Err(_) => None,
+    };
+    match named {
+        Some(label) => label,
+        None => ctx.source.to_string(),
+    }
 }
 
 fn create(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
@@ -595,6 +603,17 @@ fn announce(ctx: &MainCtx<'_>, event: &str, label: &str) {
     );
 }
 
+/// Letters, digits, `-` and `_`, and nothing else.
+fn is_label(text: &str) -> bool {
+    for character in text.chars() {
+        let allowed = character.is_ascii_alphanumeric() || character == '-' || character == '_';
+        if !allowed {
+            return false;
+        }
+    }
+    true
+}
+
 /// Labels end up in URLs, logs and error messages, so keep them boring.
 fn validate_label(label: &str) -> Result<(), ApiError> {
     if label.is_empty() || label.len() > 64 {
@@ -602,10 +621,7 @@ fn validate_label(label: &str) -> Result<(), ApiError> {
             "A window label must be between 1 and 64 characters",
         ));
     }
-    if !label
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
+    if !is_label(label) {
         return Err(ApiError::invalid_params(format!(
             "Invalid window label `{label}`: use letters, digits, `-` and `_`"
         )));

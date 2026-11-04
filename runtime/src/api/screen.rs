@@ -33,11 +33,13 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
     let primary = ctx.target.primary_monitor();
 
     match method {
-        "screen.list" => Ok(json!(ctx
-            .target
-            .available_monitors()
-            .map(|monitor| describe(&monitor, primary.as_ref()))
-            .collect::<Vec<_>>())),
+        "screen.list" => {
+            let mut described = Vec::new();
+            for monitor in ctx.target.available_monitors() {
+                described.push(describe(&monitor, primary.as_ref()));
+            }
+            Ok(json!(described))
+        }
 
         "screen.primary" => Ok(match primary.as_ref() {
             Some(monitor) => describe(monitor, primary.as_ref()),
@@ -57,16 +59,19 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
         "screen.fromPoint" => {
             let PointParams { x, y } = Request::params(method, params)?;
             // The point arrives logical, and tao wants physical.
-            let scale = primary.as_ref().map_or(1.0, |m| m.scale_factor());
+            let scale = match primary.as_ref() {
+                Some(monitor) => monitor.scale_factor(),
+                None => 1.0,
+            };
 
-            let found = ctx
-                .target
-                .monitor_from_point(x * scale, y * scale)
-                // GTK answers with the nearest monitor rather than none, so a
-                // point far off every screen comes back as the primary one.
-                // Checking the bounds is what makes the answer mean the same
-                // thing on every platform.
-                .filter(|monitor| contains(monitor, x, y));
+            // GTK answers with the nearest monitor rather than none, so a point
+            // far off every screen comes back as the primary one. Checking the
+            // bounds is what makes the answer mean the same thing on every
+            // platform.
+            let found = match ctx.target.monitor_from_point(x * scale, y * scale) {
+                Some(monitor) if contains(&monitor, x, y) => Some(monitor),
+                _ => None,
+            };
 
             Ok(match found {
                 Some(monitor) => describe(&monitor, primary.as_ref()),
@@ -88,7 +93,7 @@ fn describe(monitor: &MonitorHandle, primary: Option<&MonitorHandle>) -> Value {
         "position": { "x": position.x, "y": position.y },
         "size": { "width": size.width, "height": size.height },
         "scaleFactor": scale,
-        "primary": primary.is_some_and(|other| other == monitor),
+        "primary": matches!(primary, Some(other) if other == monitor),
     })
 }
 

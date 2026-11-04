@@ -101,10 +101,12 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
 
         "menu.isChecked" => {
             let Id { id } = Request::params(method, params)?;
-            item(ctx, &id)?
-                .is_checked()
-                .map(|checked| json!(checked))
-                .ok_or_else(|| ApiError::invalid_params(format!("`{id}` is not a checkbox item")))
+            let Some(checked) = item(ctx, &id)?.is_checked() else {
+                return Err(ApiError::invalid_params(format!(
+                    "`{id}` is not a checkbox item"
+                )));
+            };
+            Ok(json!(checked))
         }
 
         "menu.popup" => popup(ctx, params),
@@ -132,7 +134,10 @@ fn popup(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
         return Err(ApiError::invalid_params("`items` cannot be empty"));
     }
 
-    let label = params.label.unwrap_or_else(|| ctx.source.to_string());
+    let label = match params.label {
+        Some(label) => label,
+        None => ctx.source.to_string(),
+    };
     let entry = ctx.windows.require(&label)?;
 
     // A throwaway menu: the platform call below is modal, so it stays alive

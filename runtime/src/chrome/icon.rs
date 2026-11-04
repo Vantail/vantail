@@ -28,7 +28,11 @@ pub fn load_png(path: &Path) -> Result<Rgba, ApiError> {
         ApiError::invalid_params(format!("{} is not a valid PNG: {e}", path.display()))
     })?;
 
-    let mut buffer = vec![0; reader.output_buffer_size().unwrap_or(0)];
+    let size = match reader.output_buffer_size() {
+        Some(size) => size,
+        None => 0,
+    };
+    let mut buffer = vec![0; size];
     let info = reader.next_frame(&mut buffer).map_err(|e| {
         ApiError::invalid_params(format!("Could not decode {}: {e}", path.display()))
     })?;

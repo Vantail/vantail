@@ -51,12 +51,10 @@ pub fn dispatch(rt: &Runtime, method: &str, params: Value) -> ApiResult {
 fn read_text(rt: &Runtime) -> ApiResult {
     rt.permissions
         .require(rt.permissions.clipboard_read, "clipboard.readText")?;
-    with_clipboard(|clipboard| {
-        clipboard
-            .get_text()
-            .map(Value::from)
-            // An empty clipboard is not an error; it is empty.
-            .or_else(|_| Ok(Value::String(String::new())))
+    with_clipboard(|clipboard| match clipboard.get_text() {
+        Ok(text) => Ok(Value::from(text)),
+        // An empty clipboard is not an error; it is empty.
+        Err(_) => Ok(Value::String(String::new())),
     })
 }
 
@@ -67,8 +65,8 @@ fn write_text(rt: &Runtime, params: Value) -> ApiResult {
     with_clipboard(move |clipboard| {
         clipboard
             .set_text(text)
-            .map(|_| Value::Null)
-            .map_err(|e| ApiError::internal(format!("Could not write the clipboard: {e}")))
+            .map_err(|e| ApiError::internal(format!("Could not write the clipboard: {e}")))?;
+        Ok(Value::Null)
     })
 }
 
@@ -78,8 +76,8 @@ fn clear(rt: &Runtime) -> ApiResult {
     with_clipboard(|clipboard| {
         clipboard
             .clear()
-            .map(|_| Value::Null)
-            .map_err(|e| ApiError::internal(format!("Could not clear the clipboard: {e}")))
+            .map_err(|e| ApiError::internal(format!("Could not clear the clipboard: {e}")))?;
+        Ok(Value::Null)
     })
 }
 
@@ -119,8 +117,8 @@ fn write_image(rt: &Runtime, params: Value) -> ApiResult {
     with_clipboard(move |clipboard| {
         clipboard
             .set_image(image)
-            .map(|_| Value::Null)
-            .map_err(|e| ApiError::internal(format!("Could not write the image: {e}")))
+            .map_err(|e| ApiError::internal(format!("Could not write the image: {e}")))?;
+        Ok(Value::Null)
     })
 }
 
@@ -165,7 +163,11 @@ fn decode_png(bytes: &[u8]) -> Result<arboard::ImageData<'static>, ApiError> {
         .read_info()
         .map_err(|e| ApiError::invalid_params(format!("That is not a PNG: {e}")))?;
 
-    let mut buffer = vec![0; reader.output_buffer_size().unwrap_or(0)];
+    let size = match reader.output_buffer_size() {
+        Some(size) => size,
+        None => 0,
+    };
+    let mut buffer = vec![0; size];
     let info = reader
         .next_frame(&mut buffer)
         .map_err(|e| ApiError::invalid_params(format!("Could not read the PNG: {e}")))?;

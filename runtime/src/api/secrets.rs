@@ -47,8 +47,8 @@ pub fn dispatch(rt: &Runtime, method: &str, params: Value) -> ApiResult {
             }
             entry(rt, &key)?
                 .set_password(&value)
-                .map(|()| Value::Null)
-                .map_err(|e| failed("store", &key, e))
+                .map_err(|e| failed("store", &key, e))?;
+            Ok(Value::Null)
         }
 
         "secrets.get" => {
@@ -128,7 +128,7 @@ fn check_key(key: &str) -> Result<(), ApiError> {
             "A secret key may be at most {MAX_KEY_BYTES} bytes"
         )));
     }
-    if key.chars().any(|c| c.is_control()) {
+    if crate::permissions::has_control_character(key) {
         return Err(ApiError::invalid_params(
             "A secret key cannot contain control characters",
         ));

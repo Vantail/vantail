@@ -78,7 +78,10 @@ pub fn dispatch(rt: &Arc<Runtime>, source: &str, method: &str, params: Value) ->
 
         "filesystem.watches" => {
             let watches = lock(&rt.watch.watches);
-            let mut ids: Vec<_> = watches.keys().cloned().collect();
+            let mut ids = Vec::with_capacity(watches.len());
+            for id in watches.keys() {
+                ids.push(id.clone());
+            }
             ids.sort();
             Ok(json!(ids))
         }
@@ -162,10 +165,12 @@ mod tests {
     use super::*;
 
     fn mentions_note(event: &notify::Event) -> bool {
-        event
-            .paths
-            .iter()
-            .any(|path| path.to_string_lossy().ends_with("note.txt"))
+        for path in &event.paths {
+            if path.to_string_lossy().ends_with("note.txt") {
+                return true;
+            }
+        }
+        false
     }
 
     /// The backend itself, with no Vantail around it.

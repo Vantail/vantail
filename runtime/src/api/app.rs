@@ -108,7 +108,11 @@ fn emit(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
 fn restart() -> ApiResult {
     let exe = std::env::current_exe()
         .map_err(|e| ApiError::io("Could not locate the running executable", e))?;
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    // Everything but the program name, which the new process gets from `exe`.
+    let mut args: Vec<String> = Vec::new();
+    for arg in std::env::args().skip(1) {
+        args.push(arg);
+    }
 
     std::process::Command::new(exe)
         .args(args)

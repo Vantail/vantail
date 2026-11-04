@@ -44,7 +44,7 @@ fn show(rt: &Runtime, params: &ShowParams) -> ApiResult {
         notification.icon(icon);
     }
 
-    notification.show().map(|_| Value::Null).map_err(|e| {
+    notification.show().map_err(|e| {
         // macOS delivers notifications through the bundle identifier, so an
         // unbundled `vantail dev` build genuinely cannot post one. Say so
         // rather than reporting a generic failure.
@@ -55,5 +55,6 @@ fn show(rt: &Runtime, params: &ShowParams) -> ApiResult {
         } else {
             ApiError::internal(format!("Could not post a notification: {e}"))
         }
-    })
+    })?;
+    Ok(Value::Null)
 }

@@ -55,7 +55,10 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
             let params: FileParams = Request::params(method, params)?;
             let dialog = file_dialog(&params);
             if params.multiple {
-                let picked = dialog.pick_files().unwrap_or_default();
+                let picked = match dialog.pick_files() {
+                    Some(picked) => picked,
+                    None => Vec::new(),
+                };
                 Ok(json!(grant_all(rt, picked, Access::Read)))
             } else {
                 Ok(match dialog.pick_file() {
@@ -69,7 +72,10 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
             let params: FileParams = Request::params(method, params)?;
             let dialog = file_dialog(&params);
             if params.multiple {
-                let picked = dialog.pick_folders().unwrap_or_default();
+                let picked = match dialog.pick_folders() {
+                    Some(picked) => picked,
+                    None => Vec::new(),
+                };
                 Ok(json!(grant_all(rt, picked, Access::Read)))
             } else {
                 Ok(match dialog.pick_folder() {
@@ -136,7 +142,11 @@ fn file_dialog(params: &FileParams) -> rfd::FileDialog {
         } else {
             path.parent()
         };
-        if let Some(directory) = directory.filter(|d| d.is_dir()) {
+        let directory = match directory {
+            Some(directory) if directory.is_dir() => Some(directory),
+            _ => None,
+        };
+        if let Some(directory) = directory {
             dialog = dialog.set_directory(directory);
         }
     }
@@ -156,7 +166,10 @@ fn message_dialog(params: &MessageParams) -> rfd::MessageDialog {
 
     rfd::MessageDialog::new()
         .set_level(level)
-        .set_title(params.title.as_deref().unwrap_or(""))
+        .set_title(match params.title.as_deref() {
+            Some(title) => title,
+            None => "",
+        })
         .set_description(&params.message)
 }
 
@@ -166,8 +179,9 @@ fn grant(rt: &Runtime, path: PathBuf, access: Access) -> String {
 }
 
 fn grant_all(rt: &Runtime, paths: Vec<PathBuf>, access: Access) -> Vec<String> {
-    paths
-        .into_iter()
-        .map(|path| grant(rt, path, access))
-        .collect()
+    let mut granted = Vec::with_capacity(paths.len());
+    for path in paths {
+        granted.push(grant(rt, path, access));
+    }
+    granted
 }

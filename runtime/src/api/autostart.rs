@@ -46,11 +46,7 @@ fn target(rt: &Runtime) -> Result<std::path::PathBuf, ApiError> {
     // build directory, or by `vantail dev`. Registering that path would name
     // a shared runtime and a config file that is not going to outlive the
     // session.
-    let unpackaged = rt.is_dev()
-        || exe
-            .file_stem()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name == "vantail-runtime");
+    let unpackaged = rt.is_dev() || is_bare_runtime(&exe);
 
     if unpackaged {
         return Err(ApiError::unsupported(
@@ -63,7 +59,7 @@ fn target(rt: &Runtime) -> Result<std::path::PathBuf, ApiError> {
     {
         let mut ancestor = exe.as_path();
         while let Some(parent) = ancestor.parent() {
-            if parent.extension().is_some_and(|ext| ext == "app") {
+            if matches!(parent.extension(), Some(extension) if extension == "app") {
                 return Ok(parent.to_path_buf());
             }
             ancestor = parent;
@@ -135,7 +131,10 @@ fn disable(rt: &Runtime) -> Result<(), ApiError> {
 
 #[cfg(target_os = "macos")]
 fn is_enabled(rt: &Runtime) -> bool {
-    agent_path(rt).is_ok_and(|path| path.exists())
+    match agent_path(rt) {
+        Ok(path) => path.exists(),
+        Err(_) => false,
+    }
 }
 
 /// The identifier and the path both land inside XML elements. Only the
@@ -270,5 +269,13 @@ mod windows_run_key {
         // `    name    REG_SZ    "C:\path\app.exe"`
         let line = text.lines().find(|line| line.contains("REG_SZ"))?;
         Some(line.split("REG_SZ").nth(1)?.trim().to_string())
+    }
+}
+
+/// The runtime binary as it comes, not inside a packaged application.
+fn is_bare_runtime(exe: &std::path::Path) -> bool {
+    match exe.file_stem() {
+        Some(name) => name == "vantail-runtime",
+        None => false,
     }
 }

@@ -379,8 +379,9 @@ mod tests {
         let value = route("privacy.status", json!({ "kind": "microphone" })).unwrap();
         let status_text = value
             .get("status")
-            .and_then(|status| status.as_str())
-            .expect("`privacy.status` answers `{ status }`");
+            .expect("`privacy.status` answers `{ status }`")
+            .as_str()
+            .expect("`status` is text");
         assert!(
             [
                 "not-determined",

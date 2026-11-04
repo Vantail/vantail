@@ -39,7 +39,11 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
     match method {
         "shortcut.register" => {
             let RegisterParams { accelerator, id } = Request::params(method, params)?;
-            let id = id.unwrap_or_else(|| accelerator.clone());
+            // Named after its accelerator unless the call names it.
+            let id = match id {
+                Some(id) => id,
+                None => accelerator.clone(),
+            };
             ctx.chrome.register_shortcut(&accelerator, &id)?;
             Ok(json!({ "id": id, "accelerator": accelerator }))
         }

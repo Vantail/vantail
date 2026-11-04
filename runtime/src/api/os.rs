@@ -19,11 +19,11 @@ pub fn dispatch(rt: &Runtime, method: &str, _params: Value) -> ApiResult {
         "os.homeDir" => path(dirs::home_dir(), "home directory"),
         "os.tempDir" => path(Some(std::env::temp_dir()), "temp directory"),
         "os.appDataDir" => path(
-            dirs::data_dir().map(|d| d.join(&rt.config.app.identifier)),
+            crate::permissions::app_dir(dirs::data_dir(), &rt.config.app.identifier),
             "application data directory",
         ),
         "os.appConfigDir" => path(
-            dirs::config_dir().map(|d| d.join(&rt.config.app.identifier)),
+            crate::permissions::app_dir(dirs::config_dir(), &rt.config.app.identifier),
             "application config directory",
         ),
         "os.resourceDir" => path(Some(rt.resource_dir.clone()), "resource directory"),
