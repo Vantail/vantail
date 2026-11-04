@@ -4,6 +4,18 @@ Notable changes per release.
 
 ## 0.1.27
 
+### Security
+
+- **`zod` 4.6.7 in `@vantail/shared`, for
+  [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5).**
+  Through 4.6.5, a large array that fails an array schema with no length
+  limit collects one issue per element until the process runs out of
+  memory. `@vantail/shared` validates `vantail.config.ts` with zod for the
+  CLI, the Vite plugin and `create`, and that config is the developer's own
+  file, so this is precaution rather than a fix anyone was exposed to.
+  Nothing that ships in an application changes. Found by the weekly
+  `pnpm audit`.
+
 ### Changed
 
 - **Node.js 22 is no longer supported.** The supported lines are 24.22.1+
@@ -19,6 +31,32 @@ Notable changes per release.
   `download-artifact` v8 and `softprops/action-gh-release` v3, which all run
   on GitHub's Node 24 runtime, and Node 24.22.2 for the build. Existing
   projects keep the workflow they were created with.
+
+### Removed
+
+- **Twelve icon names, renamed by Lucide.** `@vantail/icons` is generated
+  from Lucide 1.64 now, which renamed these icons and keeps the old names
+  only as deprecated aliases. Deprecated aliases are left out of the
+  registry (see [icons](docs/icons.md)), so an application that uses an old
+  name has to switch to the new one:
+
+  | Old name             | New name              |
+  | -------------------- | --------------------- |
+  | `archive-restore`    | `archive-arrow-up`    |
+  | `bold`               | `letter-b`            |
+  | `circle-parking`     | `circle-letter-p`     |
+  | `circle-parking-off` | `circle-letter-p-off` |
+  | `heading`            | `letter-h`            |
+  | `music`              | `eighth-notes`        |
+  | `music-2`            | `eighth-note`         |
+  | `music-3`            | `half-note`           |
+  | `music-4`            | `sixteenth-notes`     |
+  | `square-m`           | `square-letter-m`     |
+  | `square-parking`     | `square-letter-p`     |
+  | `square-parking-off` | `square-letter-p-off` |
+
+  The React components follow the same names: `Music` becomes
+  `EighthNotes`, `Bold` becomes `LetterB`, and so on.
 
 ## 0.1.26
 

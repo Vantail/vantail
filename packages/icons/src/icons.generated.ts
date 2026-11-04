@@ -1,7 +1,7 @@
 /**
  * Canonical icon registry: kebab-case name to Lucide artwork.
  *
- * GENERATED from lucide@1.57.0 — do not edit by hand.
+ * GENERATED from lucide@1.64.0 — do not edit by hand.
  * Regenerate with: pnpm --filter @vantail/icons run generate
  * Source of truth: dist/esm/icons/*.mjs in the installed lucide package
  * (filenames are canonical kebab-case names; files declare the artwork).
@@ -56,7 +56,8 @@ import {
   AppWindowMac,
   Apple,
   Archive,
-  ArchiveRestore,
+  ArchiveArrowDown,
+  ArchiveArrowUp,
   ArchiveX,
   Armchair,
   ArmenianDram,
@@ -111,11 +112,14 @@ import {
   AudioLinesOff,
   AudioLinesX,
   AudioWaveform,
+  Avocado,
   Award,
   Axe,
   Axis3d,
+  AzerbaijaniManat,
   Baby,
   Backpack,
+  Bacon,
   Badge,
   BadgeAlert,
   BadgeCent,
@@ -135,6 +139,7 @@ import {
   BadgeTurkishLira,
   BadgeX,
   BaggageClaim,
+  BallWave,
   Balloon,
   Ban,
   Banana,
@@ -195,7 +200,6 @@ import {
   BluetoothConnected,
   BluetoothOff,
   BluetoothSearching,
-  Bold,
   Bolt,
   Bomb,
   Bone,
@@ -240,11 +244,13 @@ import {
   BowArrow,
   Box,
   Boxes,
+  BoxesLinked,
   Braces,
   Brackets,
   Brain,
   BrainCircuit,
   BrainCog,
+  BrainOff,
   BrickWall,
   BrickWallFire,
   BrickWallShield,
@@ -277,6 +283,8 @@ import {
   Calendar,
   Calendar1,
   CalendarArrowDown,
+  CalendarArrowLeft,
+  CalendarArrowRight,
   CalendarArrowUp,
   CalendarCheck,
   CalendarCheck2,
@@ -327,6 +335,7 @@ import {
   Cat,
   Cctv,
   CctvOff,
+  Certificate,
   ChartArea,
   ChartBar,
   ChartBarBig,
@@ -348,6 +357,8 @@ import {
   ChartNoAxesCombined,
   ChartNoAxesGantt,
   ChartPie,
+  ChartQuadrant,
+  ChartRadar,
   ChartScatter,
   ChartSpline,
   Check,
@@ -395,6 +406,10 @@ import {
   CircleChevronLeft,
   CircleChevronRight,
   CircleChevronUp,
+  CircleChevronsDown,
+  CircleChevronsLeft,
+  CircleChevronsRight,
+  CircleChevronsUp,
   CircleDashed,
   CircleDashedCheck,
   CircleDivide,
@@ -408,10 +423,35 @@ import {
   CircleFadingPlay,
   CircleFadingPlus,
   CircleGauge,
+  CircleLetterA,
+  CircleLetterB,
+  CircleLetterC,
+  CircleLetterD,
+  CircleLetterE,
+  CircleLetterF,
+  CircleLetterG,
+  CircleLetterH,
+  CircleLetterI,
+  CircleLetterJ,
+  CircleLetterK,
+  CircleLetterL,
+  CircleLetterM,
+  CircleLetterN,
+  CircleLetterO,
+  CircleLetterP,
+  CircleLetterPOff,
+  CircleLetterQ,
+  CircleLetterR,
+  CircleLetterS,
+  CircleLetterT,
+  CircleLetterU,
+  CircleLetterV,
+  CircleLetterW,
+  CircleLetterX,
+  CircleLetterY,
+  CircleLetterZ,
   CircleMinus,
   CircleOff,
-  CircleParking,
-  CircleParkingOff,
   CirclePause,
   CirclePercent,
   CirclePile,
@@ -555,6 +595,7 @@ import {
   DatabaseArrowUp,
   DatabaseBackup,
   DatabaseCheck,
+  DatabaseCog,
   DatabaseMinus,
   DatabasePlus,
   DatabaseSearch,
@@ -609,16 +650,21 @@ import {
   Dumbbell,
   Ear,
   EarOff,
+  Earbuds,
+  EarbudsOff,
   Earth,
   EarthLock,
   Eclipse,
   Egg,
   EggFried,
   EggOff,
+  EighthNote,
+  EighthNotes,
   Eject,
   Ellipse,
   Ellipsis,
   EllipsisVertical,
+  EmiratiDirham,
   Engine,
   Equal,
   EqualApproximately,
@@ -820,6 +866,7 @@ import {
   Gpu,
   GraduationCap,
   Grape,
+  GraphHub,
   GraphStar,
   Grid2x2,
   Grid2x2Check,
@@ -834,6 +881,7 @@ import {
   Group,
   Guitar,
   GuitarElectric,
+  HalfNote,
   Ham,
   Hamburger,
   Hammer,
@@ -857,7 +905,6 @@ import {
   Haze,
   Hd,
   HdmiPort,
-  Heading,
   Heading1,
   Heading2,
   Heading3,
@@ -880,9 +927,11 @@ import {
   Hexagon,
   Highlighter,
   HikingStick,
+  HockeyStick,
   Hop,
   HopOff,
   Hospital,
+  HotAirBalloon,
   Hotel,
   Hourglass,
   HourglassCog,
@@ -940,6 +989,7 @@ import {
   Laptop,
   LaptopMinimal,
   LaptopMinimalCheck,
+  Laser,
   Lasso,
   LassoSelect,
   LayerArrowDown,
@@ -966,6 +1016,33 @@ import {
   Lens,
   LensConcave,
   LensConvex,
+  LetterA,
+  LetterB,
+  LetterC,
+  LetterD,
+  LetterE,
+  LetterF,
+  LetterG,
+  LetterH,
+  LetterI,
+  LetterJ,
+  LetterK,
+  LetterL,
+  LetterM,
+  LetterN,
+  LetterO,
+  LetterP,
+  LetterQ,
+  LetterR,
+  LetterS,
+  LetterSpacing,
+  LetterT,
+  LetterU,
+  LetterV,
+  LetterW,
+  LetterX,
+  LetterY,
+  LetterZ,
   Letters,
   Library,
   LibraryBig,
@@ -978,6 +1055,7 @@ import {
   LineDotLeftHorizontal,
   LineDotRightHorizontal,
   LineDotTopVertical,
+  LineHeight,
   LineSquiggle,
   LineStyle,
   Link,
@@ -1165,10 +1243,6 @@ import {
   MoveUpLeft,
   MoveUpRight,
   MoveVertical,
-  Music,
-  Music2,
-  Music3,
-  Music4,
   Navigation,
   Navigation2,
   Navigation2Off,
@@ -1185,6 +1259,7 @@ import {
   NotebookText,
   NotepadText,
   NotepadTextDashed,
+  Numbers,
   Nut,
   NutOff,
   Octagon,
@@ -1493,6 +1568,8 @@ import {
   Signpost,
   SignpostBig,
   Siren,
+  SirenOff,
+  SixteenthNotes,
   SkipBack,
   SkipForward,
   Skull,
@@ -1503,6 +1580,7 @@ import {
   Smartphone,
   SmartphoneCharging,
   SmartphoneNfc,
+  SmartphoneUserRound,
   Snail,
   Snowflake,
   SoapDispenserDroplet,
@@ -1553,6 +1631,10 @@ import {
   SquareChevronLeft,
   SquareChevronRight,
   SquareChevronUp,
+  SquareChevronsDown,
+  SquareChevronsLeft,
+  SquareChevronsRight,
+  SquareChevronsUp,
   SquareCode,
   SquareDashed,
   SquareDashedBottom,
@@ -1571,14 +1653,39 @@ import {
   SquareExclamationPoint,
   SquareFunction,
   SquareKanban,
+  SquareKanbanPlus,
+  SquareLetterA,
+  SquareLetterB,
+  SquareLetterC,
+  SquareLetterD,
+  SquareLetterE,
+  SquareLetterF,
+  SquareLetterG,
+  SquareLetterH,
+  SquareLetterI,
+  SquareLetterJ,
+  SquareLetterK,
+  SquareLetterL,
+  SquareLetterM,
+  SquareLetterN,
+  SquareLetterO,
+  SquareLetterP,
+  SquareLetterPOff,
+  SquareLetterQ,
+  SquareLetterR,
+  SquareLetterS,
+  SquareLetterT,
+  SquareLetterU,
+  SquareLetterV,
+  SquareLetterW,
+  SquareLetterX,
+  SquareLetterY,
+  SquareLetterZ,
   SquareLibrary,
-  SquareM,
   SquareMenu,
   SquareMinus,
   SquareMousePointer,
   SquareOff,
-  SquareParking,
-  SquareParkingOff,
   SquarePause,
   SquarePen,
   SquarePercent,
@@ -1716,6 +1823,7 @@ import {
   ToggleLeft,
   ToggleRight,
   Toilet,
+  Tombstone,
   ToolCase,
   Toolbox,
   Toothbrush,
@@ -1797,6 +1905,7 @@ import {
   UserRoundPen,
   UserRoundPlus,
   UserRoundSearch,
+  UserRoundShield,
   UserRoundStar,
   UserRoundX,
   UserSearch,
@@ -1950,7 +2059,8 @@ export type IconName =
   | "app-window-mac"
   | "apple"
   | "archive"
-  | "archive-restore"
+  | "archive-arrow-down"
+  | "archive-arrow-up"
   | "archive-x"
   | "armchair"
   | "armenian-dram"
@@ -2005,11 +2115,14 @@ export type IconName =
   | "audio-lines-off"
   | "audio-lines-x"
   | "audio-waveform"
+  | "avocado"
   | "award"
   | "axe"
   | "axis-3d"
+  | "azerbaijani-manat"
   | "baby"
   | "backpack"
+  | "bacon"
   | "badge"
   | "badge-alert"
   | "badge-cent"
@@ -2029,6 +2142,7 @@ export type IconName =
   | "badge-turkish-lira"
   | "badge-x"
   | "baggage-claim"
+  | "ball-wave"
   | "balloon"
   | "ban"
   | "banana"
@@ -2089,7 +2203,6 @@ export type IconName =
   | "bluetooth-connected"
   | "bluetooth-off"
   | "bluetooth-searching"
-  | "bold"
   | "bolt"
   | "bomb"
   | "bone"
@@ -2134,11 +2247,13 @@ export type IconName =
   | "bow-arrow"
   | "box"
   | "boxes"
+  | "boxes-linked"
   | "braces"
   | "brackets"
   | "brain"
   | "brain-circuit"
   | "brain-cog"
+  | "brain-off"
   | "brick-wall"
   | "brick-wall-fire"
   | "brick-wall-shield"
@@ -2171,6 +2286,8 @@ export type IconName =
   | "calendar"
   | "calendar-1"
   | "calendar-arrow-down"
+  | "calendar-arrow-left"
+  | "calendar-arrow-right"
   | "calendar-arrow-up"
   | "calendar-check"
   | "calendar-check-2"
@@ -2221,6 +2338,7 @@ export type IconName =
   | "cat"
   | "cctv"
   | "cctv-off"
+  | "certificate"
   | "chart-area"
   | "chart-bar"
   | "chart-bar-big"
@@ -2242,6 +2360,8 @@ export type IconName =
   | "chart-no-axes-combined"
   | "chart-no-axes-gantt"
   | "chart-pie"
+  | "chart-quadrant"
+  | "chart-radar"
   | "chart-scatter"
   | "chart-spline"
   | "check"
@@ -2289,6 +2409,10 @@ export type IconName =
   | "circle-chevron-left"
   | "circle-chevron-right"
   | "circle-chevron-up"
+  | "circle-chevrons-down"
+  | "circle-chevrons-left"
+  | "circle-chevrons-right"
+  | "circle-chevrons-up"
   | "circle-dashed"
   | "circle-dashed-check"
   | "circle-divide"
@@ -2302,10 +2426,35 @@ export type IconName =
   | "circle-fading-play"
   | "circle-fading-plus"
   | "circle-gauge"
+  | "circle-letter-a"
+  | "circle-letter-b"
+  | "circle-letter-c"
+  | "circle-letter-d"
+  | "circle-letter-e"
+  | "circle-letter-f"
+  | "circle-letter-g"
+  | "circle-letter-h"
+  | "circle-letter-i"
+  | "circle-letter-j"
+  | "circle-letter-k"
+  | "circle-letter-l"
+  | "circle-letter-m"
+  | "circle-letter-n"
+  | "circle-letter-o"
+  | "circle-letter-p"
+  | "circle-letter-p-off"
+  | "circle-letter-q"
+  | "circle-letter-r"
+  | "circle-letter-s"
+  | "circle-letter-t"
+  | "circle-letter-u"
+  | "circle-letter-v"
+  | "circle-letter-w"
+  | "circle-letter-x"
+  | "circle-letter-y"
+  | "circle-letter-z"
   | "circle-minus"
   | "circle-off"
-  | "circle-parking"
-  | "circle-parking-off"
   | "circle-pause"
   | "circle-percent"
   | "circle-pile"
@@ -2449,6 +2598,7 @@ export type IconName =
   | "database-arrow-up"
   | "database-backup"
   | "database-check"
+  | "database-cog"
   | "database-minus"
   | "database-plus"
   | "database-search"
@@ -2503,16 +2653,21 @@ export type IconName =
   | "dumbbell"
   | "ear"
   | "ear-off"
+  | "earbuds"
+  | "earbuds-off"
   | "earth"
   | "earth-lock"
   | "eclipse"
   | "egg"
   | "egg-fried"
   | "egg-off"
+  | "eighth-note"
+  | "eighth-notes"
   | "eject"
   | "ellipse"
   | "ellipsis"
   | "ellipsis-vertical"
+  | "emirati-dirham"
   | "engine"
   | "equal"
   | "equal-approximately"
@@ -2714,6 +2869,7 @@ export type IconName =
   | "gpu"
   | "graduation-cap"
   | "grape"
+  | "graph-hub"
   | "graph-star"
   | "grid-2x2"
   | "grid-2x2-check"
@@ -2728,6 +2884,7 @@ export type IconName =
   | "group"
   | "guitar"
   | "guitar-electric"
+  | "half-note"
   | "ham"
   | "hamburger"
   | "hammer"
@@ -2751,7 +2908,6 @@ export type IconName =
   | "haze"
   | "hd"
   | "hdmi-port"
-  | "heading"
   | "heading-1"
   | "heading-2"
   | "heading-3"
@@ -2774,9 +2930,11 @@ export type IconName =
   | "hexagon"
   | "highlighter"
   | "hiking-stick"
+  | "hockey-stick"
   | "hop"
   | "hop-off"
   | "hospital"
+  | "hot-air-balloon"
   | "hotel"
   | "hourglass"
   | "hourglass-cog"
@@ -2834,6 +2992,7 @@ export type IconName =
   | "laptop"
   | "laptop-minimal"
   | "laptop-minimal-check"
+  | "laser"
   | "lasso"
   | "lasso-select"
   | "layer-arrow-down"
@@ -2860,6 +3019,33 @@ export type IconName =
   | "lens"
   | "lens-concave"
   | "lens-convex"
+  | "letter-a"
+  | "letter-b"
+  | "letter-c"
+  | "letter-d"
+  | "letter-e"
+  | "letter-f"
+  | "letter-g"
+  | "letter-h"
+  | "letter-i"
+  | "letter-j"
+  | "letter-k"
+  | "letter-l"
+  | "letter-m"
+  | "letter-n"
+  | "letter-o"
+  | "letter-p"
+  | "letter-q"
+  | "letter-r"
+  | "letter-s"
+  | "letter-spacing"
+  | "letter-t"
+  | "letter-u"
+  | "letter-v"
+  | "letter-w"
+  | "letter-x"
+  | "letter-y"
+  | "letter-z"
   | "letters"
   | "library"
   | "library-big"
@@ -2872,6 +3058,7 @@ export type IconName =
   | "line-dot-left-horizontal"
   | "line-dot-right-horizontal"
   | "line-dot-top-vertical"
+  | "line-height"
   | "line-squiggle"
   | "line-style"
   | "link"
@@ -3059,10 +3246,6 @@ export type IconName =
   | "move-up-left"
   | "move-up-right"
   | "move-vertical"
-  | "music"
-  | "music-2"
-  | "music-3"
-  | "music-4"
   | "navigation"
   | "navigation-2"
   | "navigation-2-off"
@@ -3079,6 +3262,7 @@ export type IconName =
   | "notebook-text"
   | "notepad-text"
   | "notepad-text-dashed"
+  | "numbers"
   | "nut"
   | "nut-off"
   | "octagon"
@@ -3387,6 +3571,8 @@ export type IconName =
   | "signpost"
   | "signpost-big"
   | "siren"
+  | "siren-off"
+  | "sixteenth-notes"
   | "skip-back"
   | "skip-forward"
   | "skull"
@@ -3397,6 +3583,7 @@ export type IconName =
   | "smartphone"
   | "smartphone-charging"
   | "smartphone-nfc"
+  | "smartphone-user-round"
   | "snail"
   | "snowflake"
   | "soap-dispenser-droplet"
@@ -3447,6 +3634,10 @@ export type IconName =
   | "square-chevron-left"
   | "square-chevron-right"
   | "square-chevron-up"
+  | "square-chevrons-down"
+  | "square-chevrons-left"
+  | "square-chevrons-right"
+  | "square-chevrons-up"
   | "square-code"
   | "square-dashed"
   | "square-dashed-bottom"
@@ -3465,14 +3656,39 @@ export type IconName =
   | "square-exclamation-point"
   | "square-function"
   | "square-kanban"
+  | "square-kanban-plus"
+  | "square-letter-a"
+  | "square-letter-b"
+  | "square-letter-c"
+  | "square-letter-d"
+  | "square-letter-e"
+  | "square-letter-f"
+  | "square-letter-g"
+  | "square-letter-h"
+  | "square-letter-i"
+  | "square-letter-j"
+  | "square-letter-k"
+  | "square-letter-l"
+  | "square-letter-m"
+  | "square-letter-n"
+  | "square-letter-o"
+  | "square-letter-p"
+  | "square-letter-p-off"
+  | "square-letter-q"
+  | "square-letter-r"
+  | "square-letter-s"
+  | "square-letter-t"
+  | "square-letter-u"
+  | "square-letter-v"
+  | "square-letter-w"
+  | "square-letter-x"
+  | "square-letter-y"
+  | "square-letter-z"
   | "square-library"
-  | "square-m"
   | "square-menu"
   | "square-minus"
   | "square-mouse-pointer"
   | "square-off"
-  | "square-parking"
-  | "square-parking-off"
   | "square-pause"
   | "square-pen"
   | "square-percent"
@@ -3610,6 +3826,7 @@ export type IconName =
   | "toggle-left"
   | "toggle-right"
   | "toilet"
+  | "tombstone"
   | "tool-case"
   | "toolbox"
   | "toothbrush"
@@ -3691,6 +3908,7 @@ export type IconName =
   | "user-round-pen"
   | "user-round-plus"
   | "user-round-search"
+  | "user-round-shield"
   | "user-round-star"
   | "user-round-x"
   | "user-search"
@@ -3842,7 +4060,8 @@ export const icons: Record<IconName, IconNode> = {
   "app-window-mac": AppWindowMac,
   "apple": Apple,
   "archive": Archive,
-  "archive-restore": ArchiveRestore,
+  "archive-arrow-down": ArchiveArrowDown,
+  "archive-arrow-up": ArchiveArrowUp,
   "archive-x": ArchiveX,
   "armchair": Armchair,
   "armenian-dram": ArmenianDram,
@@ -3897,11 +4116,14 @@ export const icons: Record<IconName, IconNode> = {
   "audio-lines-off": AudioLinesOff,
   "audio-lines-x": AudioLinesX,
   "audio-waveform": AudioWaveform,
+  "avocado": Avocado,
   "award": Award,
   "axe": Axe,
   "axis-3d": Axis3d,
+  "azerbaijani-manat": AzerbaijaniManat,
   "baby": Baby,
   "backpack": Backpack,
+  "bacon": Bacon,
   "badge": Badge,
   "badge-alert": BadgeAlert,
   "badge-cent": BadgeCent,
@@ -3921,6 +4143,7 @@ export const icons: Record<IconName, IconNode> = {
   "badge-turkish-lira": BadgeTurkishLira,
   "badge-x": BadgeX,
   "baggage-claim": BaggageClaim,
+  "ball-wave": BallWave,
   "balloon": Balloon,
   "ban": Ban,
   "banana": Banana,
@@ -3981,7 +4204,6 @@ export const icons: Record<IconName, IconNode> = {
   "bluetooth-connected": BluetoothConnected,
   "bluetooth-off": BluetoothOff,
   "bluetooth-searching": BluetoothSearching,
-  "bold": Bold,
   "bolt": Bolt,
   "bomb": Bomb,
   "bone": Bone,
@@ -4026,11 +4248,13 @@ export const icons: Record<IconName, IconNode> = {
   "bow-arrow": BowArrow,
   "box": Box,
   "boxes": Boxes,
+  "boxes-linked": BoxesLinked,
   "braces": Braces,
   "brackets": Brackets,
   "brain": Brain,
   "brain-circuit": BrainCircuit,
   "brain-cog": BrainCog,
+  "brain-off": BrainOff,
   "brick-wall": BrickWall,
   "brick-wall-fire": BrickWallFire,
   "brick-wall-shield": BrickWallShield,
@@ -4063,6 +4287,8 @@ export const icons: Record<IconName, IconNode> = {
   "calendar": Calendar,
   "calendar-1": Calendar1,
   "calendar-arrow-down": CalendarArrowDown,
+  "calendar-arrow-left": CalendarArrowLeft,
+  "calendar-arrow-right": CalendarArrowRight,
   "calendar-arrow-up": CalendarArrowUp,
   "calendar-check": CalendarCheck,
   "calendar-check-2": CalendarCheck2,
@@ -4113,6 +4339,7 @@ export const icons: Record<IconName, IconNode> = {
   "cat": Cat,
   "cctv": Cctv,
   "cctv-off": CctvOff,
+  "certificate": Certificate,
   "chart-area": ChartArea,
   "chart-bar": ChartBar,
   "chart-bar-big": ChartBarBig,
@@ -4134,6 +4361,8 @@ export const icons: Record<IconName, IconNode> = {
   "chart-no-axes-combined": ChartNoAxesCombined,
   "chart-no-axes-gantt": ChartNoAxesGantt,
   "chart-pie": ChartPie,
+  "chart-quadrant": ChartQuadrant,
+  "chart-radar": ChartRadar,
   "chart-scatter": ChartScatter,
   "chart-spline": ChartSpline,
   "check": Check,
@@ -4181,6 +4410,10 @@ export const icons: Record<IconName, IconNode> = {
   "circle-chevron-left": CircleChevronLeft,
   "circle-chevron-right": CircleChevronRight,
   "circle-chevron-up": CircleChevronUp,
+  "circle-chevrons-down": CircleChevronsDown,
+  "circle-chevrons-left": CircleChevronsLeft,
+  "circle-chevrons-right": CircleChevronsRight,
+  "circle-chevrons-up": CircleChevronsUp,
   "circle-dashed": CircleDashed,
   "circle-dashed-check": CircleDashedCheck,
   "circle-divide": CircleDivide,
@@ -4194,10 +4427,35 @@ export const icons: Record<IconName, IconNode> = {
   "circle-fading-play": CircleFadingPlay,
   "circle-fading-plus": CircleFadingPlus,
   "circle-gauge": CircleGauge,
+  "circle-letter-a": CircleLetterA,
+  "circle-letter-b": CircleLetterB,
+  "circle-letter-c": CircleLetterC,
+  "circle-letter-d": CircleLetterD,
+  "circle-letter-e": CircleLetterE,
+  "circle-letter-f": CircleLetterF,
+  "circle-letter-g": CircleLetterG,
+  "circle-letter-h": CircleLetterH,
+  "circle-letter-i": CircleLetterI,
+  "circle-letter-j": CircleLetterJ,
+  "circle-letter-k": CircleLetterK,
+  "circle-letter-l": CircleLetterL,
+  "circle-letter-m": CircleLetterM,
+  "circle-letter-n": CircleLetterN,
+  "circle-letter-o": CircleLetterO,
+  "circle-letter-p": CircleLetterP,
+  "circle-letter-p-off": CircleLetterPOff,
+  "circle-letter-q": CircleLetterQ,
+  "circle-letter-r": CircleLetterR,
+  "circle-letter-s": CircleLetterS,
+  "circle-letter-t": CircleLetterT,
+  "circle-letter-u": CircleLetterU,
+  "circle-letter-v": CircleLetterV,
+  "circle-letter-w": CircleLetterW,
+  "circle-letter-x": CircleLetterX,
+  "circle-letter-y": CircleLetterY,
+  "circle-letter-z": CircleLetterZ,
   "circle-minus": CircleMinus,
   "circle-off": CircleOff,
-  "circle-parking": CircleParking,
-  "circle-parking-off": CircleParkingOff,
   "circle-pause": CirclePause,
   "circle-percent": CirclePercent,
   "circle-pile": CirclePile,
@@ -4341,6 +4599,7 @@ export const icons: Record<IconName, IconNode> = {
   "database-arrow-up": DatabaseArrowUp,
   "database-backup": DatabaseBackup,
   "database-check": DatabaseCheck,
+  "database-cog": DatabaseCog,
   "database-minus": DatabaseMinus,
   "database-plus": DatabasePlus,
   "database-search": DatabaseSearch,
@@ -4395,16 +4654,21 @@ export const icons: Record<IconName, IconNode> = {
   "dumbbell": Dumbbell,
   "ear": Ear,
   "ear-off": EarOff,
+  "earbuds": Earbuds,
+  "earbuds-off": EarbudsOff,
   "earth": Earth,
   "earth-lock": EarthLock,
   "eclipse": Eclipse,
   "egg": Egg,
   "egg-fried": EggFried,
   "egg-off": EggOff,
+  "eighth-note": EighthNote,
+  "eighth-notes": EighthNotes,
   "eject": Eject,
   "ellipse": Ellipse,
   "ellipsis": Ellipsis,
   "ellipsis-vertical": EllipsisVertical,
+  "emirati-dirham": EmiratiDirham,
   "engine": Engine,
   "equal": Equal,
   "equal-approximately": EqualApproximately,
@@ -4606,6 +4870,7 @@ export const icons: Record<IconName, IconNode> = {
   "gpu": Gpu,
   "graduation-cap": GraduationCap,
   "grape": Grape,
+  "graph-hub": GraphHub,
   "graph-star": GraphStar,
   "grid-2x2": Grid2x2,
   "grid-2x2-check": Grid2x2Check,
@@ -4620,6 +4885,7 @@ export const icons: Record<IconName, IconNode> = {
   "group": Group,
   "guitar": Guitar,
   "guitar-electric": GuitarElectric,
+  "half-note": HalfNote,
   "ham": Ham,
   "hamburger": Hamburger,
   "hammer": Hammer,
@@ -4643,7 +4909,6 @@ export const icons: Record<IconName, IconNode> = {
   "haze": Haze,
   "hd": Hd,
   "hdmi-port": HdmiPort,
-  "heading": Heading,
   "heading-1": Heading1,
   "heading-2": Heading2,
   "heading-3": Heading3,
@@ -4666,9 +4931,11 @@ export const icons: Record<IconName, IconNode> = {
   "hexagon": Hexagon,
   "highlighter": Highlighter,
   "hiking-stick": HikingStick,
+  "hockey-stick": HockeyStick,
   "hop": Hop,
   "hop-off": HopOff,
   "hospital": Hospital,
+  "hot-air-balloon": HotAirBalloon,
   "hotel": Hotel,
   "hourglass": Hourglass,
   "hourglass-cog": HourglassCog,
@@ -4726,6 +4993,7 @@ export const icons: Record<IconName, IconNode> = {
   "laptop": Laptop,
   "laptop-minimal": LaptopMinimal,
   "laptop-minimal-check": LaptopMinimalCheck,
+  "laser": Laser,
   "lasso": Lasso,
   "lasso-select": LassoSelect,
   "layer-arrow-down": LayerArrowDown,
@@ -4752,6 +5020,33 @@ export const icons: Record<IconName, IconNode> = {
   "lens": Lens,
   "lens-concave": LensConcave,
   "lens-convex": LensConvex,
+  "letter-a": LetterA,
+  "letter-b": LetterB,
+  "letter-c": LetterC,
+  "letter-d": LetterD,
+  "letter-e": LetterE,
+  "letter-f": LetterF,
+  "letter-g": LetterG,
+  "letter-h": LetterH,
+  "letter-i": LetterI,
+  "letter-j": LetterJ,
+  "letter-k": LetterK,
+  "letter-l": LetterL,
+  "letter-m": LetterM,
+  "letter-n": LetterN,
+  "letter-o": LetterO,
+  "letter-p": LetterP,
+  "letter-q": LetterQ,
+  "letter-r": LetterR,
+  "letter-s": LetterS,
+  "letter-spacing": LetterSpacing,
+  "letter-t": LetterT,
+  "letter-u": LetterU,
+  "letter-v": LetterV,
+  "letter-w": LetterW,
+  "letter-x": LetterX,
+  "letter-y": LetterY,
+  "letter-z": LetterZ,
   "letters": Letters,
   "library": Library,
   "library-big": LibraryBig,
@@ -4764,6 +5059,7 @@ export const icons: Record<IconName, IconNode> = {
   "line-dot-left-horizontal": LineDotLeftHorizontal,
   "line-dot-right-horizontal": LineDotRightHorizontal,
   "line-dot-top-vertical": LineDotTopVertical,
+  "line-height": LineHeight,
   "line-squiggle": LineSquiggle,
   "line-style": LineStyle,
   "link": Link,
@@ -4951,10 +5247,6 @@ export const icons: Record<IconName, IconNode> = {
   "move-up-left": MoveUpLeft,
   "move-up-right": MoveUpRight,
   "move-vertical": MoveVertical,
-  "music": Music,
-  "music-2": Music2,
-  "music-3": Music3,
-  "music-4": Music4,
   "navigation": Navigation,
   "navigation-2": Navigation2,
   "navigation-2-off": Navigation2Off,
@@ -4971,6 +5263,7 @@ export const icons: Record<IconName, IconNode> = {
   "notebook-text": NotebookText,
   "notepad-text": NotepadText,
   "notepad-text-dashed": NotepadTextDashed,
+  "numbers": Numbers,
   "nut": Nut,
   "nut-off": NutOff,
   "octagon": Octagon,
@@ -5279,6 +5572,8 @@ export const icons: Record<IconName, IconNode> = {
   "signpost": Signpost,
   "signpost-big": SignpostBig,
   "siren": Siren,
+  "siren-off": SirenOff,
+  "sixteenth-notes": SixteenthNotes,
   "skip-back": SkipBack,
   "skip-forward": SkipForward,
   "skull": Skull,
@@ -5289,6 +5584,7 @@ export const icons: Record<IconName, IconNode> = {
   "smartphone": Smartphone,
   "smartphone-charging": SmartphoneCharging,
   "smartphone-nfc": SmartphoneNfc,
+  "smartphone-user-round": SmartphoneUserRound,
   "snail": Snail,
   "snowflake": Snowflake,
   "soap-dispenser-droplet": SoapDispenserDroplet,
@@ -5339,6 +5635,10 @@ export const icons: Record<IconName, IconNode> = {
   "square-chevron-left": SquareChevronLeft,
   "square-chevron-right": SquareChevronRight,
   "square-chevron-up": SquareChevronUp,
+  "square-chevrons-down": SquareChevronsDown,
+  "square-chevrons-left": SquareChevronsLeft,
+  "square-chevrons-right": SquareChevronsRight,
+  "square-chevrons-up": SquareChevronsUp,
   "square-code": SquareCode,
   "square-dashed": SquareDashed,
   "square-dashed-bottom": SquareDashedBottom,
@@ -5357,14 +5657,39 @@ export const icons: Record<IconName, IconNode> = {
   "square-exclamation-point": SquareExclamationPoint,
   "square-function": SquareFunction,
   "square-kanban": SquareKanban,
+  "square-kanban-plus": SquareKanbanPlus,
+  "square-letter-a": SquareLetterA,
+  "square-letter-b": SquareLetterB,
+  "square-letter-c": SquareLetterC,
+  "square-letter-d": SquareLetterD,
+  "square-letter-e": SquareLetterE,
+  "square-letter-f": SquareLetterF,
+  "square-letter-g": SquareLetterG,
+  "square-letter-h": SquareLetterH,
+  "square-letter-i": SquareLetterI,
+  "square-letter-j": SquareLetterJ,
+  "square-letter-k": SquareLetterK,
+  "square-letter-l": SquareLetterL,
+  "square-letter-m": SquareLetterM,
+  "square-letter-n": SquareLetterN,
+  "square-letter-o": SquareLetterO,
+  "square-letter-p": SquareLetterP,
+  "square-letter-p-off": SquareLetterPOff,
+  "square-letter-q": SquareLetterQ,
+  "square-letter-r": SquareLetterR,
+  "square-letter-s": SquareLetterS,
+  "square-letter-t": SquareLetterT,
+  "square-letter-u": SquareLetterU,
+  "square-letter-v": SquareLetterV,
+  "square-letter-w": SquareLetterW,
+  "square-letter-x": SquareLetterX,
+  "square-letter-y": SquareLetterY,
+  "square-letter-z": SquareLetterZ,
   "square-library": SquareLibrary,
-  "square-m": SquareM,
   "square-menu": SquareMenu,
   "square-minus": SquareMinus,
   "square-mouse-pointer": SquareMousePointer,
   "square-off": SquareOff,
-  "square-parking": SquareParking,
-  "square-parking-off": SquareParkingOff,
   "square-pause": SquarePause,
   "square-pen": SquarePen,
   "square-percent": SquarePercent,
@@ -5502,6 +5827,7 @@ export const icons: Record<IconName, IconNode> = {
   "toggle-left": ToggleLeft,
   "toggle-right": ToggleRight,
   "toilet": Toilet,
+  "tombstone": Tombstone,
   "tool-case": ToolCase,
   "toolbox": Toolbox,
   "toothbrush": Toothbrush,
@@ -5583,6 +5909,7 @@ export const icons: Record<IconName, IconNode> = {
   "user-round-pen": UserRoundPen,
   "user-round-plus": UserRoundPlus,
   "user-round-search": UserRoundSearch,
+  "user-round-shield": UserRoundShield,
   "user-round-star": UserRoundStar,
   "user-round-x": UserRoundX,
   "user-search": UserSearch,
@@ -5736,7 +6063,8 @@ export const iconNames: readonly IconName[] = [
   "app-window-mac",
   "apple",
   "archive",
-  "archive-restore",
+  "archive-arrow-down",
+  "archive-arrow-up",
   "archive-x",
   "armchair",
   "armenian-dram",
@@ -5791,11 +6119,14 @@ export const iconNames: readonly IconName[] = [
   "audio-lines-off",
   "audio-lines-x",
   "audio-waveform",
+  "avocado",
   "award",
   "axe",
   "axis-3d",
+  "azerbaijani-manat",
   "baby",
   "backpack",
+  "bacon",
   "badge",
   "badge-alert",
   "badge-cent",
@@ -5815,6 +6146,7 @@ export const iconNames: readonly IconName[] = [
   "badge-turkish-lira",
   "badge-x",
   "baggage-claim",
+  "ball-wave",
   "balloon",
   "ban",
   "banana",
@@ -5875,7 +6207,6 @@ export const iconNames: readonly IconName[] = [
   "bluetooth-connected",
   "bluetooth-off",
   "bluetooth-searching",
-  "bold",
   "bolt",
   "bomb",
   "bone",
@@ -5920,11 +6251,13 @@ export const iconNames: readonly IconName[] = [
   "bow-arrow",
   "box",
   "boxes",
+  "boxes-linked",
   "braces",
   "brackets",
   "brain",
   "brain-circuit",
   "brain-cog",
+  "brain-off",
   "brick-wall",
   "brick-wall-fire",
   "brick-wall-shield",
@@ -5957,6 +6290,8 @@ export const iconNames: readonly IconName[] = [
   "calendar",
   "calendar-1",
   "calendar-arrow-down",
+  "calendar-arrow-left",
+  "calendar-arrow-right",
   "calendar-arrow-up",
   "calendar-check",
   "calendar-check-2",
@@ -6007,6 +6342,7 @@ export const iconNames: readonly IconName[] = [
   "cat",
   "cctv",
   "cctv-off",
+  "certificate",
   "chart-area",
   "chart-bar",
   "chart-bar-big",
@@ -6028,6 +6364,8 @@ export const iconNames: readonly IconName[] = [
   "chart-no-axes-combined",
   "chart-no-axes-gantt",
   "chart-pie",
+  "chart-quadrant",
+  "chart-radar",
   "chart-scatter",
   "chart-spline",
   "check",
@@ -6075,6 +6413,10 @@ export const iconNames: readonly IconName[] = [
   "circle-chevron-left",
   "circle-chevron-right",
   "circle-chevron-up",
+  "circle-chevrons-down",
+  "circle-chevrons-left",
+  "circle-chevrons-right",
+  "circle-chevrons-up",
   "circle-dashed",
   "circle-dashed-check",
   "circle-divide",
@@ -6088,10 +6430,35 @@ export const iconNames: readonly IconName[] = [
   "circle-fading-play",
   "circle-fading-plus",
   "circle-gauge",
+  "circle-letter-a",
+  "circle-letter-b",
+  "circle-letter-c",
+  "circle-letter-d",
+  "circle-letter-e",
+  "circle-letter-f",
+  "circle-letter-g",
+  "circle-letter-h",
+  "circle-letter-i",
+  "circle-letter-j",
+  "circle-letter-k",
+  "circle-letter-l",
+  "circle-letter-m",
+  "circle-letter-n",
+  "circle-letter-o",
+  "circle-letter-p",
+  "circle-letter-p-off",
+  "circle-letter-q",
+  "circle-letter-r",
+  "circle-letter-s",
+  "circle-letter-t",
+  "circle-letter-u",
+  "circle-letter-v",
+  "circle-letter-w",
+  "circle-letter-x",
+  "circle-letter-y",
+  "circle-letter-z",
   "circle-minus",
   "circle-off",
-  "circle-parking",
-  "circle-parking-off",
   "circle-pause",
   "circle-percent",
   "circle-pile",
@@ -6235,6 +6602,7 @@ export const iconNames: readonly IconName[] = [
   "database-arrow-up",
   "database-backup",
   "database-check",
+  "database-cog",
   "database-minus",
   "database-plus",
   "database-search",
@@ -6289,16 +6657,21 @@ export const iconNames: readonly IconName[] = [
   "dumbbell",
   "ear",
   "ear-off",
+  "earbuds",
+  "earbuds-off",
   "earth",
   "earth-lock",
   "eclipse",
   "egg",
   "egg-fried",
   "egg-off",
+  "eighth-note",
+  "eighth-notes",
   "eject",
   "ellipse",
   "ellipsis",
   "ellipsis-vertical",
+  "emirati-dirham",
   "engine",
   "equal",
   "equal-approximately",
@@ -6500,6 +6873,7 @@ export const iconNames: readonly IconName[] = [
   "gpu",
   "graduation-cap",
   "grape",
+  "graph-hub",
   "graph-star",
   "grid-2x2",
   "grid-2x2-check",
@@ -6514,6 +6888,7 @@ export const iconNames: readonly IconName[] = [
   "group",
   "guitar",
   "guitar-electric",
+  "half-note",
   "ham",
   "hamburger",
   "hammer",
@@ -6537,7 +6912,6 @@ export const iconNames: readonly IconName[] = [
   "haze",
   "hd",
   "hdmi-port",
-  "heading",
   "heading-1",
   "heading-2",
   "heading-3",
@@ -6560,9 +6934,11 @@ export const iconNames: readonly IconName[] = [
   "hexagon",
   "highlighter",
   "hiking-stick",
+  "hockey-stick",
   "hop",
   "hop-off",
   "hospital",
+  "hot-air-balloon",
   "hotel",
   "hourglass",
   "hourglass-cog",
@@ -6620,6 +6996,7 @@ export const iconNames: readonly IconName[] = [
   "laptop",
   "laptop-minimal",
   "laptop-minimal-check",
+  "laser",
   "lasso",
   "lasso-select",
   "layer-arrow-down",
@@ -6646,6 +7023,33 @@ export const iconNames: readonly IconName[] = [
   "lens",
   "lens-concave",
   "lens-convex",
+  "letter-a",
+  "letter-b",
+  "letter-c",
+  "letter-d",
+  "letter-e",
+  "letter-f",
+  "letter-g",
+  "letter-h",
+  "letter-i",
+  "letter-j",
+  "letter-k",
+  "letter-l",
+  "letter-m",
+  "letter-n",
+  "letter-o",
+  "letter-p",
+  "letter-q",
+  "letter-r",
+  "letter-s",
+  "letter-spacing",
+  "letter-t",
+  "letter-u",
+  "letter-v",
+  "letter-w",
+  "letter-x",
+  "letter-y",
+  "letter-z",
   "letters",
   "library",
   "library-big",
@@ -6658,6 +7062,7 @@ export const iconNames: readonly IconName[] = [
   "line-dot-left-horizontal",
   "line-dot-right-horizontal",
   "line-dot-top-vertical",
+  "line-height",
   "line-squiggle",
   "line-style",
   "link",
@@ -6845,10 +7250,6 @@ export const iconNames: readonly IconName[] = [
   "move-up-left",
   "move-up-right",
   "move-vertical",
-  "music",
-  "music-2",
-  "music-3",
-  "music-4",
   "navigation",
   "navigation-2",
   "navigation-2-off",
@@ -6865,6 +7266,7 @@ export const iconNames: readonly IconName[] = [
   "notebook-text",
   "notepad-text",
   "notepad-text-dashed",
+  "numbers",
   "nut",
   "nut-off",
   "octagon",
@@ -7173,6 +7575,8 @@ export const iconNames: readonly IconName[] = [
   "signpost",
   "signpost-big",
   "siren",
+  "siren-off",
+  "sixteenth-notes",
   "skip-back",
   "skip-forward",
   "skull",
@@ -7183,6 +7587,7 @@ export const iconNames: readonly IconName[] = [
   "smartphone",
   "smartphone-charging",
   "smartphone-nfc",
+  "smartphone-user-round",
   "snail",
   "snowflake",
   "soap-dispenser-droplet",
@@ -7233,6 +7638,10 @@ export const iconNames: readonly IconName[] = [
   "square-chevron-left",
   "square-chevron-right",
   "square-chevron-up",
+  "square-chevrons-down",
+  "square-chevrons-left",
+  "square-chevrons-right",
+  "square-chevrons-up",
   "square-code",
   "square-dashed",
   "square-dashed-bottom",
@@ -7251,14 +7660,39 @@ export const iconNames: readonly IconName[] = [
   "square-exclamation-point",
   "square-function",
   "square-kanban",
+  "square-kanban-plus",
+  "square-letter-a",
+  "square-letter-b",
+  "square-letter-c",
+  "square-letter-d",
+  "square-letter-e",
+  "square-letter-f",
+  "square-letter-g",
+  "square-letter-h",
+  "square-letter-i",
+  "square-letter-j",
+  "square-letter-k",
+  "square-letter-l",
+  "square-letter-m",
+  "square-letter-n",
+  "square-letter-o",
+  "square-letter-p",
+  "square-letter-p-off",
+  "square-letter-q",
+  "square-letter-r",
+  "square-letter-s",
+  "square-letter-t",
+  "square-letter-u",
+  "square-letter-v",
+  "square-letter-w",
+  "square-letter-x",
+  "square-letter-y",
+  "square-letter-z",
   "square-library",
-  "square-m",
   "square-menu",
   "square-minus",
   "square-mouse-pointer",
   "square-off",
-  "square-parking",
-  "square-parking-off",
   "square-pause",
   "square-pen",
   "square-percent",
@@ -7396,6 +7830,7 @@ export const iconNames: readonly IconName[] = [
   "toggle-left",
   "toggle-right",
   "toilet",
+  "tombstone",
   "tool-case",
   "toolbox",
   "toothbrush",
@@ -7477,6 +7912,7 @@ export const iconNames: readonly IconName[] = [
   "user-round-pen",
   "user-round-plus",
   "user-round-search",
+  "user-round-shield",
   "user-round-star",
   "user-round-x",
   "user-search",

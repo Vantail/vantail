@@ -699,11 +699,7 @@ fn query(connection: &Connection, sql: &str, params: &[Value], bigint: bool) -> 
         .prepare(sql)
         .map_err(|e| failed("Could not prepare the statement", &e))?;
 
-    let columns: Vec<String> = statement
-        .column_names()
-        .into_iter()
-        .map(str::to_string)
-        .collect();
+    let columns: Vec<String> = statement.column_names().map(str::to_string).collect();
 
     let bound = bind(params)?;
     let mut rows = statement
@@ -757,7 +753,7 @@ fn snapshot(connection: &Connection, path: &PathBuf) -> ApiResult {
     // consistent copy of a database that is being written to, which a
     // filesystem copy cannot promise.
     connection
-        .backup(rusqlite::MAIN_DB, path, None)
+        .backup(rusqlite::MAIN_DB, path, rusqlite::backup::NO_PROGRESS)
         .map_err(|e| {
             failed(
                 &format!("Could not write a copy to `{}`", path.display()),

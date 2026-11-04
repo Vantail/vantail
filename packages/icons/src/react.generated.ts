@@ -1,7 +1,7 @@
 /**
  * Tree-shakeable React components — one per canonical icon.
  *
- * GENERATED from lucide@1.57.0 — do not edit by hand.
+ * GENERATED from lucide@1.64.0 — do not edit by hand.
  * Regenerate with: pnpm --filter @vantail/icons run generate
  * Source of truth: dist/esm/icons/*.mjs in the installed lucide package
  * (filenames are canonical kebab-case names; files declare the artwork).
@@ -56,7 +56,8 @@ import {
   AppWindowMac as AppWindowMacNode,
   Apple as AppleNode,
   Archive as ArchiveNode,
-  ArchiveRestore as ArchiveRestoreNode,
+  ArchiveArrowDown as ArchiveArrowDownNode,
+  ArchiveArrowUp as ArchiveArrowUpNode,
   ArchiveX as ArchiveXNode,
   Armchair as ArmchairNode,
   ArmenianDram as ArmenianDramNode,
@@ -111,11 +112,14 @@ import {
   AudioLinesOff as AudioLinesOffNode,
   AudioLinesX as AudioLinesXNode,
   AudioWaveform as AudioWaveformNode,
+  Avocado as AvocadoNode,
   Award as AwardNode,
   Axe as AxeNode,
   Axis3d as Axis3dNode,
+  AzerbaijaniManat as AzerbaijaniManatNode,
   Baby as BabyNode,
   Backpack as BackpackNode,
+  Bacon as BaconNode,
   Badge as BadgeNode,
   BadgeAlert as BadgeAlertNode,
   BadgeCent as BadgeCentNode,
@@ -135,6 +139,7 @@ import {
   BadgeTurkishLira as BadgeTurkishLiraNode,
   BadgeX as BadgeXNode,
   BaggageClaim as BaggageClaimNode,
+  BallWave as BallWaveNode,
   Balloon as BalloonNode,
   Ban as BanNode,
   Banana as BananaNode,
@@ -195,7 +200,6 @@ import {
   BluetoothConnected as BluetoothConnectedNode,
   BluetoothOff as BluetoothOffNode,
   BluetoothSearching as BluetoothSearchingNode,
-  Bold as BoldNode,
   Bolt as BoltNode,
   Bomb as BombNode,
   Bone as BoneNode,
@@ -240,11 +244,13 @@ import {
   BowArrow as BowArrowNode,
   Box as BoxNode,
   Boxes as BoxesNode,
+  BoxesLinked as BoxesLinkedNode,
   Braces as BracesNode,
   Brackets as BracketsNode,
   Brain as BrainNode,
   BrainCircuit as BrainCircuitNode,
   BrainCog as BrainCogNode,
+  BrainOff as BrainOffNode,
   BrickWall as BrickWallNode,
   BrickWallFire as BrickWallFireNode,
   BrickWallShield as BrickWallShieldNode,
@@ -277,6 +283,8 @@ import {
   Calendar as CalendarNode,
   Calendar1 as Calendar1Node,
   CalendarArrowDown as CalendarArrowDownNode,
+  CalendarArrowLeft as CalendarArrowLeftNode,
+  CalendarArrowRight as CalendarArrowRightNode,
   CalendarArrowUp as CalendarArrowUpNode,
   CalendarCheck as CalendarCheckNode,
   CalendarCheck2 as CalendarCheck2Node,
@@ -327,6 +335,7 @@ import {
   Cat as CatNode,
   Cctv as CctvNode,
   CctvOff as CctvOffNode,
+  Certificate as CertificateNode,
   ChartArea as ChartAreaNode,
   ChartBar as ChartBarNode,
   ChartBarBig as ChartBarBigNode,
@@ -348,6 +357,8 @@ import {
   ChartNoAxesCombined as ChartNoAxesCombinedNode,
   ChartNoAxesGantt as ChartNoAxesGanttNode,
   ChartPie as ChartPieNode,
+  ChartQuadrant as ChartQuadrantNode,
+  ChartRadar as ChartRadarNode,
   ChartScatter as ChartScatterNode,
   ChartSpline as ChartSplineNode,
   Check as CheckNode,
@@ -395,6 +406,10 @@ import {
   CircleChevronLeft as CircleChevronLeftNode,
   CircleChevronRight as CircleChevronRightNode,
   CircleChevronUp as CircleChevronUpNode,
+  CircleChevronsDown as CircleChevronsDownNode,
+  CircleChevronsLeft as CircleChevronsLeftNode,
+  CircleChevronsRight as CircleChevronsRightNode,
+  CircleChevronsUp as CircleChevronsUpNode,
   CircleDashed as CircleDashedNode,
   CircleDashedCheck as CircleDashedCheckNode,
   CircleDivide as CircleDivideNode,
@@ -408,10 +423,35 @@ import {
   CircleFadingPlay as CircleFadingPlayNode,
   CircleFadingPlus as CircleFadingPlusNode,
   CircleGauge as CircleGaugeNode,
+  CircleLetterA as CircleLetterANode,
+  CircleLetterB as CircleLetterBNode,
+  CircleLetterC as CircleLetterCNode,
+  CircleLetterD as CircleLetterDNode,
+  CircleLetterE as CircleLetterENode,
+  CircleLetterF as CircleLetterFNode,
+  CircleLetterG as CircleLetterGNode,
+  CircleLetterH as CircleLetterHNode,
+  CircleLetterI as CircleLetterINode,
+  CircleLetterJ as CircleLetterJNode,
+  CircleLetterK as CircleLetterKNode,
+  CircleLetterL as CircleLetterLNode,
+  CircleLetterM as CircleLetterMNode,
+  CircleLetterN as CircleLetterNNode,
+  CircleLetterO as CircleLetterONode,
+  CircleLetterP as CircleLetterPNode,
+  CircleLetterPOff as CircleLetterPOffNode,
+  CircleLetterQ as CircleLetterQNode,
+  CircleLetterR as CircleLetterRNode,
+  CircleLetterS as CircleLetterSNode,
+  CircleLetterT as CircleLetterTNode,
+  CircleLetterU as CircleLetterUNode,
+  CircleLetterV as CircleLetterVNode,
+  CircleLetterW as CircleLetterWNode,
+  CircleLetterX as CircleLetterXNode,
+  CircleLetterY as CircleLetterYNode,
+  CircleLetterZ as CircleLetterZNode,
   CircleMinus as CircleMinusNode,
   CircleOff as CircleOffNode,
-  CircleParking as CircleParkingNode,
-  CircleParkingOff as CircleParkingOffNode,
   CirclePause as CirclePauseNode,
   CirclePercent as CirclePercentNode,
   CirclePile as CirclePileNode,
@@ -555,6 +595,7 @@ import {
   DatabaseArrowUp as DatabaseArrowUpNode,
   DatabaseBackup as DatabaseBackupNode,
   DatabaseCheck as DatabaseCheckNode,
+  DatabaseCog as DatabaseCogNode,
   DatabaseMinus as DatabaseMinusNode,
   DatabasePlus as DatabasePlusNode,
   DatabaseSearch as DatabaseSearchNode,
@@ -609,16 +650,21 @@ import {
   Dumbbell as DumbbellNode,
   Ear as EarNode,
   EarOff as EarOffNode,
+  Earbuds as EarbudsNode,
+  EarbudsOff as EarbudsOffNode,
   Earth as EarthNode,
   EarthLock as EarthLockNode,
   Eclipse as EclipseNode,
   Egg as EggNode,
   EggFried as EggFriedNode,
   EggOff as EggOffNode,
+  EighthNote as EighthNoteNode,
+  EighthNotes as EighthNotesNode,
   Eject as EjectNode,
   Ellipse as EllipseNode,
   Ellipsis as EllipsisNode,
   EllipsisVertical as EllipsisVerticalNode,
+  EmiratiDirham as EmiratiDirhamNode,
   Engine as EngineNode,
   Equal as EqualNode,
   EqualApproximately as EqualApproximatelyNode,
@@ -820,6 +866,7 @@ import {
   Gpu as GpuNode,
   GraduationCap as GraduationCapNode,
   Grape as GrapeNode,
+  GraphHub as GraphHubNode,
   GraphStar as GraphStarNode,
   Grid2x2 as Grid2x2Node,
   Grid2x2Check as Grid2x2CheckNode,
@@ -834,6 +881,7 @@ import {
   Group as GroupNode,
   Guitar as GuitarNode,
   GuitarElectric as GuitarElectricNode,
+  HalfNote as HalfNoteNode,
   Ham as HamNode,
   Hamburger as HamburgerNode,
   Hammer as HammerNode,
@@ -857,7 +905,6 @@ import {
   Haze as HazeNode,
   Hd as HdNode,
   HdmiPort as HdmiPortNode,
-  Heading as HeadingNode,
   Heading1 as Heading1Node,
   Heading2 as Heading2Node,
   Heading3 as Heading3Node,
@@ -880,9 +927,11 @@ import {
   Hexagon as HexagonNode,
   Highlighter as HighlighterNode,
   HikingStick as HikingStickNode,
+  HockeyStick as HockeyStickNode,
   Hop as HopNode,
   HopOff as HopOffNode,
   Hospital as HospitalNode,
+  HotAirBalloon as HotAirBalloonNode,
   Hotel as HotelNode,
   Hourglass as HourglassNode,
   HourglassCog as HourglassCogNode,
@@ -940,6 +989,7 @@ import {
   Laptop as LaptopNode,
   LaptopMinimal as LaptopMinimalNode,
   LaptopMinimalCheck as LaptopMinimalCheckNode,
+  Laser as LaserNode,
   Lasso as LassoNode,
   LassoSelect as LassoSelectNode,
   LayerArrowDown as LayerArrowDownNode,
@@ -966,6 +1016,33 @@ import {
   Lens as LensNode,
   LensConcave as LensConcaveNode,
   LensConvex as LensConvexNode,
+  LetterA as LetterANode,
+  LetterB as LetterBNode,
+  LetterC as LetterCNode,
+  LetterD as LetterDNode,
+  LetterE as LetterENode,
+  LetterF as LetterFNode,
+  LetterG as LetterGNode,
+  LetterH as LetterHNode,
+  LetterI as LetterINode,
+  LetterJ as LetterJNode,
+  LetterK as LetterKNode,
+  LetterL as LetterLNode,
+  LetterM as LetterMNode,
+  LetterN as LetterNNode,
+  LetterO as LetterONode,
+  LetterP as LetterPNode,
+  LetterQ as LetterQNode,
+  LetterR as LetterRNode,
+  LetterS as LetterSNode,
+  LetterSpacing as LetterSpacingNode,
+  LetterT as LetterTNode,
+  LetterU as LetterUNode,
+  LetterV as LetterVNode,
+  LetterW as LetterWNode,
+  LetterX as LetterXNode,
+  LetterY as LetterYNode,
+  LetterZ as LetterZNode,
   Letters as LettersNode,
   Library as LibraryNode,
   LibraryBig as LibraryBigNode,
@@ -978,6 +1055,7 @@ import {
   LineDotLeftHorizontal as LineDotLeftHorizontalNode,
   LineDotRightHorizontal as LineDotRightHorizontalNode,
   LineDotTopVertical as LineDotTopVerticalNode,
+  LineHeight as LineHeightNode,
   LineSquiggle as LineSquiggleNode,
   LineStyle as LineStyleNode,
   Link as LinkNode,
@@ -1165,10 +1243,6 @@ import {
   MoveUpLeft as MoveUpLeftNode,
   MoveUpRight as MoveUpRightNode,
   MoveVertical as MoveVerticalNode,
-  Music as MusicNode,
-  Music2 as Music2Node,
-  Music3 as Music3Node,
-  Music4 as Music4Node,
   Navigation as NavigationNode,
   Navigation2 as Navigation2Node,
   Navigation2Off as Navigation2OffNode,
@@ -1185,6 +1259,7 @@ import {
   NotebookText as NotebookTextNode,
   NotepadText as NotepadTextNode,
   NotepadTextDashed as NotepadTextDashedNode,
+  Numbers as NumbersNode,
   Nut as NutNode,
   NutOff as NutOffNode,
   Octagon as OctagonNode,
@@ -1493,6 +1568,8 @@ import {
   Signpost as SignpostNode,
   SignpostBig as SignpostBigNode,
   Siren as SirenNode,
+  SirenOff as SirenOffNode,
+  SixteenthNotes as SixteenthNotesNode,
   SkipBack as SkipBackNode,
   SkipForward as SkipForwardNode,
   Skull as SkullNode,
@@ -1503,6 +1580,7 @@ import {
   Smartphone as SmartphoneNode,
   SmartphoneCharging as SmartphoneChargingNode,
   SmartphoneNfc as SmartphoneNfcNode,
+  SmartphoneUserRound as SmartphoneUserRoundNode,
   Snail as SnailNode,
   Snowflake as SnowflakeNode,
   SoapDispenserDroplet as SoapDispenserDropletNode,
@@ -1553,6 +1631,10 @@ import {
   SquareChevronLeft as SquareChevronLeftNode,
   SquareChevronRight as SquareChevronRightNode,
   SquareChevronUp as SquareChevronUpNode,
+  SquareChevronsDown as SquareChevronsDownNode,
+  SquareChevronsLeft as SquareChevronsLeftNode,
+  SquareChevronsRight as SquareChevronsRightNode,
+  SquareChevronsUp as SquareChevronsUpNode,
   SquareCode as SquareCodeNode,
   SquareDashed as SquareDashedNode,
   SquareDashedBottom as SquareDashedBottomNode,
@@ -1571,14 +1653,39 @@ import {
   SquareExclamationPoint as SquareExclamationPointNode,
   SquareFunction as SquareFunctionNode,
   SquareKanban as SquareKanbanNode,
+  SquareKanbanPlus as SquareKanbanPlusNode,
+  SquareLetterA as SquareLetterANode,
+  SquareLetterB as SquareLetterBNode,
+  SquareLetterC as SquareLetterCNode,
+  SquareLetterD as SquareLetterDNode,
+  SquareLetterE as SquareLetterENode,
+  SquareLetterF as SquareLetterFNode,
+  SquareLetterG as SquareLetterGNode,
+  SquareLetterH as SquareLetterHNode,
+  SquareLetterI as SquareLetterINode,
+  SquareLetterJ as SquareLetterJNode,
+  SquareLetterK as SquareLetterKNode,
+  SquareLetterL as SquareLetterLNode,
+  SquareLetterM as SquareLetterMNode,
+  SquareLetterN as SquareLetterNNode,
+  SquareLetterO as SquareLetterONode,
+  SquareLetterP as SquareLetterPNode,
+  SquareLetterPOff as SquareLetterPOffNode,
+  SquareLetterQ as SquareLetterQNode,
+  SquareLetterR as SquareLetterRNode,
+  SquareLetterS as SquareLetterSNode,
+  SquareLetterT as SquareLetterTNode,
+  SquareLetterU as SquareLetterUNode,
+  SquareLetterV as SquareLetterVNode,
+  SquareLetterW as SquareLetterWNode,
+  SquareLetterX as SquareLetterXNode,
+  SquareLetterY as SquareLetterYNode,
+  SquareLetterZ as SquareLetterZNode,
   SquareLibrary as SquareLibraryNode,
-  SquareM as SquareMNode,
   SquareMenu as SquareMenuNode,
   SquareMinus as SquareMinusNode,
   SquareMousePointer as SquareMousePointerNode,
   SquareOff as SquareOffNode,
-  SquareParking as SquareParkingNode,
-  SquareParkingOff as SquareParkingOffNode,
   SquarePause as SquarePauseNode,
   SquarePen as SquarePenNode,
   SquarePercent as SquarePercentNode,
@@ -1716,6 +1823,7 @@ import {
   ToggleLeft as ToggleLeftNode,
   ToggleRight as ToggleRightNode,
   Toilet as ToiletNode,
+  Tombstone as TombstoneNode,
   ToolCase as ToolCaseNode,
   Toolbox as ToolboxNode,
   Toothbrush as ToothbrushNode,
@@ -1797,6 +1905,7 @@ import {
   UserRoundPen as UserRoundPenNode,
   UserRoundPlus as UserRoundPlusNode,
   UserRoundSearch as UserRoundSearchNode,
+  UserRoundShield as UserRoundShieldNode,
   UserRoundStar as UserRoundStarNode,
   UserRoundX as UserRoundXNode,
   UserSearch as UserSearchNode,
@@ -2097,8 +2206,12 @@ export function Archive(props: BaseIconProps): ReactElement {
   return baseReactIcon(ArchiveNode, "archive", true, props);
 }
 
-export function ArchiveRestore(props: BaseIconProps): ReactElement {
-  return baseReactIcon(ArchiveRestoreNode, "archive-restore", true, props);
+export function ArchiveArrowDown(props: BaseIconProps): ReactElement {
+  return baseReactIcon(ArchiveArrowDownNode, "archive-arrow-down", true, props);
+}
+
+export function ArchiveArrowUp(props: BaseIconProps): ReactElement {
+  return baseReactIcon(ArchiveArrowUpNode, "archive-arrow-up", true, props);
 }
 
 export function ArchiveX(props: BaseIconProps): ReactElement {
@@ -2317,6 +2430,10 @@ export function AudioWaveform(props: BaseIconProps): ReactElement {
   return baseReactIcon(AudioWaveformNode, "audio-waveform", true, props);
 }
 
+export function Avocado(props: BaseIconProps): ReactElement {
+  return baseReactIcon(AvocadoNode, "avocado", true, props);
+}
+
 export function Award(props: BaseIconProps): ReactElement {
   return baseReactIcon(AwardNode, "award", true, props);
 }
@@ -2329,12 +2446,20 @@ export function Axis3d(props: BaseIconProps): ReactElement {
   return baseReactIcon(Axis3dNode, "axis-3d", true, props);
 }
 
+export function AzerbaijaniManat(props: BaseIconProps): ReactElement {
+  return baseReactIcon(AzerbaijaniManatNode, "azerbaijani-manat", true, props);
+}
+
 export function Baby(props: BaseIconProps): ReactElement {
   return baseReactIcon(BabyNode, "baby", true, props);
 }
 
 export function Backpack(props: BaseIconProps): ReactElement {
   return baseReactIcon(BackpackNode, "backpack", true, props);
+}
+
+export function Bacon(props: BaseIconProps): ReactElement {
+  return baseReactIcon(BaconNode, "bacon", true, props);
 }
 
 export function Badge(props: BaseIconProps): ReactElement {
@@ -2411,6 +2536,10 @@ export function BadgeX(props: BaseIconProps): ReactElement {
 
 export function BaggageClaim(props: BaseIconProps): ReactElement {
   return baseReactIcon(BaggageClaimNode, "baggage-claim", true, props);
+}
+
+export function BallWave(props: BaseIconProps): ReactElement {
+  return baseReactIcon(BallWaveNode, "ball-wave", true, props);
 }
 
 export function Balloon(props: BaseIconProps): ReactElement {
@@ -2653,10 +2782,6 @@ export function BluetoothSearching(props: BaseIconProps): ReactElement {
   return baseReactIcon(BluetoothSearchingNode, "bluetooth-searching", true, props);
 }
 
-export function Bold(props: BaseIconProps): ReactElement {
-  return baseReactIcon(BoldNode, "bold", true, props);
-}
-
 export function Bolt(props: BaseIconProps): ReactElement {
   return baseReactIcon(BoltNode, "bolt", true, props);
 }
@@ -2833,6 +2958,10 @@ export function Boxes(props: BaseIconProps): ReactElement {
   return baseReactIcon(BoxesNode, "boxes", true, props);
 }
 
+export function BoxesLinked(props: BaseIconProps): ReactElement {
+  return baseReactIcon(BoxesLinkedNode, "boxes-linked", true, props);
+}
+
 export function Braces(props: BaseIconProps): ReactElement {
   return baseReactIcon(BracesNode, "braces", true, props);
 }
@@ -2851,6 +2980,10 @@ export function BrainCircuit(props: BaseIconProps): ReactElement {
 
 export function BrainCog(props: BaseIconProps): ReactElement {
   return baseReactIcon(BrainCogNode, "brain-cog", true, props);
+}
+
+export function BrainOff(props: BaseIconProps): ReactElement {
+  return baseReactIcon(BrainOffNode, "brain-off", true, props);
 }
 
 export function BrickWall(props: BaseIconProps): ReactElement {
@@ -2979,6 +3112,14 @@ export function Calendar1(props: BaseIconProps): ReactElement {
 
 export function CalendarArrowDown(props: BaseIconProps): ReactElement {
   return baseReactIcon(CalendarArrowDownNode, "calendar-arrow-down", true, props);
+}
+
+export function CalendarArrowLeft(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CalendarArrowLeftNode, "calendar-arrow-left", true, props);
+}
+
+export function CalendarArrowRight(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CalendarArrowRightNode, "calendar-arrow-right", true, props);
 }
 
 export function CalendarArrowUp(props: BaseIconProps): ReactElement {
@@ -3181,6 +3322,10 @@ export function CctvOff(props: BaseIconProps): ReactElement {
   return baseReactIcon(CctvOffNode, "cctv-off", true, props);
 }
 
+export function Certificate(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CertificateNode, "certificate", true, props);
+}
+
 export function ChartArea(props: BaseIconProps): ReactElement {
   return baseReactIcon(ChartAreaNode, "chart-area", true, props);
 }
@@ -3263,6 +3408,14 @@ export function ChartNoAxesGantt(props: BaseIconProps): ReactElement {
 
 export function ChartPie(props: BaseIconProps): ReactElement {
   return baseReactIcon(ChartPieNode, "chart-pie", true, props);
+}
+
+export function ChartQuadrant(props: BaseIconProps): ReactElement {
+  return baseReactIcon(ChartQuadrantNode, "chart-quadrant", true, props);
+}
+
+export function ChartRadar(props: BaseIconProps): ReactElement {
+  return baseReactIcon(ChartRadarNode, "chart-radar", true, props);
 }
 
 export function ChartScatter(props: BaseIconProps): ReactElement {
@@ -3453,6 +3606,22 @@ export function CircleChevronUp(props: BaseIconProps): ReactElement {
   return baseReactIcon(CircleChevronUpNode, "circle-chevron-up", true, props);
 }
 
+export function CircleChevronsDown(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleChevronsDownNode, "circle-chevrons-down", true, props);
+}
+
+export function CircleChevronsLeft(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleChevronsLeftNode, "circle-chevrons-left", true, props);
+}
+
+export function CircleChevronsRight(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleChevronsRightNode, "circle-chevrons-right", true, props);
+}
+
+export function CircleChevronsUp(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleChevronsUpNode, "circle-chevrons-up", true, props);
+}
+
 export function CircleDashed(props: BaseIconProps): ReactElement {
   return baseReactIcon(CircleDashedNode, "circle-dashed", true, props);
 }
@@ -3505,20 +3674,120 @@ export function CircleGauge(props: BaseIconProps): ReactElement {
   return baseReactIcon(CircleGaugeNode, "circle-gauge", true, props);
 }
 
+export function CircleLetterA(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterANode, "circle-letter-a", true, props);
+}
+
+export function CircleLetterB(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterBNode, "circle-letter-b", true, props);
+}
+
+export function CircleLetterC(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterCNode, "circle-letter-c", true, props);
+}
+
+export function CircleLetterD(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterDNode, "circle-letter-d", true, props);
+}
+
+export function CircleLetterE(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterENode, "circle-letter-e", true, props);
+}
+
+export function CircleLetterF(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterFNode, "circle-letter-f", true, props);
+}
+
+export function CircleLetterG(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterGNode, "circle-letter-g", true, props);
+}
+
+export function CircleLetterH(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterHNode, "circle-letter-h", true, props);
+}
+
+export function CircleLetterI(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterINode, "circle-letter-i", true, props);
+}
+
+export function CircleLetterJ(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterJNode, "circle-letter-j", true, props);
+}
+
+export function CircleLetterK(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterKNode, "circle-letter-k", true, props);
+}
+
+export function CircleLetterL(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterLNode, "circle-letter-l", true, props);
+}
+
+export function CircleLetterM(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterMNode, "circle-letter-m", true, props);
+}
+
+export function CircleLetterN(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterNNode, "circle-letter-n", true, props);
+}
+
+export function CircleLetterO(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterONode, "circle-letter-o", true, props);
+}
+
+export function CircleLetterP(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterPNode, "circle-letter-p", true, props);
+}
+
+export function CircleLetterPOff(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterPOffNode, "circle-letter-p-off", true, props);
+}
+
+export function CircleLetterQ(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterQNode, "circle-letter-q", true, props);
+}
+
+export function CircleLetterR(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterRNode, "circle-letter-r", true, props);
+}
+
+export function CircleLetterS(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterSNode, "circle-letter-s", true, props);
+}
+
+export function CircleLetterT(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterTNode, "circle-letter-t", true, props);
+}
+
+export function CircleLetterU(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterUNode, "circle-letter-u", true, props);
+}
+
+export function CircleLetterV(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterVNode, "circle-letter-v", true, props);
+}
+
+export function CircleLetterW(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterWNode, "circle-letter-w", true, props);
+}
+
+export function CircleLetterX(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterXNode, "circle-letter-x", true, props);
+}
+
+export function CircleLetterY(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterYNode, "circle-letter-y", true, props);
+}
+
+export function CircleLetterZ(props: BaseIconProps): ReactElement {
+  return baseReactIcon(CircleLetterZNode, "circle-letter-z", true, props);
+}
+
 export function CircleMinus(props: BaseIconProps): ReactElement {
   return baseReactIcon(CircleMinusNode, "circle-minus", true, props);
 }
 
 export function CircleOff(props: BaseIconProps): ReactElement {
   return baseReactIcon(CircleOffNode, "circle-off", true, props);
-}
-
-export function CircleParking(props: BaseIconProps): ReactElement {
-  return baseReactIcon(CircleParkingNode, "circle-parking", true, props);
-}
-
-export function CircleParkingOff(props: BaseIconProps): ReactElement {
-  return baseReactIcon(CircleParkingOffNode, "circle-parking-off", true, props);
 }
 
 export function CirclePause(props: BaseIconProps): ReactElement {
@@ -4093,6 +4362,10 @@ export function DatabaseCheck(props: BaseIconProps): ReactElement {
   return baseReactIcon(DatabaseCheckNode, "database-check", true, props);
 }
 
+export function DatabaseCog(props: BaseIconProps): ReactElement {
+  return baseReactIcon(DatabaseCogNode, "database-cog", true, props);
+}
+
 export function DatabaseMinus(props: BaseIconProps): ReactElement {
   return baseReactIcon(DatabaseMinusNode, "database-minus", true, props);
 }
@@ -4309,6 +4582,14 @@ export function EarOff(props: BaseIconProps): ReactElement {
   return baseReactIcon(EarOffNode, "ear-off", true, props);
 }
 
+export function Earbuds(props: BaseIconProps): ReactElement {
+  return baseReactIcon(EarbudsNode, "earbuds", true, props);
+}
+
+export function EarbudsOff(props: BaseIconProps): ReactElement {
+  return baseReactIcon(EarbudsOffNode, "earbuds-off", true, props);
+}
+
 export function Earth(props: BaseIconProps): ReactElement {
   return baseReactIcon(EarthNode, "earth", true, props);
 }
@@ -4333,6 +4614,14 @@ export function EggOff(props: BaseIconProps): ReactElement {
   return baseReactIcon(EggOffNode, "egg-off", true, props);
 }
 
+export function EighthNote(props: BaseIconProps): ReactElement {
+  return baseReactIcon(EighthNoteNode, "eighth-note", true, props);
+}
+
+export function EighthNotes(props: BaseIconProps): ReactElement {
+  return baseReactIcon(EighthNotesNode, "eighth-notes", true, props);
+}
+
 export function Eject(props: BaseIconProps): ReactElement {
   return baseReactIcon(EjectNode, "eject", true, props);
 }
@@ -4347,6 +4636,10 @@ export function Ellipsis(props: BaseIconProps): ReactElement {
 
 export function EllipsisVertical(props: BaseIconProps): ReactElement {
   return baseReactIcon(EllipsisVerticalNode, "ellipsis-vertical", true, props);
+}
+
+export function EmiratiDirham(props: BaseIconProps): ReactElement {
+  return baseReactIcon(EmiratiDirhamNode, "emirati-dirham", true, props);
 }
 
 export function Engine(props: BaseIconProps): ReactElement {
@@ -5153,6 +5446,10 @@ export function Grape(props: BaseIconProps): ReactElement {
   return baseReactIcon(GrapeNode, "grape", true, props);
 }
 
+export function GraphHub(props: BaseIconProps): ReactElement {
+  return baseReactIcon(GraphHubNode, "graph-hub", true, props);
+}
+
 export function GraphStar(props: BaseIconProps): ReactElement {
   return baseReactIcon(GraphStarNode, "graph-star", true, props);
 }
@@ -5207,6 +5504,10 @@ export function Guitar(props: BaseIconProps): ReactElement {
 
 export function GuitarElectric(props: BaseIconProps): ReactElement {
   return baseReactIcon(GuitarElectricNode, "guitar-electric", true, props);
+}
+
+export function HalfNote(props: BaseIconProps): ReactElement {
+  return baseReactIcon(HalfNoteNode, "half-note", true, props);
 }
 
 export function Ham(props: BaseIconProps): ReactElement {
@@ -5301,10 +5602,6 @@ export function HdmiPort(props: BaseIconProps): ReactElement {
   return baseReactIcon(HdmiPortNode, "hdmi-port", true, props);
 }
 
-export function Heading(props: BaseIconProps): ReactElement {
-  return baseReactIcon(HeadingNode, "heading", true, props);
-}
-
 export function Heading1(props: BaseIconProps): ReactElement {
   return baseReactIcon(Heading1Node, "heading-1", true, props);
 }
@@ -5393,6 +5690,10 @@ export function HikingStick(props: BaseIconProps): ReactElement {
   return baseReactIcon(HikingStickNode, "hiking-stick", true, props);
 }
 
+export function HockeyStick(props: BaseIconProps): ReactElement {
+  return baseReactIcon(HockeyStickNode, "hockey-stick", true, props);
+}
+
 export function Hop(props: BaseIconProps): ReactElement {
   return baseReactIcon(HopNode, "hop", true, props);
 }
@@ -5403,6 +5704,10 @@ export function HopOff(props: BaseIconProps): ReactElement {
 
 export function Hospital(props: BaseIconProps): ReactElement {
   return baseReactIcon(HospitalNode, "hospital", true, props);
+}
+
+export function HotAirBalloon(props: BaseIconProps): ReactElement {
+  return baseReactIcon(HotAirBalloonNode, "hot-air-balloon", true, props);
 }
 
 export function Hotel(props: BaseIconProps): ReactElement {
@@ -5633,6 +5938,10 @@ export function LaptopMinimalCheck(props: BaseIconProps): ReactElement {
   return baseReactIcon(LaptopMinimalCheckNode, "laptop-minimal-check", true, props);
 }
 
+export function Laser(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LaserNode, "laser", true, props);
+}
+
 export function Lasso(props: BaseIconProps): ReactElement {
   return baseReactIcon(LassoNode, "lasso", true, props);
 }
@@ -5737,6 +6046,114 @@ export function LensConvex(props: BaseIconProps): ReactElement {
   return baseReactIcon(LensConvexNode, "lens-convex", true, props);
 }
 
+export function LetterA(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterANode, "letter-a", true, props);
+}
+
+export function LetterB(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterBNode, "letter-b", true, props);
+}
+
+export function LetterC(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterCNode, "letter-c", true, props);
+}
+
+export function LetterD(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterDNode, "letter-d", true, props);
+}
+
+export function LetterE(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterENode, "letter-e", true, props);
+}
+
+export function LetterF(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterFNode, "letter-f", true, props);
+}
+
+export function LetterG(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterGNode, "letter-g", true, props);
+}
+
+export function LetterH(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterHNode, "letter-h", true, props);
+}
+
+export function LetterI(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterINode, "letter-i", true, props);
+}
+
+export function LetterJ(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterJNode, "letter-j", true, props);
+}
+
+export function LetterK(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterKNode, "letter-k", true, props);
+}
+
+export function LetterL(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterLNode, "letter-l", true, props);
+}
+
+export function LetterM(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterMNode, "letter-m", true, props);
+}
+
+export function LetterN(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterNNode, "letter-n", true, props);
+}
+
+export function LetterO(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterONode, "letter-o", true, props);
+}
+
+export function LetterP(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterPNode, "letter-p", true, props);
+}
+
+export function LetterQ(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterQNode, "letter-q", true, props);
+}
+
+export function LetterR(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterRNode, "letter-r", true, props);
+}
+
+export function LetterS(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterSNode, "letter-s", true, props);
+}
+
+export function LetterSpacing(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterSpacingNode, "letter-spacing", true, props);
+}
+
+export function LetterT(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterTNode, "letter-t", true, props);
+}
+
+export function LetterU(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterUNode, "letter-u", true, props);
+}
+
+export function LetterV(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterVNode, "letter-v", true, props);
+}
+
+export function LetterW(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterWNode, "letter-w", true, props);
+}
+
+export function LetterX(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterXNode, "letter-x", true, props);
+}
+
+export function LetterY(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterYNode, "letter-y", true, props);
+}
+
+export function LetterZ(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LetterZNode, "letter-z", true, props);
+}
+
 export function Letters(props: BaseIconProps): ReactElement {
   return baseReactIcon(LettersNode, "letters", true, props);
 }
@@ -5783,6 +6200,10 @@ export function LineDotRightHorizontal(props: BaseIconProps): ReactElement {
 
 export function LineDotTopVertical(props: BaseIconProps): ReactElement {
   return baseReactIcon(LineDotTopVerticalNode, "line-dot-top-vertical", true, props);
+}
+
+export function LineHeight(props: BaseIconProps): ReactElement {
+  return baseReactIcon(LineHeightNode, "line-height", true, props);
 }
 
 export function LineSquiggle(props: BaseIconProps): ReactElement {
@@ -6533,22 +6954,6 @@ export function MoveVertical(props: BaseIconProps): ReactElement {
   return baseReactIcon(MoveVerticalNode, "move-vertical", true, props);
 }
 
-export function Music(props: BaseIconProps): ReactElement {
-  return baseReactIcon(MusicNode, "music", true, props);
-}
-
-export function Music2(props: BaseIconProps): ReactElement {
-  return baseReactIcon(Music2Node, "music-2", true, props);
-}
-
-export function Music3(props: BaseIconProps): ReactElement {
-  return baseReactIcon(Music3Node, "music-3", true, props);
-}
-
-export function Music4(props: BaseIconProps): ReactElement {
-  return baseReactIcon(Music4Node, "music-4", true, props);
-}
-
 export function Navigation(props: BaseIconProps): ReactElement {
   return baseReactIcon(NavigationNode, "navigation", true, props);
 }
@@ -6611,6 +7016,10 @@ export function NotepadText(props: BaseIconProps): ReactElement {
 
 export function NotepadTextDashed(props: BaseIconProps): ReactElement {
   return baseReactIcon(NotepadTextDashedNode, "notepad-text-dashed", true, props);
+}
+
+export function Numbers(props: BaseIconProps): ReactElement {
+  return baseReactIcon(NumbersNode, "numbers", true, props);
 }
 
 export function Nut(props: BaseIconProps): ReactElement {
@@ -7845,6 +8254,14 @@ export function Siren(props: BaseIconProps): ReactElement {
   return baseReactIcon(SirenNode, "siren", true, props);
 }
 
+export function SirenOff(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SirenOffNode, "siren-off", true, props);
+}
+
+export function SixteenthNotes(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SixteenthNotesNode, "sixteenth-notes", true, props);
+}
+
 export function SkipBack(props: BaseIconProps): ReactElement {
   return baseReactIcon(SkipBackNode, "skip-back", true, props);
 }
@@ -7883,6 +8300,10 @@ export function SmartphoneCharging(props: BaseIconProps): ReactElement {
 
 export function SmartphoneNfc(props: BaseIconProps): ReactElement {
   return baseReactIcon(SmartphoneNfcNode, "smartphone-nfc", true, props);
+}
+
+export function SmartphoneUserRound(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SmartphoneUserRoundNode, "smartphone-user-round", true, props);
 }
 
 export function Snail(props: BaseIconProps): ReactElement {
@@ -8085,6 +8506,22 @@ export function SquareChevronUp(props: BaseIconProps): ReactElement {
   return baseReactIcon(SquareChevronUpNode, "square-chevron-up", true, props);
 }
 
+export function SquareChevronsDown(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareChevronsDownNode, "square-chevrons-down", true, props);
+}
+
+export function SquareChevronsLeft(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareChevronsLeftNode, "square-chevrons-left", true, props);
+}
+
+export function SquareChevronsRight(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareChevronsRightNode, "square-chevrons-right", true, props);
+}
+
+export function SquareChevronsUp(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareChevronsUpNode, "square-chevrons-up", true, props);
+}
+
 export function SquareCode(props: BaseIconProps): ReactElement {
   return baseReactIcon(SquareCodeNode, "square-code", true, props);
 }
@@ -8157,12 +8594,120 @@ export function SquareKanban(props: BaseIconProps): ReactElement {
   return baseReactIcon(SquareKanbanNode, "square-kanban", true, props);
 }
 
-export function SquareLibrary(props: BaseIconProps): ReactElement {
-  return baseReactIcon(SquareLibraryNode, "square-library", true, props);
+export function SquareKanbanPlus(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareKanbanPlusNode, "square-kanban-plus", true, props);
 }
 
-export function SquareM(props: BaseIconProps): ReactElement {
-  return baseReactIcon(SquareMNode, "square-m", true, props);
+export function SquareLetterA(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterANode, "square-letter-a", true, props);
+}
+
+export function SquareLetterB(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterBNode, "square-letter-b", true, props);
+}
+
+export function SquareLetterC(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterCNode, "square-letter-c", true, props);
+}
+
+export function SquareLetterD(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterDNode, "square-letter-d", true, props);
+}
+
+export function SquareLetterE(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterENode, "square-letter-e", true, props);
+}
+
+export function SquareLetterF(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterFNode, "square-letter-f", true, props);
+}
+
+export function SquareLetterG(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterGNode, "square-letter-g", true, props);
+}
+
+export function SquareLetterH(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterHNode, "square-letter-h", true, props);
+}
+
+export function SquareLetterI(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterINode, "square-letter-i", true, props);
+}
+
+export function SquareLetterJ(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterJNode, "square-letter-j", true, props);
+}
+
+export function SquareLetterK(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterKNode, "square-letter-k", true, props);
+}
+
+export function SquareLetterL(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterLNode, "square-letter-l", true, props);
+}
+
+export function SquareLetterM(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterMNode, "square-letter-m", true, props);
+}
+
+export function SquareLetterN(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterNNode, "square-letter-n", true, props);
+}
+
+export function SquareLetterO(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterONode, "square-letter-o", true, props);
+}
+
+export function SquareLetterP(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterPNode, "square-letter-p", true, props);
+}
+
+export function SquareLetterPOff(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterPOffNode, "square-letter-p-off", true, props);
+}
+
+export function SquareLetterQ(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterQNode, "square-letter-q", true, props);
+}
+
+export function SquareLetterR(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterRNode, "square-letter-r", true, props);
+}
+
+export function SquareLetterS(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterSNode, "square-letter-s", true, props);
+}
+
+export function SquareLetterT(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterTNode, "square-letter-t", true, props);
+}
+
+export function SquareLetterU(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterUNode, "square-letter-u", true, props);
+}
+
+export function SquareLetterV(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterVNode, "square-letter-v", true, props);
+}
+
+export function SquareLetterW(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterWNode, "square-letter-w", true, props);
+}
+
+export function SquareLetterX(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterXNode, "square-letter-x", true, props);
+}
+
+export function SquareLetterY(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterYNode, "square-letter-y", true, props);
+}
+
+export function SquareLetterZ(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLetterZNode, "square-letter-z", true, props);
+}
+
+export function SquareLibrary(props: BaseIconProps): ReactElement {
+  return baseReactIcon(SquareLibraryNode, "square-library", true, props);
 }
 
 export function SquareMenu(props: BaseIconProps): ReactElement {
@@ -8179,14 +8724,6 @@ export function SquareMousePointer(props: BaseIconProps): ReactElement {
 
 export function SquareOff(props: BaseIconProps): ReactElement {
   return baseReactIcon(SquareOffNode, "square-off", true, props);
-}
-
-export function SquareParking(props: BaseIconProps): ReactElement {
-  return baseReactIcon(SquareParkingNode, "square-parking", true, props);
-}
-
-export function SquareParkingOff(props: BaseIconProps): ReactElement {
-  return baseReactIcon(SquareParkingOffNode, "square-parking-off", true, props);
 }
 
 export function SquarePause(props: BaseIconProps): ReactElement {
@@ -8737,6 +9274,10 @@ export function Toilet(props: BaseIconProps): ReactElement {
   return baseReactIcon(ToiletNode, "toilet", true, props);
 }
 
+export function Tombstone(props: BaseIconProps): ReactElement {
+  return baseReactIcon(TombstoneNode, "tombstone", true, props);
+}
+
 export function ToolCase(props: BaseIconProps): ReactElement {
   return baseReactIcon(ToolCaseNode, "tool-case", true, props);
 }
@@ -9059,6 +9600,10 @@ export function UserRoundPlus(props: BaseIconProps): ReactElement {
 
 export function UserRoundSearch(props: BaseIconProps): ReactElement {
   return baseReactIcon(UserRoundSearchNode, "user-round-search", true, props);
+}
+
+export function UserRoundShield(props: BaseIconProps): ReactElement {
+  return baseReactIcon(UserRoundShieldNode, "user-round-shield", true, props);
 }
 
 export function UserRoundStar(props: BaseIconProps): ReactElement {
