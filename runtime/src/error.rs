@@ -22,6 +22,10 @@ pub mod code {
     pub const INTERNAL: &str = "INTERNAL";
     /// The caller abandoned the request before it answered.
     pub const CANCELLED: &str = "CANCELLED";
+    /// A request redirected more often than its `maxRedirects` allows.
+    pub const TOO_MANY_REDIRECTS: &str = "TOO_MANY_REDIRECTS";
+    /// A request with `redirect: "error"` was answered with a redirect.
+    pub const REDIRECT_REFUSED: &str = "REDIRECT_REFUSED";
     /// A `sharedState.set` value that cannot be represented as JSON.
     pub const SHARED_STATE_NOT_SERIALIZABLE: &str = "SHARED_STATE_NOT_SERIALIZABLE";
     /// A `sharedState.set` for a key no `write` pattern covers.

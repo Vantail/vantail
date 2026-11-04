@@ -16,7 +16,31 @@ Notable changes per release.
   Nothing that ships in an application changes. Found by the weekly
   `pnpm audit`.
 
+### Added
+
+- **`network.request` can stop at a redirect and answer with it.** A
+  `redirect` option, named and meaning what `fetch`'s does: `"follow"` (the
+  default, and what happened before), `"manual"` and `"error"`. With
+  `"manual"` the first 3xx is the response - its status, `Location` and
+  `Set-Cookie` readable - which is what testing an endpoint that redirects
+  needs, and what a page's own `fetch` cannot give: there a manual redirect
+  comes back opaque. Nothing further is requested, so nothing further is
+  authorised. `"error"` rejects any redirect with `REDIRECT_REFUSED`. The same
+  option works on `json`, `binary` and `stream`.
+
+- **Each followed redirect keeps its headers.** `redirects[]` entries carry
+  `headerPairs`, so a `Set-Cookie` sent on a redirect - a login answering 302,
+  say - is still readable after the redirect was followed. Before, only the
+  final response's headers came back.
+
 ### Changed
+
+- **Running out of redirects rejects with `TOO_MANY_REDIRECTS`**, not
+  `IO_ERROR`, with the hops followed so far in the error's `data.redirects`.
+  It is not an I/O failure, and the hops were being thrown away. Code that
+  matched `IO_ERROR` for this has to match the new code. `maxRedirects: 0` on
+  its own still rejects on the first redirect; `redirect: "manual"` is the way
+  to stop at one.
 
 - **Node.js 22 is no longer supported.** The supported lines are 24.22.1+
   and 26.12.1+, `engines` in every package and template says so, and

@@ -79,6 +79,19 @@ test("a request carries the url, method and response type", async () => {
   assert.equal(response.bodyBytes, 2);
 });
 
+test("the redirect mode reaches the runtime, for requests and streams alike", async () => {
+  posted.length = 0;
+  auto = () => answer({ status: 302 });
+
+  await network.request({ url: "https://api.example.com/login", redirect: "manual" });
+  assert.equal(posted.at(-1).params.redirect, "manual");
+
+  auto = () => ({ result: { ...answer().result, id: 7 } });
+  await network.stream({ url: "https://api.example.com/login", redirect: "error" });
+  assert.equal(posted.at(-1).method, "network.stream");
+  assert.equal(posted.at(-1).params.redirect, "error");
+});
+
 test("repeated headers survive as pairs, not as a joined string", async () => {
   // The case that made this necessary: two Set-Cookie headers, one of which
   // has a comma and a space inside its own Expires date. Joining them the

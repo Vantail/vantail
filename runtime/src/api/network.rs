@@ -67,9 +67,28 @@ struct RequestParams {
     timeout_ms: Option<u64>,
     #[serde(default)]
     max_redirects: Option<u32>,
+    #[serde(default)]
+    redirect: Redirect,
     /// `text` (default) or `base64`.
     #[serde(default)]
     response_type: Option<String>,
+}
+
+/// What a 3xx with a `Location` does, named and meaning what `fetch`'s
+/// `redirect` option does.
+#[derive(Deserialize, Default, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "lowercase")]
+enum Redirect {
+    /// Follow it, up to `maxRedirects`, checking every hop.
+    #[default]
+    Follow,
+    /// Stop at it and answer with the 3xx itself - status, `Location`,
+    /// `Set-Cookie` and all. What an API client needs to test a redirect, and
+    /// what `fetch` in a page cannot give: there a manual redirect comes back
+    /// opaque, with no status and no headers.
+    Manual,
+    /// Refuse it, so a request that must not be redirected cannot be.
+    Error,
 }
 
 #[derive(Deserialize)]
@@ -517,26 +536,26 @@ fn negotiate(
         )?;
 
         let status = head.status;
-        match redirect_target(&head, &url) {
-            Some(location) if status.is_redirection() => {
-                redirects.push(json!({
-                    "status": status.as_u16(),
-                    "url": url,
-                    // The header as sent, which may be relative; `url` on the
-                    // next entry is where it actually resolved to.
-                    "location": head.headers.get("location").cloned().unwrap_or_default(),
-                    "droppedHeaders": Vec::<String>::new(),
-                }));
-                // 303, and 301/302 in practice, turn everything into a GET.
-                if status.as_u16() != 307 && status.as_u16() != 308 {
-                    method = "GET".to_string();
-                    body.clear();
-                    headers.retain(|name, _| !name.eq_ignore_ascii_case("content-type"));
-                }
-                previous = Some(endpoint);
-                url = location;
-            }
-            _ => {
+        // A 3xx without a `Location` - a 304, say - is not a redirect, and is
+        // an answer like any other status.
+        let Some(location) = redirect_target(&head, &url).filter(|_| status.is_redirection())
+        else {
+            return Ok(Negotiated {
+                url,
+                head,
+                body: received,
+                redirects,
+                started,
+            });
+        };
+        // The header as sent, which may be relative; `url` on the next hop is
+        // where it actually resolved to.
+        let sent_location = head.headers.get("location").cloned().unwrap_or_default();
+
+        match params.redirect {
+            // The 3xx is the answer. Nothing further is requested, so there is
+            // no further host to authorise either.
+            Redirect::Manual => {
                 return Ok(Negotiated {
                     url,
                     head,
@@ -545,13 +564,56 @@ fn negotiate(
                     started,
                 })
             }
+            Redirect::Error => {
+                return Err(ApiError::new(
+                    crate::error::code::REDIRECT_REFUSED,
+                    format!(
+                        "`{url}` answered {} with a redirect to `{sent_location}`, and \
+                         `redirect: \"error\"` refuses to follow one",
+                        status.as_u16()
+                    ),
+                )
+                .with_data(json!({
+                    "status": status.as_u16(),
+                    "url": url,
+                    "location": sent_location,
+                    "headerPairs": &head.pairs,
+                })))
+            }
+            Redirect::Follow => {}
         }
+
+        redirects.push(json!({
+            "status": status.as_u16(),
+            "url": url,
+            "location": sent_location,
+            // Everything the hop said, not just where it pointed: a
+            // `Set-Cookie` on a redirect - a login answering 302 - is often
+            // the very thing the caller is after.
+            "headerPairs": &head.pairs,
+            "droppedHeaders": Vec::<String>::new(),
+        }));
+        // 303, and 301/302 in practice, turn everything into a GET.
+        if status.as_u16() != 307 && status.as_u16() != 308 {
+            method = "GET".to_string();
+            body.clear();
+            headers.retain(|name, _| !name.eq_ignore_ascii_case("content-type"));
+        }
+        previous = Some(endpoint);
+        url = location;
     }
 
+    // Out of hops. Not a transport failure, so not `IO_ERROR`: the redirects
+    // followed so far, the last of them the one that was not, go with it.
     Err(ApiError::new(
-        crate::error::code::IO_ERROR,
-        format!("`{}` redirected more than {allowed_hops} times", params.url),
-    ))
+        crate::error::code::TOO_MANY_REDIRECTS,
+        format!(
+            "`{}` redirected more than {allowed_hops} {}",
+            params.url,
+            if allowed_hops == 1 { "time" } else { "times" }
+        ),
+    )
+    .with_data(json!({ "redirects": redirects })))
 }
 
 /// One prompt at a time.

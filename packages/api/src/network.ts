@@ -15,8 +15,26 @@ export interface NetworkRequestOptions {
   bytes?: BinaryInput;
   /** Default 30000. */
   timeoutMs?: number;
-  /** Default 5. Every hop is permission-checked. */
+  /**
+   * Default 5. Every hop is permission-checked. Going over it rejects with
+   * `TOO_MANY_REDIRECTS`, with the hops followed so far in the error's
+   * `data.redirects`. Only applies with `redirect: "follow"`.
+   */
   maxRedirects?: number;
+  /**
+   * What a redirect - a 3xx with a `Location` - does, as in `fetch`:
+   *
+   * - `"follow"` (default): follow it, up to `maxRedirects`.
+   * - `"manual"`: stop at it, and answer with the 3xx itself - its status,
+   *   `Location` and `Set-Cookie` all readable. What a page's own `fetch`
+   *   cannot do: there a manual redirect comes back opaque, with no status or
+   *   headers. Nothing further is requested.
+   * - `"error"`: reject with `REDIRECT_REFUSED` instead.
+   *
+   * A 3xx without a `Location`, such as a 304, is an ordinary answer in every
+   * mode.
+   */
+  redirect?: "follow" | "manual" | "error";
   /**
    * Abandon the request, the way `fetch` does.
    *
@@ -54,6 +72,11 @@ export interface NetworkRedirect {
   url: string;
   /** Its `Location` header, exactly as sent - which may be relative. */
   location: string;
+  /**
+   * Every header line of the 3xx, in order, repeats intact - so a
+   * `Set-Cookie` sent on a redirect is still readable after it was followed.
+   */
+  headerPairs: [string, string][];
   /**
    * Credentials dropped because this hop crossed to another host, the way a
    * browser drops them. The answer to "which redirect ate my auth header".
