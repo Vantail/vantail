@@ -91,7 +91,13 @@ fn resolve_get(
 ) -> ApiResult {
     Permissions::check_shared_key(key)?;
     permissions.check_shared_read(method)?;
-    Ok(store.get(key).or(default).unwrap_or(Value::Null))
+    if let Some(value) = store.get(key) {
+        return Ok(value);
+    }
+    match default {
+        Some(default) => Ok(default),
+        None => Ok(Value::Null),
+    }
 }
 
 /// The `set` path without the windows: validate the key, check the write
@@ -114,7 +120,10 @@ fn resolve_subscribe(
 ) -> ApiResult {
     Permissions::check_shared_key(key)?;
     permissions.check_shared_read(method)?;
-    Ok(store.get(key).unwrap_or(Value::Null))
+    match store.get(key) {
+        Some(value) => Ok(value),
+        None => Ok(Value::Null),
+    }
 }
 
 /// Values cross as JSON, so anything that cannot be represented there must be
@@ -126,14 +135,15 @@ fn resolve_subscribe(
 /// `packages/api/src/sharedState.ts`. This is the runtime side of the same
 /// boundary: re-serialise, and anything that does not survive is rejected.
 fn check_serializable(value: &Value) -> Result<(), ApiError> {
-    serde_json::to_string(value).map(|_| ()).map_err(|e| {
+    serde_json::to_string(value).map_err(|e| {
         ApiError::new(
             code::SHARED_STATE_NOT_SERIALIZABLE,
             format!(
                 "This value cannot be shared between windows: it is not JSON-serialisable ({e})"
             ),
         )
-    })
+    })?;
+    Ok(())
 }
 
 /// The store itself: a map, and optionally a file it is written back to.
@@ -223,10 +233,11 @@ impl Store {
 }
 
 fn persist_path(identifier: &str) -> PathBuf {
-    dirs::data_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join(identifier)
-        .join(PERSIST_FILE)
+    let base = match dirs::data_dir() {
+        Some(base) => base,
+        None => std::env::temp_dir(),
+    };
+    base.join(identifier).join(PERSIST_FILE)
 }
 
 /// Read the store back. Missing is empty; corrupt is empty with a note on
@@ -275,14 +286,16 @@ fn save(path: &PathBuf, snapshot: &Value) -> Result<(), ApiError> {
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".tmp");
     let tmp = PathBuf::from(tmp);
-    std::fs::write(&tmp, text)
-        .and_then(|()| std::fs::rename(&tmp, path))
-        .map_err(|e| {
-            ApiError::new(
-                code::SHARED_STATE_PERSIST_FAILED,
-                format!("Could not persist shared state to {}: {e}", path.display()),
-            )
-        })
+    let written = match std::fs::write(&tmp, text) {
+        Ok(()) => std::fs::rename(&tmp, path),
+        Err(error) => Err(error),
+    };
+    written.map_err(|e| {
+        ApiError::new(
+            code::SHARED_STATE_PERSIST_FAILED,
+            format!("Could not persist shared state to {}: {e}", path.display()),
+        )
+    })
 }
 
 #[cfg(test)]
@@ -301,13 +314,21 @@ mod tests {
         let _ = std::fs::remove_file(PathBuf::from(tmp));
     }
 
+    fn owned(patterns: &[&str]) -> Vec<String> {
+        let mut owned = Vec::with_capacity(patterns.len());
+        for pattern in patterns {
+            owned.push(pattern.to_string());
+        }
+        owned
+    }
+
     fn permissions(read: bool, write: &[&str]) -> Permissions {
         let vars = Vars::resolve("dev.vantail.test", std::path::Path::new("/tmp"));
         Permissions::compile(
             &PermissionsConfig {
                 shared_state: SharedStateConfig {
                     read,
-                    write: write.iter().map(|s| s.to_string()).collect(),
+                    write: owned(write),
                     persist: false,
                 },
                 ..PermissionsConfig::default()

@@ -66,6 +66,24 @@ struct OpenParams {
     timeout_ms: Option<u64>,
 }
 
+impl OpenParams {
+    fn timeout(&self) -> Duration {
+        match self.timeout_ms {
+            Some(timeout_ms) => Duration::from_millis(timeout_ms),
+            None => Duration::from_millis(DEFAULT_TIMEOUT_MS),
+        }
+    }
+}
+
+/// The port the URL names, or the scheme's own: 443 for `wss`, 80 for `ws`.
+fn port_or_default(port: Option<u16>, secure: bool) -> u16 {
+    match port {
+        Some(port) => port,
+        None if secure => 443,
+        None => 80,
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SendParams {
@@ -187,10 +205,17 @@ fn post(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
 
 fn shut(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
     let CloseParams { id, code, reason } = Request::params("network.socketClose", params)?;
-    let frame = code.map(|code| CloseFrame {
-        code: CloseCode::from(code),
-        reason: reason.unwrap_or_default().into(),
-    });
+    let reason = match reason {
+        Some(reason) => reason,
+        None => String::new(),
+    };
+    let frame = match code {
+        Some(code) => Some(CloseFrame {
+            code: CloseCode::from(code),
+            reason: reason.into(),
+        }),
+        None => None,
+    };
     ctx.rt.sockets.tell(id, Command::Close(frame))?;
     Ok(Value::Null)
 }
@@ -259,8 +284,8 @@ fn connect(rt: &Arc<Runtime>, params: Value) -> Result<(Socket, String, Option<S
         }
     };
 
-    let timeout = Duration::from_millis(params.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS));
-    let port = endpoint.port.unwrap_or(if secure { 443 } else { 80 });
+    let timeout = params.timeout();
+    let port = port_or_default(endpoint.port, secure);
 
     // Connected by hand rather than by `tungstenite::connect`, which has no
     // timeout: a device that is off would otherwise hang until the OS gave up.
@@ -317,11 +342,7 @@ fn connect(rt: &Arc<Runtime>, params: Value) -> Result<(Socket, String, Option<S
 
     // Which subprotocol the server actually picked, which is not necessarily
     // the first one offered.
-    let protocol = response
-        .headers()
-        .get("sec-websocket-protocol")
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_string);
+    let protocol = header_text(response.headers().get("sec-websocket-protocol"));
 
     Ok((socket, params.url, protocol))
 }
@@ -332,6 +353,15 @@ struct Ending {
     failure: Option<String>,
     code: Option<u16>,
     reason: String,
+}
+
+/// A header's value as text, when it is there and readable as text.
+fn header_text(value: Option<&tungstenite::http::HeaderValue>) -> Option<String> {
+    let value = value?;
+    match value.to_str() {
+        Ok(text) => Some(text.to_string()),
+        Err(_) => None,
+    }
 }
 
 fn pump(

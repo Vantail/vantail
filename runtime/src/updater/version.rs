@@ -35,11 +35,26 @@ pub fn is_newer(candidate: &str, current: &str) -> bool {
 fn split(version: &str) -> (&str, Option<&str>) {
     let version = version.trim().trim_start_matches('v');
     // Build metadata never affects precedence.
-    let version = version.split('+').next().unwrap_or(version);
+    let version = match version.split_once('+') {
+        Some((before, _metadata)) => before,
+        None => version,
+    };
 
     match version.split_once('-') {
         Some((core, pre)) => (core, Some(pre)),
         None => (version, None),
+    }
+}
+
+/// A version number's part as a number. A part that is missing, or is not a
+/// number, counts as 0.
+fn numeric_part(part: Option<&str>) -> u64 {
+    let Some(part) = part else {
+        return 0;
+    };
+    match part.parse() {
+        Ok(number) => number,
+        Err(_) => 0,
     }
 }
 
@@ -50,14 +65,10 @@ fn compare_core(left: &str, right: &str) -> Ordering {
     loop {
         match (left.next(), right.next()) {
             (None, None) => return Ordering::Equal,
-            (a, b) => {
-                let a = a.and_then(|part| part.parse::<u64>().ok()).unwrap_or(0);
-                let b = b.and_then(|part| part.parse::<u64>().ok()).unwrap_or(0);
-                match a.cmp(&b) {
-                    Ordering::Equal => continue,
-                    other => return other,
-                }
-            }
+            (a, b) => match numeric_part(a).cmp(&numeric_part(b)) {
+                Ordering::Equal => continue,
+                other => return other,
+            },
         }
     }
 }

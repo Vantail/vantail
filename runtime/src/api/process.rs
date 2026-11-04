@@ -114,12 +114,12 @@ impl Registry {
     }
 
     fn list(&self) -> Vec<Value> {
-        lock(&self.running)
-            .iter()
-            .map(
-                |(id, running)| json!({ "id": id, "pid": running.pid, "program": running.program }),
-            )
-            .collect()
+        let running = lock(&self.running);
+        let mut listed = Vec::with_capacity(running.len());
+        for (id, process) in running.iter() {
+            listed.push(json!({ "id": id, "pid": process.pid, "program": process.program }));
+        }
+        listed
     }
 
     /// Stop everything we started.
@@ -292,10 +292,10 @@ fn write_stdin(rt: &Runtime, method: &str, params: Value) -> ApiResult {
         .as_mut()
         .ok_or_else(|| ApiError::new(crate::error::code::IO_ERROR, "stdin is already closed"))?;
 
-    pipe.write_all(data.as_bytes())
-        .and_then(|()| pipe.flush())
-        .map(|()| Value::Null)
-        .map_err(|e| ApiError::io("Could not write to the process", e))
+    let failed = |e| ApiError::io("Could not write to the process", e);
+    pipe.write_all(data.as_bytes()).map_err(failed)?;
+    pipe.flush().map_err(failed)?;
+    Ok(Value::Null)
 }
 
 fn close_stdin(rt: &Runtime, method: &str, params: Value) -> ApiResult {
@@ -310,9 +310,8 @@ fn kill(rt: &Runtime, method: &str, params: Value) -> ApiResult {
     let running = rt.processes.get(id).ok_or_else(|| gone(id))?;
 
     let killed = lock(&running.child).kill();
-    killed
-        .map(|()| Value::Null)
-        .map_err(|e| ApiError::io("Could not stop the process", e))
+    killed.map_err(|e| ApiError::io("Could not stop the process", e))?;
+    Ok(Value::Null)
 }
 
 fn gone(id: u32) -> ApiError {
@@ -397,10 +396,16 @@ fn stream<R: Read + Send + 'static>(
 struct Collector(Option<std::thread::JoinHandle<String>>);
 
 impl Collector {
+    /// Whatever the pipe carried, or nothing if the thread never started or
+    /// did not finish.
     fn join(self) -> String {
-        self.0
-            .and_then(|handle| handle.join().ok())
-            .unwrap_or_default()
+        let Some(handle) = self.0 else {
+            return String::new();
+        };
+        match handle.join() {
+            Ok(text) => text,
+            Err(_) => String::new(),
+        }
     }
 }
 
@@ -408,16 +413,17 @@ fn reader_thread<R: Read + Send + 'static>(pipe: Option<R>) -> Collector {
     let Some(mut pipe) = pipe else {
         return Collector(None);
     };
-    Collector(
-        std::thread::Builder::new()
-            .name("vantail-collect".into())
-            .spawn(move || {
-                let mut buffer = Vec::new();
-                let _ = pipe.read_to_end(&mut buffer);
-                String::from_utf8_lossy(&buffer).into_owned()
-            })
-            .ok(),
-    )
+    let spawned = std::thread::Builder::new()
+        .name("vantail-collect".into())
+        .spawn(move || {
+            let mut buffer = Vec::new();
+            let _ = pipe.read_to_end(&mut buffer);
+            String::from_utf8_lossy(&buffer).into_owned()
+        });
+    match spawned {
+        Ok(handle) => Collector(Some(handle)),
+        Err(_) => Collector(None),
+    }
 }
 
 /// Wait for a child, polling rather than blocking.

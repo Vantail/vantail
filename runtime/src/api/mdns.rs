@@ -142,12 +142,11 @@ fn start_discovery(
     let service = normalise(&params.service)?;
     permitted(rt, &service, "mdns.discover")?;
 
-    let timeout = Duration::from_millis(
-        params
-            .timeout_ms
-            .unwrap_or(DEFAULT_TIMEOUT_MS)
-            .min(MAX_TIMEOUT_MS),
-    );
+    let requested = match params.timeout_ms {
+        Some(timeout_ms) => timeout_ms,
+        None => DEFAULT_TIMEOUT_MS,
+    };
+    let timeout = Duration::from_millis(requested.min(MAX_TIMEOUT_MS));
 
     let daemon = rt.discovery.daemon()?;
     let receiver = daemon
@@ -181,14 +180,22 @@ fn start_discovery(
                 Some(source),
                 Outgoing::Response(Response::from_result(
                     request_id,
-                    Ok(Value::Array(found.into_values().collect())),
+                    Ok(Value::Array(services_in(found))),
                 )),
             );
         });
 
-    spawned
-        .map(|_| ())
-        .map_err(|e| ApiError::internal(format!("Could not start discovery: {e}")))
+    spawned.map_err(|e| ApiError::internal(format!("Could not start discovery: {e}")))?;
+    Ok(())
+}
+
+/// The services found, in the order of their names.
+fn services_in(found: BTreeMap<String, Value>) -> Vec<Value> {
+    let mut services = Vec::with_capacity(found.len());
+    for service in found.into_values() {
+        services.push(service);
+    }
+    services
 }
 
 fn browse(rt: &Arc<Runtime>, source: &str, params: Value) -> ApiResult {
@@ -268,19 +275,17 @@ fn stop(rt: &Runtime, method: &str, params: Value) -> ApiResult {
 }
 
 fn describe(resolved: &ResolvedService) -> Value {
-    let mut addresses: Vec<String> = resolved
-        .addresses
-        .iter()
-        .map(|address| address.to_string())
-        .collect();
+    let mut addresses: Vec<String> = Vec::new();
+    for address in resolved.addresses.iter() {
+        addresses.push(address.to_string());
+    }
     // Stable order, so a UI listing devices does not reshuffle them.
     addresses.sort();
 
-    let txt: BTreeMap<String, String> = resolved
-        .txt_properties
-        .iter()
-        .map(|property| (property.key().to_string(), property.val_str().to_string()))
-        .collect();
+    let mut txt: BTreeMap<String, String> = BTreeMap::new();
+    for property in resolved.txt_properties.iter() {
+        txt.insert(property.key().to_string(), property.val_str().to_string());
+    }
 
     json!({
         "service": resolved.ty_domain,
@@ -295,10 +300,10 @@ fn describe(resolved: &ResolvedService) -> Value {
 
 /// `Living Room Hub._hub._tcp.local.` is really just `Living Room Hub`.
 fn instance_name(fullname: &str) -> String {
-    fullname
-        .split_once("._")
-        .map(|(name, _)| name.to_string())
-        .unwrap_or_else(|| fullname.to_string())
+    match fullname.split_once("._") {
+        Some((name, _)) => name.to_string(),
+        None => fullname.to_string(),
+    }
 }
 
 #[cfg(test)]
