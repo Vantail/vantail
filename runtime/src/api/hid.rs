@@ -281,73 +281,99 @@ fn open(rt: &Arc<Runtime>, source: &str, method: &str, params: Value) -> ApiResu
 
 /// One thread per device, reading until it is closed or goes away.
 fn read_loop(rt: &Arc<Runtime>, source: &str, handle: u32, entry: &Arc<Open>) {
-    let rt = Arc::clone(rt);
-    let source = source.to_string();
-    let device = Arc::clone(&entry.device);
-    let reading = Arc::clone(&entry.reading);
-    let waiting = Arc::clone(&entry.waiting);
+    let reader = Reader {
+        rt: Arc::clone(rt),
+        source: source.to_string(),
+        handle,
+        device: Arc::clone(&entry.device),
+        reading: Arc::clone(&entry.reading),
+        waiting: Arc::clone(&entry.waiting),
+    };
 
     let spawned = std::thread::Builder::new()
         .name(format!("vantail-hid-{handle}"))
-        .spawn(move || {
-            let mut buffer = vec![0_u8; MAX_REPORT_BYTES];
-            let mut reason = "closed";
-
-            'polling: while reading.load(Ordering::Relaxed) {
-                // Releasing the lock is not enough on its own: an unfair mutex
-                // hands it straight back to whoever asks again first, and that
-                // is this loop. A call that wants the device says so, and this
-                // stands aside for it.
-                if waiting.busy() {
-                    std::thread::sleep(POLL_INTERVAL);
-                    continue;
-                }
-
-                // Drain whatever is waiting, taking the lock per report so a
-                // call can still get in between them. Each read returns at
-                // once, so the lock is held for microseconds.
-                loop {
-                    let read = {
-                        let device = device.lock().expect("hid device poisoned");
-                        device.read(&mut buffer)
-                    };
-
-                    match read {
-                        Ok(0) => break,
-                        Ok(count) => rt.send(
-                            Some(source.clone()),
-                            Outgoing::Event(Event::new(
-                                "hid.input",
-                                json!({ "handle": handle, "data": BASE64.encode(&buffer[..count]) }),
-                            )),
-                        ),
-                        Err(_) => {
-                            // Almost always the device being unplugged.
-                            reason = "disconnected";
-                            break 'polling;
-                        }
-                    }
-
-                    if waiting.busy() {
-                        break;
-                    }
-                }
-
-                std::thread::sleep(POLL_INTERVAL);
-            }
-
-            rt.devices.remove(handle);
-            rt.send(
-                Some(source),
-                Outgoing::Event(Event::new(
-                    "hid.closed",
-                    json!({ "handle": handle, "reason": reason }),
-                )),
-            );
-        });
+        .spawn(move || reader.run());
 
     if spawned.is_err() {
         entry.reading.store(false, Ordering::Relaxed);
+    }
+}
+
+/// What a device's reading thread holds on to.
+struct Reader {
+    rt: Arc<Runtime>,
+    /// The window that opened the device, which is where its input goes.
+    source: String,
+    handle: u32,
+    device: Arc<Mutex<HidDevice>>,
+    reading: Arc<AtomicBool>,
+    waiting: Arc<Turnstile>,
+}
+
+impl Reader {
+    fn run(self) {
+        let mut buffer = vec![0_u8; MAX_REPORT_BYTES];
+        let mut reason = "closed";
+
+        while self.reading.load(Ordering::Relaxed) {
+            // Releasing the lock is not enough on its own: an unfair mutex
+            // hands it straight back to whoever asks again first, and that is
+            // this loop. A call that wants the device says so, and this stands
+            // aside for it.
+            if self.waiting.busy() {
+                std::thread::sleep(POLL_INTERVAL);
+                continue;
+            }
+
+            if !self.drain(&mut buffer) {
+                // Almost always the device being unplugged.
+                reason = "disconnected";
+                break;
+            }
+
+            std::thread::sleep(POLL_INTERVAL);
+        }
+
+        self.rt.devices.remove(self.handle);
+        self.rt.send(
+            Some(self.source),
+            Outgoing::Event(Event::new(
+                "hid.closed",
+                json!({ "handle": self.handle, "reason": reason }),
+            )),
+        );
+    }
+
+    /// Drain whatever is waiting, taking the lock per report so a call can
+    /// still get in between them. Each read returns at once, so the lock is
+    /// held for microseconds. `false` means the device stopped answering.
+    fn drain(&self, buffer: &mut [u8]) -> bool {
+        loop {
+            match self.read_once(buffer) {
+                Ok(0) => return true,
+                Ok(count) => self.forward(&buffer[..count]),
+                Err(_) => return false,
+            }
+
+            if self.waiting.busy() {
+                return true;
+            }
+        }
+    }
+
+    fn read_once(&self, buffer: &mut [u8]) -> hidapi::HidResult<usize> {
+        let device = self.device.lock().expect("hid device poisoned");
+        device.read(buffer)
+    }
+
+    fn forward(&self, report: &[u8]) {
+        self.rt.send(
+            Some(self.source.clone()),
+            Outgoing::Event(Event::new(
+                "hid.input",
+                json!({ "handle": self.handle, "data": BASE64.encode(report) }),
+            )),
+        );
     }
 }
 
@@ -492,27 +518,40 @@ mod tests {
         holds: Option<usize>,
     ) -> std::thread::JoinHandle<()> {
         std::thread::spawn(move || {
-            let mut taken = 0;
-            while running.load(Ordering::Relaxed) {
-                if holds.is_some_and(|limit| taken >= limit) {
-                    return;
-                }
-                if polling && turnstile.busy() {
-                    std::thread::sleep(POLL_INTERVAL);
-                    continue;
-                }
-                {
-                    let _held = device.lock().expect("poisoned");
-                    taken += 1;
-                    std::thread::sleep(hold);
-                }
-                // The old loop had nothing here: it asked for the device
-                // again immediately, and an unfair mutex obliged.
-                if polling {
-                    std::thread::sleep(POLL_INTERVAL);
-                }
-            }
+            read_like_the_loop(&device, &turnstile, &running, hold, polling, holds);
         })
+    }
+
+    fn read_like_the_loop(
+        device: &Mutex<()>,
+        turnstile: &Turnstile,
+        running: &AtomicBool,
+        hold: Duration,
+        polling: bool,
+        holds: Option<usize>,
+    ) {
+        let mut taken = 0;
+        while running.load(Ordering::Relaxed) {
+            if holds.is_some_and(|limit| taken >= limit) {
+                return;
+            }
+            if polling && turnstile.busy() {
+                std::thread::sleep(POLL_INTERVAL);
+                continue;
+            }
+            hold_device(device, hold);
+            taken += 1;
+            // The old loop had nothing here: it asked for the device again
+            // immediately, and an unfair mutex obliged.
+            if polling {
+                std::thread::sleep(POLL_INTERVAL);
+            }
+        }
+    }
+
+    fn hold_device(device: &Mutex<()>, hold: Duration) {
+        let _held = device.lock().expect("poisoned");
+        std::thread::sleep(hold);
     }
 
     /// What a run of calls costs, which is what drawing to a device is.
