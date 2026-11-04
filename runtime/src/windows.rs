@@ -983,114 +983,182 @@ fn round_corners(
 #[cfg(target_os = "windows")]
 fn apply_region(window: &Window, radii: crate::config::Radii) {
     use tao::platform::windows::WindowExtWindows;
-    use windows::Win32::Foundation::{HWND, POINT, RECT};
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Gdi::{DeleteObject, SetWindowRgn};
+
+    let hwnd = HWND(window.hwnd() as *mut std::ffi::c_void);
+    prefer_square_corners(hwnd);
+
+    let Some(outer) = window_rect(hwnd) else {
+        return;
+    };
+    let (width, height) = (outer.right - outer.left, outer.bottom - outer.top);
+    if width <= 0 || height <= 0 {
+        return;
+    }
+
+    // A maximised window has no corners to round - the platform squares its
+    // own off, and a curve there would show the desktop through the corner of
+    // a window that is meant to be filling the screen.
+    if window.is_maximized() {
+        // Safety: `hwnd` is the handle of a live window, used on the thread
+        // that owns it.
+        let _ = unsafe { SetWindowRgn(hwnd, None, true) };
+        return;
+    }
+
+    let Some(visible) = visible_rect(hwnd, &outer) else {
+        return;
+    };
+    let region = notched_region(width, height, &visible, radii, window.scale_factor());
+
+    // The window owns the region from here: it must not be deleted, and the
+    // next call replaces it.
+    //
+    // Safety: `hwnd` is the handle of a live window, used on the thread that
+    // owns it, and `region` was made for it above and is deleted only if the
+    // window does not take it.
+    unsafe {
+        if SetWindowRgn(hwnd, Some(region), true) == 0 {
+            let _ = DeleteObject(region.into());
+        }
+    }
+}
+
+/// Windows 11 rounds a window's corners itself, and would round the ones the
+/// region leaves square. Asking for none of that is what makes the region the
+/// whole of the shape. Older Windows does not know the attribute and says so,
+/// which is not a failure worth reporting.
+#[cfg(target_os = "windows")]
+fn prefer_square_corners(hwnd: windows::Win32::Foundation::HWND) {
     use windows::Win32::Graphics::Dwm::{
         DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
     };
-    use windows::Win32::Graphics::Gdi::{
-        ClientToScreen, CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, SetWindowRgn,
-        RGN_AND, RGN_DIFF, RGN_OR,
-    };
-    use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, GetWindowRect};
 
-    let hwnd = HWND(window.hwnd() as *mut std::ffi::c_void);
-
-    // Safety: `hwnd` is the handle of a live window, used on the thread that
-    // owns it. Every region made below is either handed to the window or
-    // deleted.
-    unsafe {
-        // Windows 11 rounds a window's corners itself, and would round the
-        // ones this leaves square. Asking for none of that is what makes the
-        // region the whole of the shape. Older Windows does not know the
-        // attribute and says so, which is not a failure worth reporting.
-        let preference = DWMWCP_DONOTROUND;
-        let _ = DwmSetWindowAttribute(
+    let preference = DWMWCP_DONOTROUND;
+    // Safety: `hwnd` is the handle of a live window, and the attribute is read
+    // from a local that outlives the call, with its size beside it.
+    let _ = unsafe {
+        DwmSetWindowAttribute(
             hwnd,
             DWMWA_WINDOW_CORNER_PREFERENCE,
             std::ptr::addr_of!(preference).cast(),
             std::mem::size_of_val(&preference) as u32,
+        )
+    };
+}
+
+/// The window rect, resize margin and all, in screen coordinates.
+#[cfg(target_os = "windows")]
+fn window_rect(hwnd: windows::Win32::Foundation::HWND) -> Option<windows::Win32::Foundation::RECT> {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+
+    let mut outer = RECT::default();
+    // Safety: `hwnd` is the handle of a live window, and `outer` is a local
+    // for the call to fill.
+    unsafe { GetWindowRect(hwnd, &mut outer) }.ok()?;
+    Some(outer)
+}
+
+/// Where the window is actually drawn, inside the window rect, measured from
+/// the window rect's top left corner.
+///
+/// The margin around it is the invisible resize border a frameless window
+/// keeps, whatever this window's `WM_NCCALCSIZE` left of it, so it is measured
+/// rather than worked out from the styles. The client rect is what answers:
+/// DWM's own frame bounds are only right once the window is composited, and
+/// stop being right the moment a region is set.
+#[cfg(target_os = "windows")]
+fn visible_rect(
+    hwnd: windows::Win32::Foundation::HWND,
+    outer: &windows::Win32::Foundation::RECT,
+) -> Option<windows::Win32::Foundation::RECT> {
+    use windows::Win32::Foundation::{POINT, RECT};
+    use windows::Win32::Graphics::Gdi::ClientToScreen;
+    use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
+
+    let mut client = RECT::default();
+    let mut origin = POINT::default();
+    // Safety: `hwnd` is the handle of a live window, and both out-parameters
+    // are locals for the calls to fill.
+    let measured = unsafe {
+        GetClientRect(hwnd, &mut client).is_ok() && ClientToScreen(hwnd, &mut origin).as_bool()
+    };
+    if !measured {
+        return None;
+    }
+
+    let left = origin.x - outer.left;
+    let top = origin.y - outer.top;
+    Some(RECT {
+        left,
+        top,
+        right: left + (client.right - client.left),
+        bottom: top + (client.bottom - client.top),
+    })
+}
+
+/// The whole window, resize margin included, then a bite out of each corner
+/// of the visible rectangle.
+#[cfg(target_os = "windows")]
+fn notched_region(
+    width: i32,
+    height: i32,
+    visible: &windows::Win32::Foundation::RECT,
+    radii: crate::config::Radii,
+    scale: f64,
+) -> windows::Win32::Graphics::Gdi::HRGN {
+    let (left, top, right, bottom) = (visible.left, visible.top, visible.right, visible.bottom);
+
+    // The radii are logical pixels, as everything in the config is, and a
+    // region is physical ones.
+    let cap = f64::from((right - left).min(bottom - top)) / 2.0;
+    let radius = |r: f64| (r * scale).min(cap).round() as i32;
+
+    let region = rect_rgn(0, 0, width, height);
+    let corners = [
+        (radius(radii.top_left), left, top, 1, 1),
+        (radius(radii.top_right), right, top, -1, 1),
+        (radius(radii.bottom_left), left, bottom, 1, -1),
+        (radius(radii.bottom_right), right, bottom, -1, -1),
+    ];
+    for (r, x, y, dx, dy) in corners {
+        if r > 0 {
+            notch(region, r, x, y, dx, dy);
+        }
+    }
+    region
+}
+
+/// Take one corner's bite out of `region`: the corner's own square, and the
+/// disc that fills the part of it the window keeps. Both are described from
+/// the corner outwards, so the same arithmetic does all four.
+#[cfg(target_os = "windows")]
+fn notch(region: windows::Win32::Graphics::Gdi::HRGN, r: i32, x: i32, y: i32, dx: i32, dy: i32) {
+    use windows::Win32::Graphics::Gdi::{
+        CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, RGN_AND, RGN_DIFF, RGN_OR,
+    };
+
+    let square = rect_rgn(x, y, x + dx * r, y + dy * r);
+    // Safety: every region made here is deleted before this returns. `region`
+    // is the caller's, and is only combined into.
+    unsafe {
+        let disc = CreateRoundRectRgn(
+            (x).min(x + dx * 2 * r),
+            (y).min(y + dy * 2 * r),
+            (x).max(x + dx * 2 * r) + 1,
+            (y).max(y + dy * 2 * r) + 1,
+            2 * r,
+            2 * r,
         );
-
-        let mut outer = RECT::default();
-        if GetWindowRect(hwnd, &mut outer).is_err() {
-            return;
-        }
-        let (width, height) = (outer.right - outer.left, outer.bottom - outer.top);
-        if width <= 0 || height <= 0 {
-            return;
-        }
-
-        // A maximised window has no corners to round - the platform squares
-        // its own off, and a curve there would show the desktop through the
-        // corner of a window that is meant to be filling the screen.
-        if window.is_maximized() {
-            let _ = SetWindowRgn(hwnd, None, true);
-            return;
-        }
-
-        // Where the window is actually drawn, inside the window rect. The
-        // margin around it is the invisible resize border a frameless window
-        // keeps, whatever this window's `WM_NCCALCSIZE` left of it, so it is
-        // measured rather than worked out from the styles. The client rect is
-        // what answers: DWM's own frame bounds are only right once the window
-        // is composited, and stop being right the moment a region is set.
-        let mut client = RECT::default();
-        let mut origin = POINT::default();
-        if GetClientRect(hwnd, &mut client).is_err() || !ClientToScreen(hwnd, &mut origin).as_bool()
-        {
-            return;
-        }
-        let left = origin.x - outer.left;
-        let top = origin.y - outer.top;
-        let right = left + (client.right - client.left);
-        let bottom = top + (client.bottom - client.top);
-
-        // The radii are logical pixels, as everything in the config is, and a
-        // region is physical ones.
-        let scale = window.scale_factor();
-        let cap = f64::from((right - left).min(bottom - top)) / 2.0;
-        let radius = |r: f64| (r * scale).min(cap).round() as i32;
-
-        // The whole window, resize margin included, then a bite out of each
-        // corner of the visible rectangle.
-        let region = CreateRectRgn(0, 0, width + 1, height + 1);
-        let corners = [
-            (radius(radii.top_left), left, top, 1, 1),
-            (radius(radii.top_right), right, top, -1, 1),
-            (radius(radii.bottom_left), left, bottom, 1, -1),
-            (radius(radii.bottom_right), right, bottom, -1, -1),
-        ];
-
-        for (r, x, y, dx, dy) in corners {
-            if r <= 0 {
-                continue;
-            }
-            // The corner's own square, and the disc that fills the part of it
-            // the window keeps. Both are described from the corner outwards,
-            // so the same arithmetic does all four.
-            let square = rect_rgn(x, y, x + dx * r, y + dy * r);
-            let disc = CreateRoundRectRgn(
-                (x).min(x + dx * 2 * r),
-                (y).min(y + dy * 2 * r),
-                (x).max(x + dx * 2 * r) + 1,
-                (y).max(y + dy * 2 * r) + 1,
-                2 * r,
-                2 * r,
-            );
-            let keep = CreateRectRgn(0, 0, 0, 0);
-            let _ = CombineRgn(Some(keep), Some(square), Some(disc), RGN_AND);
-            let _ = CombineRgn(Some(region), Some(region), Some(square), RGN_DIFF);
-            let _ = CombineRgn(Some(region), Some(region), Some(keep), RGN_OR);
-            let _ = DeleteObject(square.into());
-            let _ = DeleteObject(disc.into());
-            let _ = DeleteObject(keep.into());
-        }
-
-        // The window owns the region from here: it must not be deleted, and
-        // the next call replaces it.
-        if SetWindowRgn(hwnd, Some(region), true) == 0 {
-            let _ = DeleteObject(region.into());
-        }
+        let keep = CreateRectRgn(0, 0, 0, 0);
+        let _ = CombineRgn(Some(keep), Some(square), Some(disc), RGN_AND);
+        let _ = CombineRgn(Some(region), Some(region), Some(square), RGN_DIFF);
+        let _ = CombineRgn(Some(region), Some(region), Some(keep), RGN_OR);
+        let _ = DeleteObject(square.into());
+        let _ = DeleteObject(disc.into());
+        let _ = DeleteObject(keep.into());
     }
 }
 

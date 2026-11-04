@@ -349,21 +349,22 @@ impl Chrome {
                 self.detach(window);
                 return;
             }
-            if let Some(menu) = &self.app_menu {
-                let before = window.inner_size();
-                // Safety: the handle comes from the window we were handed,
-                // and is valid for as long as this call.
-                unsafe {
-                    let _ = menu.init_for_hwnd(window.hwnd());
-                }
-                // The menu bar takes its row out of the client area, so the
-                // window the application asked for is now a menu bar shorter
-                // than it asked for. Ask for it back. Not while maximised:
-                // the size then belongs to the window system, and setting one
-                // would drop the window out of it.
-                if !window.is_maximized() {
-                    window.set_inner_size(before);
-                }
+            let Some(menu) = &self.app_menu else {
+                return;
+            };
+            let before = window.inner_size();
+            // Safety: the handle comes from the window we were handed, and is
+            // valid for as long as this call.
+            unsafe {
+                let _ = menu.init_for_hwnd(window.hwnd());
+            }
+            // The menu bar takes its row out of the client area, so the window
+            // the application asked for is now a menu bar shorter than it
+            // asked for. Ask for it back. Not while maximised: the size then
+            // belongs to the window system, and setting one would drop the
+            // window out of it.
+            if !window.is_maximized() {
+                window.set_inner_size(before);
             }
         }
     }
