@@ -3,20 +3,19 @@
  * carries the Brotli decoder fix.
  *
  * CVE-2026-111497 is an out-of-bounds write in the Brotli decoder bundled
- * with Node. Node 22.23.4, 24.22.1 and 26.12.1 are the October 2026 releases
- * that fix it. Node 20 is end-of-life and never receives the patch, so it is
- * no longer a supported line.
+ * with Node. Node 24.22.1 and 26.12.1 are the October 2026 releases that fix
+ * it. Node 20 is end-of-life and never receives the patch. Node 22 does
+ * (22.23.4), but is no longer a supported line: 24 is the oldest one tested.
  *
  * Keep this in step with the `engines` fields in the package manifests.
  */
 const MINIMUM: Record<number, readonly [number, number, number]> = {
-  22: [22, 23, 4],
   24: [24, 22, 1],
   26: [26, 12, 1],
 };
 
 /** The supported versions, as a sentence a failed check can print. */
-export const NODE_REQUIREMENT = "Node 22.23.4+, 24.22.1+ or 26.12.1+";
+export const NODE_REQUIREMENT = "Node 24.22.1+ or 26.12.1+";
 
 /** Whether `version` is a Node release this CLI is willing to run on. */
 export function supportedNode(version: string): boolean {

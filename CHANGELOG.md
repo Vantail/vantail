@@ -2,6 +2,24 @@
 
 Notable changes per release.
 
+## 0.1.27
+
+### Changed
+
+- **Node.js 22 is no longer supported.** The supported lines are 24.22.1+
+  and 26.12.1+, `engines` in every package and template says so, and
+  `vantail doctor` fails on 22. CI builds, tests, audits and releases on
+  24.22.2, with one extra test job on 26.13.0, now the newest LTS line.
+  Like the Brotli minimum in 0.1.26, this is a development-toolchain
+  requirement only: applications ship the Rust runtime and never include
+  Node.js.
+
+- **The release workflow a new project starts with uses current actions.**
+  `actions/checkout` and `actions/setup-node` v7, `upload-artifact` v7,
+  `download-artifact` v8 and `softprops/action-gh-release` v3, which all run
+  on GitHub's Node 24 runtime, and Node 24.22.2 for the build. Existing
+  projects keep the workflow they were created with.
+
 ## 0.1.26
 
 ### Security

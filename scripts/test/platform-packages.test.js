@@ -381,13 +381,14 @@ describe("release workflow", () => {
     // publish.mjs refuses npmjs without this, on purpose.
     assert.match(publish.run, /--i-mean-it-publish-publicly/);
 
-    // Trusted publishing needs npm 11.5.1, and the Node this job sets up
-    // still ships npm 10. Without the upgrade the OIDC exchange never
-    // happens and the publish asks for a token that does not exist.
-    assert.ok(
-      steps.some((step) => /npm install -g npm@/.test(step.run ?? "")),
-      "npm is not upgraded, so it is too old to publish with OIDC",
+    // Trusted publishing needs npm 11.5.1. With an older one the OIDC
+    // exchange never happens and the publish asks for a token that does not
+    // exist, so the job checks the npm it has before it gets that far.
+    const npmCheck = steps.findIndex(
+      (step) => /npm --version/.test(step.run ?? "") && /11\.5\.1/.test(step.run ?? ""),
     );
+    assert.ok(npmCheck !== -1, "nothing checks npm is new enough to publish with OIDC");
+    assert.ok(npmCheck < steps.indexOf(publish), "npm is checked only after the publish");
 
     // An `_authToken` line takes precedence over the OIDC exchange, so the
     // registry config has to stay credential-free. This is also what keeps a

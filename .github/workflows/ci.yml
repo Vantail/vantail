@@ -63,7 +63,7 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
-          node-version: 22.23.4
+          node-version: 24.22.2
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -98,14 +98,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-14, windows-2022, ubuntu-22.04]
-        node: ["22.23.4"]
+        node: ["24.22.2"]
         include:
-          # One extra job on the current LTS line, since that is what most
-          # people will actually have installed. What it catches is
+          # One extra job on Node 26, the newest LTS line. What it catches is
           # JavaScript-level and not platform-specific, so it runs on the
           # cheapest runner.
           - os: ubuntu-22.04
-            node: "24.22.1"
+            node: "26.13.0"
     steps:
       - uses: actions/checkout@v7
 

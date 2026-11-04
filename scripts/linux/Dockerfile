@@ -9,8 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       xvfb xauth dbus dbus-x11 openbox gnome-keyring curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Debian ships Node 18; the workspace needs 22.
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+# Debian ships Node 18; the workspace needs 24.
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && npm install -g pnpm@10 \
     && rm -rf /var/lib/apt/lists/*

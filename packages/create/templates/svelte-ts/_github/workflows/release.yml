@@ -37,11 +37,11 @@ jobs:
           - { os: ubuntu-22.04, name: Linux, artifact: "*.deb" }
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22.23.4
+          node-version: 24.22.2
 
       # The webview is the OS's own, and on Linux that means WebKitGTK. macOS
       # and Windows have theirs already.
@@ -69,7 +69,7 @@ jobs:
       # separate build step. Artifacts land in `build/`, the default outDir.
       - run: npx vantail package --installer
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           path: build/${{ matrix.artifact }}
@@ -82,12 +82,12 @@ jobs:
     # Only a tag produces a release; a manual run just proves the build works.
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: artifacts/*
           draft: true

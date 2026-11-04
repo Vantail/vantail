@@ -8,8 +8,9 @@
  * and the Vite plugin. `@vantail/api` and `@vantail/icons` ship code that runs
  * in a webview or a browser, so they declare no engine and are not listed.
  *
- * 22.23.4, 24.22.1 and 26.12.1 are the releases with the Brotli decoder fix
- * (CVE-2026-111497). Node 20 is end-of-life and never receives it.
+ * 24.22.1 and 26.12.1 are the releases with the Brotli decoder fix
+ * (CVE-2026-111497). Node 20 is end-of-life and never receives it, and Node 22
+ * is no longer supported.
  */
 
 import assert from "node:assert/strict";
@@ -19,7 +20,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const SUPPORTED = "^22.23.4 || ^24.22.1 || >=26.12.1";
+const SUPPORTED = "^24.22.1 || >=26.12.1";
 
 const manifests = [
   "package.json",
