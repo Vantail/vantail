@@ -107,8 +107,8 @@ fn start(rt: &Arc<Runtime>, source: &str, path: PathBuf, recursive: bool) -> Api
             return;
         };
 
-        // A change reports the paths it touched, which for a recursive watch
-        // is not the path that was asked for.
+        // A change reports the paths it touched, which for a recursive
+        // watch is not the path that was asked for.
         for changed in &event.paths {
             rt_for_thread.send(
                 Some(window.clone()),

@@ -525,7 +525,8 @@ mod tests {
 
     #[test]
     fn writes_do_not_need_the_read_flag() {
-        // The gates are independent: a window may write a value it may not read.
+        // The gates are independent: a window may write a value it may not
+        // read.
         let write_only = permissions(false, &["demo.*"]);
         let store = Store::ephemeral();
         let broadcast = prepare_set(&write_only, &store, "demo.counter", json!(7)).expect("set");

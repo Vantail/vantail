@@ -998,8 +998,8 @@ fn round_corners(
 
             if let Some(radius) = radii.uniform() {
                 let _: () = objc2::msg_send![layer, setCornerRadius: radius];
-                let _: () =
-                    objc2::msg_send![layer, setMask: std::ptr::null::<objc2::runtime::AnyObject>()];
+                let no_mask = std::ptr::null::<objc2::runtime::AnyObject>();
+                let _: () = objc2::msg_send![layer, setMask: no_mask];
                 return;
             }
 

@@ -164,8 +164,8 @@ fn zoom_in_one_step(entry: &mut WindowEntry, maximized: bool) -> bool {
                 ));
                 screen.visibleFrame()
             } else {
-                // Nothing remembered - the window was maximised by the platform,
-                // or at startup - so let AppKit do what it knows.
+                // Nothing remembered - the window was maximised by the
+                // platform, or at startup - so let AppKit do what it knows.
                 let Some((x, y, width, height)) = entry.restore_frame.take() else {
                     return false;
                 };

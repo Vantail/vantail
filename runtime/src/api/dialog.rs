@@ -51,68 +51,69 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, method: &str, params: Value) -> ApiResult
     rt.permissions.require(rt.permissions.dialog, method)?;
 
     match method {
-        "dialog.openFile" => {
-            let params: FileParams = Request::params(method, params)?;
-            let dialog = file_dialog(&params);
-            if params.multiple {
-                let picked = match dialog.pick_files() {
-                    Some(picked) => picked,
-                    None => Vec::new(),
-                };
-                Ok(json!(grant_all(rt, picked, Access::Read)))
-            } else {
-                Ok(match dialog.pick_file() {
-                    Some(path) => json!(grant(rt, path, Access::Read)),
-                    None => Value::Null,
-                })
-            }
-        }
-
-        "dialog.openDirectory" => {
-            let params: FileParams = Request::params(method, params)?;
-            let dialog = file_dialog(&params);
-            if params.multiple {
-                let picked = match dialog.pick_folders() {
-                    Some(picked) => picked,
-                    None => Vec::new(),
-                };
-                Ok(json!(grant_all(rt, picked, Access::Read)))
-            } else {
-                Ok(match dialog.pick_folder() {
-                    Some(path) => json!(grant(rt, path, Access::Read)),
-                    None => Value::Null,
-                })
-            }
-        }
-
-        "dialog.saveFile" => {
-            let params: FileParams = Request::params(method, params)?;
-            Ok(match file_dialog(&params).save_file() {
-                Some(path) => json!(grant(rt, path, Access::Write)),
-                None => Value::Null,
-            })
-        }
-
-        "dialog.message" => {
-            let params: MessageParams = Request::params(method, params)?;
-            message_dialog(&params).show();
-            Ok(Value::Null)
-        }
-
-        "dialog.confirm" => {
-            let params: MessageParams = Request::params(method, params)?;
-            let buttons = match (&params.ok_label, &params.cancel_label) {
-                (Some(ok), Some(cancel)) => {
-                    rfd::MessageButtons::OkCancelCustom(ok.clone(), cancel.clone())
-                }
-                _ => rfd::MessageButtons::OkCancel,
-            };
-            let answer = message_dialog(&params).set_buttons(buttons).show();
-            Ok(json!(accepted(&answer, params.ok_label.as_deref())))
-        }
-
+        "dialog.openFile" => open_file(rt, params),
+        "dialog.openDirectory" => open_directory(rt, params),
+        "dialog.saveFile" => save_file(rt, params),
+        "dialog.message" => message(params),
+        "dialog.confirm" => confirm(params),
         _ => Err(ApiError::unknown_method(method)),
     }
+}
+
+fn open_file(rt: &Runtime, params: Value) -> ApiResult {
+    let params: FileParams = Request::params("dialog.openFile", params)?;
+    let dialog = file_dialog(&params);
+    if params.multiple {
+        let picked = match dialog.pick_files() {
+            Some(picked) => picked,
+            None => Vec::new(),
+        };
+        return Ok(json!(grant_all(rt, picked, Access::Read)));
+    }
+    match dialog.pick_file() {
+        Some(path) => Ok(json!(grant(rt, path, Access::Read))),
+        None => Ok(Value::Null),
+    }
+}
+
+fn open_directory(rt: &Runtime, params: Value) -> ApiResult {
+    let params: FileParams = Request::params("dialog.openDirectory", params)?;
+    let dialog = file_dialog(&params);
+    if params.multiple {
+        let picked = match dialog.pick_folders() {
+            Some(picked) => picked,
+            None => Vec::new(),
+        };
+        return Ok(json!(grant_all(rt, picked, Access::Read)));
+    }
+    match dialog.pick_folder() {
+        Some(path) => Ok(json!(grant(rt, path, Access::Read))),
+        None => Ok(Value::Null),
+    }
+}
+
+fn save_file(rt: &Runtime, params: Value) -> ApiResult {
+    let params: FileParams = Request::params("dialog.saveFile", params)?;
+    match file_dialog(&params).save_file() {
+        Some(path) => Ok(json!(grant(rt, path, Access::Write))),
+        None => Ok(Value::Null),
+    }
+}
+
+fn message(params: Value) -> ApiResult {
+    let params: MessageParams = Request::params("dialog.message", params)?;
+    message_dialog(&params).show();
+    Ok(Value::Null)
+}
+
+fn confirm(params: Value) -> ApiResult {
+    let params: MessageParams = Request::params("dialog.confirm", params)?;
+    let buttons = match (&params.ok_label, &params.cancel_label) {
+        (Some(ok), Some(cancel)) => rfd::MessageButtons::OkCancelCustom(ok.clone(), cancel.clone()),
+        _ => rfd::MessageButtons::OkCancel,
+    };
+    let answer = message_dialog(&params).set_buttons(buttons).show();
+    Ok(json!(accepted(&answer, params.ok_label.as_deref())))
 }
 
 /// Whether the user chose the affirmative button, whatever it was labelled.

@@ -1,10 +1,11 @@
 //! `hid.*` - raw access to USB HID devices.
 //!
 //! WebHID does not exist in the webviews Vantail runs on, so a control pad, a
-//! foot pedal or a custom macro pad is simply unreachable from a page. This
-//! is the one capability that is device-shaped, which is exactly why it stays
-//! generic: Vantail knows what a HID report is and has never heard of any particular device.
-//! The application implements the protocol; the platform hands it bytes.
+//! foot pedal or a custom macro pad is simply unreachable from a page. This is
+//! the one capability that is device-shaped, which is exactly why it stays
+//! generic: Vantail knows what a HID report is and has never heard of any
+//! particular device. The application implements the protocol; the platform
+//! hands it bytes.
 //!
 //! Each open device gets a thread that reads it. Reads use a short timeout
 //! rather than blocking, so a write is never queued behind a device that has

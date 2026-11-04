@@ -18,7 +18,8 @@ use crate::state::Runtime;
 thread_local! {
     /// Held open for the life of the thread. On some platforms the clipboard
     /// connection has to outlive the write for the data to stick around.
-    static CLIPBOARD: RefCell<Option<arboard::Clipboard>> = const { RefCell::new(None) };
+    static CLIPBOARD: RefCell<Option<arboard::Clipboard>> =
+        const { RefCell::new(None) };
 }
 
 #[derive(Deserialize)]

@@ -218,25 +218,9 @@ impl Chrome {
         // somebody else owns is an ordinary answer. A key this machine does
         // not have - F19 on a keyboard that stops at F12 - is bad input, and
         // no amount of retrying will help.
-        manager.register(hotkey).map_err(|error| match error {
-            global_hotkey::Error::AlreadyRegistered(_) => ApiError::new(
-                crate::error::code::ALREADY_EXISTS,
-                format!("`{accelerator}` is already registered, here or by another application"),
-            ),
-            global_hotkey::Error::UnrecognizedHotKeyCode(_)
-            | global_hotkey::Error::HotKeyParseError(_) => ApiError::invalid_params(format!(
-                "`{accelerator}` is not a key combination: {error}"
-            )),
-            other if other.to_string().contains("Unable to find keycode") => {
-                ApiError::invalid_params(format!(
-                    "`{accelerator}` names a key this system's keyboard layout does not have: {other}"
-                ))
-            }
-            other => ApiError::new(
-                crate::error::code::ALREADY_EXISTS,
-                format!("`{accelerator}` could not be registered - another application may already use it: {other}"),
-            ),
-        })?;
+        manager
+            .register(hotkey)
+            .map_err(|error| shortcut_error(accelerator, error))?;
 
         self.shortcuts.insert(
             accelerator.to_string(),
@@ -558,6 +542,37 @@ pub fn load_icon(rt: &Runtime, path: &str) -> Result<tray_icon::Icon, ApiError> 
     let image = icon::load_png(&resolved)?;
     tray_icon::Icon::from_rgba(image.bytes, image.width, image.height)
         .map_err(|e| ApiError::invalid_params(format!("Could not use {path} as an icon: {e}")))
+}
+
+/// What a failed shortcut registration means, in the terms of the call that
+/// asked for it.
+fn shortcut_error(accelerator: &str, error: global_hotkey::Error) -> ApiError {
+    match error {
+        global_hotkey::Error::AlreadyRegistered(_) => ApiError::new(
+            crate::error::code::ALREADY_EXISTS,
+            format!(
+                "`{accelerator}` is already registered, here or by \
+                 another application"
+            ),
+        ),
+        global_hotkey::Error::UnrecognizedHotKeyCode(_)
+        | global_hotkey::Error::HotKeyParseError(_) => {
+            ApiError::invalid_params(format!("`{accelerator}` is not a key combination: {error}"))
+        }
+        other if other.to_string().contains("Unable to find keycode") => {
+            ApiError::invalid_params(format!(
+                "`{accelerator}` names a key this system's keyboard \
+                 layout does not have: {other}"
+            ))
+        }
+        other => ApiError::new(
+            crate::error::code::ALREADY_EXISTS,
+            format!(
+                "`{accelerator}` could not be registered - another \
+                 application may already use it: {other}"
+            ),
+        ),
+    }
 }
 
 /// The ids of the items a menu was built with.

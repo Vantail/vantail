@@ -1567,7 +1567,8 @@ mod tests {
     #[test]
     fn variables_expand_inside_patterns() {
         let expanded = vars().expand("$TEMP/logs/**");
-        assert!(expanded.starts_with(&temp_dir().to_string_lossy().to_string()));
+        let temp = temp_dir().to_string_lossy().to_string();
+        assert!(expanded.starts_with(&temp));
         assert!(expanded.ends_with("/logs/**"));
     }
 }
@@ -1940,10 +1941,15 @@ mod shared_state_tests {
     fn the_json_shape_the_cli_writes_deserialises() {
         // `vantail.json` carries `permissions` verbatim from the validated
         // config, so this is the exact shape that has to land.
-        let config: PermissionsConfig = serde_json::from_value(serde_json::json!({
-            "sharedState": { "read": true, "write": ["demo.*"], "persist": false },
-        }))
-        .expect("sharedState block should load");
+        let written = serde_json::json!({
+            "sharedState": {
+                "read": true,
+                "write": ["demo.*"],
+                "persist": false,
+            },
+        });
+        let config: PermissionsConfig =
+            serde_json::from_value(written).expect("sharedState block should load");
         assert!(config.shared_state.read);
         assert_eq!(config.shared_state.write, vec!["demo.*"]);
         assert!(!config.shared_state.persist);

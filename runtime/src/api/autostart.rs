@@ -170,7 +170,8 @@ fn enable(rt: &Runtime) -> Result<(), ApiError> {
     }
 
     // A desktop entry is line-based with no quoting, so a newline in a value
-    // would forge a key. Neither of these should contain one; refuse if it does.
+    // would forge a key. Neither of these should contain one; refuse if it
+    // does.
     for value in [rt.config.app.name.as_str(), &exe.to_string_lossy()] {
         if value.contains('\n') {
             return Err(ApiError::invalid_params(

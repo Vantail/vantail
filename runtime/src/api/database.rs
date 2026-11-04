@@ -1074,7 +1074,8 @@ fn failed(context: &str, error: &rusqlite::Error) -> ApiError {
     ApiError::new(crate::error::code::IO_ERROR, format!("{context}: {error}"))
 }
 
-/// So `ToSqlOutput` is used, keeping the import honest across rusqlite versions.
+/// So `ToSqlOutput` is used, keeping the import honest across rusqlite
+/// versions.
 #[allow(dead_code)]
 fn _assert_bindable(value: SqlValue) -> ToSqlOutput<'static> {
     ToSqlOutput::Owned(value)

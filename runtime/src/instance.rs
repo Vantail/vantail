@@ -257,7 +257,8 @@ mod tests {
             Claim::Primary(_) => panic!("second claim should hand over, not become primary"),
         }
 
-        // Dropping the primary releases the name; a later claim is primary again.
+        // Dropping the primary releases the name; a later claim is primary
+        // again.
         drop(primary);
     }
 

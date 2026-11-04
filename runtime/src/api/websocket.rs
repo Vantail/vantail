@@ -287,36 +287,7 @@ fn connect(rt: &Arc<Runtime>, params: Value) -> Result<(Socket, String, Option<S
     let timeout = params.timeout();
     let port = port_or_default(endpoint.port, secure);
 
-    // Connected by hand rather than by `tungstenite::connect`, which has no
-    // timeout: a device that is off would otherwise hang until the OS gave up.
-    let address = (endpoint.host.as_str(), port)
-        .to_socket_addrs()
-        .map_err(|e| {
-            ApiError::new(
-                crate::error::code::IO_ERROR,
-                format!("Could not resolve `{}`: {e}", endpoint.host),
-            )
-        })?
-        .next()
-        .ok_or_else(|| {
-            ApiError::new(
-                crate::error::code::IO_ERROR,
-                format!("`{}` resolved to no addresses", endpoint.host),
-            )
-        })?;
-
-    let stream = TcpStream::connect_timeout(&address, timeout).map_err(|e| {
-        ApiError::new(
-            crate::error::code::IO_ERROR,
-            format!("Could not reach `{}`: {e}", params.url),
-        )
-    })?;
-    // A socket is usually many small messages, and Nagle would sit on them.
-    let _ = stream.set_nodelay(true);
-    // Covers the handshake. Cleared once the socket is up, where `POLL` takes
-    // over.
-    let _ = stream.set_read_timeout(Some(timeout));
-    let _ = stream.set_write_timeout(Some(timeout));
+    let stream = open_tcp(&endpoint.host, port, timeout, &params.url)?;
 
     // Built through tungstenite's own builder rather than by hand: the
     // handshake needs `Sec-WebSocket-Key`, `Sec-WebSocket-Version`, `Upgrade`
@@ -353,6 +324,42 @@ struct Ending {
     failure: Option<String>,
     code: Option<u16>,
     reason: String,
+}
+
+/// A TCP connection to `host`, with the timeouts and options a socket wants.
+///
+/// Connected by hand rather than by `tungstenite::connect`, which has no
+/// timeout: a device that is off would otherwise hang until the OS gave up.
+fn open_tcp(host: &str, port: u16, timeout: Duration, url: &str) -> Result<TcpStream, ApiError> {
+    let address = (host, port)
+        .to_socket_addrs()
+        .map_err(|e| {
+            ApiError::new(
+                crate::error::code::IO_ERROR,
+                format!("Could not resolve `{host}`: {e}"),
+            )
+        })?
+        .next()
+        .ok_or_else(|| {
+            ApiError::new(
+                crate::error::code::IO_ERROR,
+                format!("`{host}` resolved to no addresses"),
+            )
+        })?;
+
+    let stream = TcpStream::connect_timeout(&address, timeout).map_err(|e| {
+        ApiError::new(
+            crate::error::code::IO_ERROR,
+            format!("Could not reach `{url}`: {e}"),
+        )
+    })?;
+    // A socket is usually many small messages, and Nagle would sit on them.
+    let _ = stream.set_nodelay(true);
+    // Covers the handshake. Cleared once the socket is up, where `POLL` takes
+    // over.
+    let _ = stream.set_read_timeout(Some(timeout));
+    let _ = stream.set_write_timeout(Some(timeout));
+    Ok(stream)
 }
 
 /// A header's value as text, when it is there and readable as text.

@@ -2,10 +2,10 @@
 //!
 //! The application's own `fetch` handles the internet perfectly well, and
 //! should be used for it. What it cannot do is talk to the hardware on the
-//! user's network: a smart-home hub answers HTTPS with a self-signed certificate,
-//! and a smart light, a desk display or a single-board computer sends no CORS
-//! headers at all. Neither is something an application can work around, and
-//! neither is a reason to ship a Node runtime.
+//! user's network: a smart-home hub answers HTTPS with a self-signed
+//! certificate, and a smart light, a desk display or a single-board computer
+//! sends no CORS headers at all. Neither is something an application can work
+//! around, and neither is a reason to ship a Node runtime.
 //!
 //! So this is a capability, not a convenience: it exists for the requests a
 //! browser refuses to make, and every one of them is checked against
@@ -343,14 +343,7 @@ fn run_stream(
     let (negotiated, binary) = match negotiate_stream(&rt, params, &cancelled) {
         Ok(started) => started,
         Err(error) => {
-            // The head never arrived. Answer the original call with why, if a
-            // cancel has not already answered it.
-            if let Some(entry) = rt.requests.claim(&request_id) {
-                rt.send(
-                    Some(entry.window),
-                    Outgoing::Response(Response::from_result(request_id, Err(error))),
-                );
-            }
+            refuse_stream(&rt, request_id, error);
             return;
         }
     };
@@ -395,6 +388,29 @@ fn run_stream(
     };
 
     let was_cancelled = cancelled.load(Ordering::SeqCst);
+    end_stream(&rt, window, stream_id, was_cancelled, failure);
+}
+
+/// The head never arrived. Answer the original call with why, if a cancel
+/// has not already answered it.
+fn refuse_stream(rt: &Runtime, request_id: String, error: ApiError) {
+    let Some(entry) = rt.requests.claim(&request_id) else {
+        return;
+    };
+    rt.send(
+        Some(entry.window),
+        Outgoing::Response(Response::from_result(request_id, Err(error))),
+    );
+}
+
+/// Tell the window the stream is over, and why.
+fn end_stream(
+    rt: &Runtime,
+    window: String,
+    stream_id: u32,
+    cancelled: bool,
+    failure: Option<String>,
+) {
     rt.requests.close_stream(stream_id);
     rt.send(
         Some(window),
@@ -402,7 +418,7 @@ fn run_stream(
             "network.end",
             json!({
                 "id": stream_id,
-                "cancelled": was_cancelled,
+                "cancelled": cancelled,
                 "error": failure,
             }),
         )),
@@ -550,12 +566,7 @@ fn negotiate(
         let status = head.status;
         // A 3xx without a `Location` - a 304, say - is not a redirect, and is
         // an answer like any other status.
-        let location = if status.is_redirection() {
-            redirect_target(&head, &request.url)
-        } else {
-            None
-        };
-        let Some(location) = location else {
+        let Some(location) = next_location(&head, &request.url) else {
             return Ok(Negotiated {
                 url: request.url,
                 head,
@@ -566,10 +577,7 @@ fn negotiate(
         };
         // The header as sent, which may be relative; `url` on the next hop is
         // where it actually resolved to.
-        let sent_location = match head.headers.get("location") {
-            Some(location) => location.clone(),
-            None => String::new(),
-        };
+        let sent_location = sent_location(&head);
 
         match params.redirect {
             // The 3xx is the answer. Nothing further is requested, so there is
@@ -928,6 +936,23 @@ fn read_head(response: http::Response<ureq::Body>, elapsed: Duration) -> (Head, 
         elapsed,
     };
     (head, response.into_body())
+}
+
+/// Where a redirect points, resolved against `url`. `None` for anything that
+/// is not a redirect.
+fn next_location(head: &Head, url: &str) -> Option<String> {
+    if !head.status.is_redirection() {
+        return None;
+    }
+    redirect_target(head, url)
+}
+
+/// The `Location` header exactly as the server sent it, or nothing.
+fn sent_location(head: &Head) -> String {
+    match head.headers.get("location") {
+        Some(location) => location.clone(),
+        None => String::new(),
+    }
 }
 
 /// A path up to and including its last `/`, or `/` when it has none.

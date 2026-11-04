@@ -97,7 +97,8 @@ pub fn parse_color(value: &str) -> Option<(u8, u8, u8, u8)> {
     }
 }
 
-/// The value of each hex digit in `text`, or `None` if any character is not one.
+/// The value of each hex digit in `text`, or `None` if any character is not
+/// one.
 fn hex_digits(text: &str) -> Option<Vec<u8>> {
     let mut digits = Vec::with_capacity(text.len());
     for character in text.chars() {

@@ -1,4 +1,5 @@
-//! `print.document` - the native print dialog for application-generated content.
+//! `print.document` - the native print dialog for application-generated
+//! content.
 //!
 //! There is deliberately **no `permissions.print` flag**, and there never
 //! should be one. Two properties make a flag the wrong tool:
@@ -252,7 +253,8 @@ fn what_to_load(rt: &Runtime, source: &Source) -> Result<(Phase, String), ApiErr
         Source::Html(html) => Ok((Phase::Html, html_data_url(html))),
         Source::PdfPath(raw) => {
             // Printing reads the file into the renderer, so this is a read like
-            // any other: the standing scope applies, and dialog/drop grants apply.
+            // any other: the standing scope applies, and dialog/drop grants
+            // apply.
             let resolved = rt
                 .permissions
                 .check_path(&RawPath::new(raw.clone()), Access::Read)?;

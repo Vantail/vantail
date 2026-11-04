@@ -316,7 +316,8 @@ fn remove(path: &PathBuf, recursive: bool) -> ApiResult {
             ApiError::new(
                 code::IO_ERROR,
                 format!(
-                    "{} is not empty. Pass `{{ recursive: true }}` to remove it and its contents.",
+                    "{} is not empty. Pass `{{ recursive: true }}` to remove \
+                     it and its contents.",
                     path.display()
                 ),
             )

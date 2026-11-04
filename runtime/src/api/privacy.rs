@@ -186,7 +186,8 @@ mod imp {
         let block = StackBlock::new(move |granted: Bool| {
             let _ = tx.send(granted.as_bool());
         });
-        // The request retains the block; this heap copy outlives the stack frame.
+        // The request retains the block; this heap copy outlives the stack
+        // frame.
         let block = block.copy();
 
         // SAFETY: same class method, plus a completion block that only sends
