@@ -466,7 +466,10 @@ pub fn fit(
     _lights: Option<(f64, Option<f64>)>,
     _keeper: &Keeper,
 ) -> f64 {
-    requested.filter(|h| *h > 0.0).unwrap_or(platform.height)
+    match requested {
+        Some(height) if height > 0.0 => height,
+        _ => platform.height,
+    }
 }
 
 /// Measure the platform's own title bar, before anything has been moved.

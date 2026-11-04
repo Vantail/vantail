@@ -226,10 +226,10 @@ fn skip_taskbar(window: &tao::window::Window, skip: bool) -> ApiResult {
         #[cfg(target_os = "windows")]
         use tao::platform::windows::WindowExtWindows;
 
-        return window
+        window
             .set_skip_taskbar(skip)
-            .map(|_| Value::Null)
-            .map_err(|e| ApiError::internal(format!("Could not change the taskbar: {e}")));
+            .map_err(|e| ApiError::internal(format!("Could not change the taskbar: {e}")))?;
+        return Ok(Value::Null);
     }
 
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
@@ -464,7 +464,11 @@ fn set_title_bar_style(ctx: &mut MainCtx<'_>, label: &str, params: Value) -> Api
     // gain a title bar's worth of room for hiding one, and a different amount
     // back for showing it again.
     #[cfg(target_os = "windows")]
-    let before = (!entry.window.is_maximized()).then(|| entry.window.inner_size());
+    let before = if entry.window.is_maximized() {
+        None
+    } else {
+        Some(entry.window.inner_size())
+    };
 
     let metrics = entry.set_title_bar_style(style);
 

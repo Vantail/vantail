@@ -1112,7 +1112,10 @@ fn window_rect(hwnd: windows::Win32::Foundation::HWND) -> Option<windows::Win32:
     let mut outer = RECT::default();
     // Safety: `hwnd` is the handle of a live window, and `outer` is a local
     // for the call to fill.
-    unsafe { GetWindowRect(hwnd, &mut outer) }.ok()?;
+    let measured = unsafe { GetWindowRect(hwnd, &mut outer) };
+    if measured.is_err() {
+        return None;
+    }
     Some(outer)
 }
 

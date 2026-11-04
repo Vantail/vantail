@@ -258,17 +258,23 @@ mod windows_run_key {
     }
 
     pub fn get(name: &str) -> Option<String> {
-        let output = std::process::Command::new("reg")
+        let queried = std::process::Command::new("reg")
             .args(["query", KEY, "/v", name])
-            .output()
-            .ok()?;
+            .output();
+        let Ok(output) = queried else {
+            return None;
+        };
         if !output.status.success() {
             return None;
         }
         let text = String::from_utf8_lossy(&output.stdout);
         // `    name    REG_SZ    "C:\path\app.exe"`
-        let line = text.lines().find(|line| line.contains("REG_SZ"))?;
-        Some(line.split("REG_SZ").nth(1)?.trim().to_string())
+        for line in text.lines() {
+            if let Some((_, value)) = line.split_once("REG_SZ") {
+                return Some(value.trim().to_string());
+            }
+        }
+        None
     }
 }
 

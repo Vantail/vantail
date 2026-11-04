@@ -79,11 +79,6 @@ enum Source {
     PdfPath(String),
 }
 
-/// The core safety property, checked on both sides of the IPC boundary: the
-/// content source is always explicit, so the app UI is never printable.
-///
-/// An empty string counts as absent - it names no content - so exactly one
-/// non-empty source must be present.
 fn non_empty(text: Option<&str>) -> Option<&str> {
     match text {
         Some(text) if !text.is_empty() => Some(text),
@@ -91,6 +86,11 @@ fn non_empty(text: Option<&str>) -> Option<&str> {
     }
 }
 
+/// The core safety property, checked on both sides of the IPC boundary: the
+/// content source is always explicit, so the app UI is never printable.
+///
+/// An empty string counts as absent - it names no content - so exactly one
+/// non-empty source must be present.
 fn split_source(params: &DocumentParams) -> Result<Source, ApiError> {
     let html = non_empty(params.html.as_deref());
     let pdf = non_empty(params.pdf_path.as_deref());
@@ -517,7 +517,10 @@ fn open_preview(rt: &Arc<Runtime>, state: &PrintState, job: u64) -> bool {
             ))
         } else {
             // Without a <title>, Edge prints the data URL in the page header.
-            let title = serde_json::to_string(&rt.config.app.name).unwrap_or_default();
+            let title = match serde_json::to_string(&rt.config.app.name) {
+                Ok(title) => title,
+                Err(_) => String::new(),
+            };
             let proxy = rt.proxy();
             entry.webview.evaluate_script_with_callback(
                 &format!("if (!document.title) document.title = {title}; window.print();"),
@@ -550,17 +553,21 @@ pub fn closed(rt: &Arc<Runtime>, state: &PrintState, job: u64) {
     }
 }
 
+/// The job whose preview window this is, if any.
+#[cfg(target_os = "windows")]
+fn job_for_window(state: &PrintState, window: tao::window::WindowId) -> Option<u64> {
+    for (job, entry) in state.inner.live.borrow().iter() {
+        if entry.window.id() == window {
+            return Some(*job);
+        }
+    }
+    None
+}
+
 /// Windows: a print window's close button was pressed.
 #[cfg(target_os = "windows")]
 pub fn close_requested(rt: &Arc<Runtime>, state: &PrintState, window: tao::window::WindowId) {
-    let job = state
-        .inner
-        .live
-        .borrow()
-        .iter()
-        .find(|(_, entry)| entry.window.id() == window)
-        .map(|(job, _)| *job);
-    if let Some(job) = job {
+    if let Some(job) = job_for_window(state, window) {
         closed(rt, state, job);
     }
 }

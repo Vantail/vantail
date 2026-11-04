@@ -162,6 +162,13 @@ pub fn clean_previous() {
     remove_retired(&installed.root);
 }
 
+/// `MyApp.exe` for `MyApp.exe.old`, or `None` for a name that was not retired.
+#[cfg(windows)]
+fn retired_stem(path: &std::path::Path) -> Option<&str> {
+    let name = path.file_name()?.to_str()?;
+    name.strip_suffix(".old")
+}
+
 /// Remove the `<name>.old` entries a Windows install left behind.
 ///
 /// Only ones whose replacement is present, so a file an application happens
@@ -173,13 +180,12 @@ fn remove_retired(root: &std::path::Path) {
         return;
     };
 
-    for entry in entries.filter_map(Result::ok) {
+    for entry in entries {
+        let Ok(entry) = entry else {
+            continue;
+        };
         let path = entry.path();
-        let Some(stem) = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .and_then(|name| name.strip_suffix(".old"))
-        else {
+        let Some(stem) = retired_stem(&path) else {
             continue;
         };
 

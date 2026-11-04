@@ -592,13 +592,6 @@ fn build_globset(patterns: &[String]) -> Result<GlobSet, String> {
         .map_err(|e| format!("Invalid permission scope: {e}"))
 }
 
-/// Resolve the fixed part of a pattern the same way a checked path is
-/// resolved.
-///
-/// Paths arriving from JavaScript are canonicalised before they are matched,
-/// so a scope written as `/tmp/**` would otherwise never match anything on
-/// macOS, where `/tmp` resolves to `/private/tmp`. Only the leading literal
-/// portion is touched; the glob part is left exactly as written.
 /// Every pattern with its `$VARS` filled in.
 fn expand_all(patterns: &[String], vars: &Vars) -> Vec<String> {
     let mut expanded = Vec::with_capacity(patterns.len());
@@ -608,6 +601,13 @@ fn expand_all(patterns: &[String], vars: &Vars) -> Vec<String> {
     expanded
 }
 
+/// Resolve the fixed part of a pattern the same way a checked path is
+/// resolved.
+///
+/// Paths arriving from JavaScript are canonicalised before they are matched,
+/// so a scope written as `/tmp/**` would otherwise never match anything on
+/// macOS, where `/tmp` resolves to `/private/tmp`. Only the leading literal
+/// portion is touched; the glob part is left exactly as written.
 fn canonicalize_prefix(pattern: &str) -> String {
     // The literal part runs up to the first glob character, and the prefix to
     // resolve is that part up to its last `/`.
@@ -931,10 +931,7 @@ impl Permissions {
         false
     }
 
-    /// Check a program and its arguments against the allow list.
-    ///
-    /// Returns the matching rule so the caller can also validate the working
-    /// directory against the scope that rule carries.
+    /// The allow-list rule for `program`, if it has one.
     fn shell_rule(&self, program: &str) -> Option<&CompiledRule> {
         for rule in &self.shell {
             if rule.program == program {
@@ -944,6 +941,10 @@ impl Permissions {
         None
     }
 
+    /// Check a program and its arguments against the allow list.
+    ///
+    /// Returns the matching rule so the caller can also validate the working
+    /// directory against the scope that rule carries.
     pub fn check_program(&self, program: &str, args: &[String]) -> Result<&CompiledRule, ApiError> {
         let Some(rule) = self.shell_rule(program) else {
             let mut known: Vec<&str> = Vec::new();
