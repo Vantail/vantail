@@ -11,3 +11,69 @@ allow-indexing-slicing-in-tests = true
 too-many-lines-threshold = 60
 excessive-nesting-threshold = 4
 too-many-arguments-threshold = 6
+
+# Plain control flow: a `for` loop instead of an iterator chain, and a
+# `match` or `if let` instead of an Option or Result chain. `map_err`,
+# `ok_or` and `ok_or_else` stay - they say "fail with this error" before a
+# `?` - and so does `?` itself.
+#
+# `Option::map` and `Result::map` are not listed, though they are written out
+# like the rest: serde's derive calls them in the code it generates for this
+# crate's config types, where no `allow` can reach. See
+# docs/rust-guidelines.md.
+disallowed-methods = [
+    # Iterator chains: write a `for` loop.
+    "std::iter::Iterator::map",
+    "std::iter::Iterator::filter",
+    "std::iter::Iterator::filter_map",
+    "std::iter::Iterator::flat_map",
+    "std::iter::Iterator::fold",
+    "std::iter::Iterator::reduce",
+    "std::iter::Iterator::sum",
+    "std::iter::Iterator::product",
+    "std::iter::Iterator::any",
+    "std::iter::Iterator::all",
+    "std::iter::Iterator::find",
+    "std::iter::Iterator::find_map",
+    "std::iter::Iterator::position",
+    "std::iter::Iterator::collect",
+    "std::iter::Iterator::for_each",
+    "std::iter::Iterator::try_for_each",
+    "std::iter::Iterator::count",
+    "std::iter::Iterator::last",
+    "std::iter::Iterator::nth",
+    "std::iter::Iterator::step_by",
+    # Option chains: write a `match` or `if let`.
+    "core::option::Option::and_then",
+    "core::option::Option::map_or",
+    "core::option::Option::map_or_else",
+    "core::option::Option::unwrap_or",
+    "core::option::Option::unwrap_or_else",
+    "core::option::Option::unwrap_or_default",
+    "core::option::Option::filter",
+    "core::option::Option::is_some_and",
+    "core::option::Option::is_none_or",
+    "core::option::Option::or",
+    "core::option::Option::or_else",
+    "core::option::Option::inspect",
+    "core::option::Option::zip",
+    "core::option::Option::xor",
+    # Result chains: the same. `map_err`, `ok_or` and `ok_or_else` stay.
+    "core::result::Result::and_then",
+    "core::result::Result::map_or",
+    "core::result::Result::map_or_else",
+    "core::result::Result::unwrap_or",
+    "core::result::Result::unwrap_or_else",
+    "core::result::Result::unwrap_or_default",
+    "core::result::Result::ok",
+    "core::result::Result::err",
+    "core::result::Result::or",
+    "core::result::Result::or_else",
+    "core::result::Result::is_ok_and",
+    "core::result::Result::is_err_and",
+    "core::result::Result::inspect",
+    "core::result::Result::inspect_err",
+    # A bool that becomes an Option the same way.
+    "bool::then",
+    "bool::then_some",
+]

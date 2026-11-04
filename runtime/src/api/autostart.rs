@@ -200,7 +200,10 @@ fn disable(rt: &Runtime) -> Result<(), ApiError> {
 
 #[cfg(target_os = "linux")]
 fn is_enabled(rt: &Runtime) -> bool {
-    entry_path(rt).is_ok_and(|path| path.exists())
+    match entry_path(rt) {
+        Ok(path) => path.exists(),
+        Err(_) => false,
+    }
 }
 
 // ---------------------------------------------------------------------------

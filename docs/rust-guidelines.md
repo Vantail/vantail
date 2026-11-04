@@ -90,6 +90,58 @@ A function that is right to be long says so: the bridge's JavaScript is one
 template whose parts share variables, so `init_script` carries an
 `#[allow(clippy::too_many_lines)]` with the reason beside it.
 
+### Plain control flow
+
+A `for` loop instead of an iterator chain, and a `match` or `if let` instead of
+an `Option` or `Result` chain. A chain asks the reader to run each step in
+their head; a loop or a match shows every branch where it happens.
+
+```rust
+// Not this
+let names: Vec<String> = entries.iter().map(|entry| entry.label.clone()).collect();
+let timeout = params.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
+
+// This
+let mut names = Vec::with_capacity(entries.len());
+for entry in entries {
+    names.push(entry.label.clone());
+}
+let timeout = match params.timeout_ms {
+    Some(timeout) => timeout,
+    None => DEFAULT_TIMEOUT_MS,
+};
+```
+
+The methods that are ruled out are listed under `disallowed-methods` in
+`clippy.toml`: the iterator chains (`map`, `filter`, `collect`, `any`,
+`find`, `fold`, ...), the `Option` and `Result` combinators (`and_then`,
+`unwrap_or`, `unwrap_or_else`, `unwrap_or_default`, `filter`, `is_some_and`,
+`ok`, ...) and `bool::then`.
+
+Some stay:
+
+- **`map_err`, `ok_or` and `ok_or_else`**, followed by `?`. They are the plain
+  way to say "fail with this error", and writing each as a `match` would add
+  four lines that say less.
+- **`?` itself**, and `let ... else` for "this or stop here".
+- **Adapters that are not chains** - `iter`, `enumerate`, `zip`, `rev`,
+  `take`, `skip` - and methods like `contains`, `split_once` or
+  `strip_prefix`, which answer a question rather than build a pipeline.
+
+`Option::map` and `Result::map` are written out like the rest, but cannot be
+in the list: serde's derive calls them in the code it generates for the
+config types, and an `allow` on the type does not reach that code. Watch for
+them in review.
+
+A few clippy lints suggest turning a written-out loop or match back into the
+chain - `manual_find`, `manual_map`, `manual_flatten`, `manual_ok_err`,
+`manual_unwrap_or`, `manual_unwrap_or_default` - so the workspace allows
+them.
+
+When a loop or a match would make a function too long or too deep, it goes
+into a small named function: `any_rule_matches`, `has_control_character`,
+`default_port`.
+
 ## Platform-only code
 
 Clippy only sees the code for the platform it runs on, and CI lints on Linux.
@@ -116,12 +168,7 @@ These are not checked, but are expected in review.
 Each of these lands as its own change: the code brought into line first, then
 the lint switched on once nothing trips it.
 
-1. **Plain control flow.** `for` loops instead of iterator chains
-   (`map`, `filter`, `collect`, `any`, `find`, ... through `disallowed-methods`),
-   and `match` or `if let` instead of `Option` and `Result` chains such as
-   `.and_then(...).unwrap_or_else(...)`. `map_err` followed by `?` stays: it
-   is the plain way to say "fail with this error".
-2. **Formatting at 80 columns.** Last, in one change, when no other branch is
+1. **Formatting at 80 columns.** Last, in one change, when no other branch is
    open, and listed in `.git-blame-ignore-revs` so `git blame` looks past it.
 
 Two things were considered and left out:
