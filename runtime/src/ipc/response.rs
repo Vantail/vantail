@@ -61,13 +61,14 @@ impl Outgoing {
     /// `JSON.parse`, which keeps arbitrary file contents from being able to
     /// break out into executable code.
     pub fn to_script(&self) -> String {
-        let json = serde_json::to_string(self).unwrap_or_else(|e| {
-            serde_json::json!({
+        let json = match serde_json::to_string(self) {
+            Ok(json) => json,
+            Err(e) => serde_json::json!({
                 "id": "",
                 "error": { "code": "INTERNAL", "message": format!("Response was not serialisable: {e}") }
             })
-            .to_string()
-        });
+            .to_string(),
+        };
         format!(
             "window.__VANTAIL__ && window.__VANTAIL__._dispatch(JSON.parse({}))",
             js_string(&json)
@@ -79,8 +80,11 @@ impl Outgoing {
 /// two line separators below are legal in JSON but not inside a JS literal,
 /// so they get escaped too.
 fn js_string(value: &str) -> String {
-    serde_json::to_string(value)
-        .unwrap_or_else(|_| "\"\"".into())
+    let quoted = match serde_json::to_string(value) {
+        Ok(quoted) => quoted,
+        Err(_) => "\"\"".to_string(),
+    };
+    quoted
         .replace('\u{2028}', "\\u2028")
         .replace('\u{2029}', "\\u2029")
 }

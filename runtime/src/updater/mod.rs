@@ -45,9 +45,10 @@ impl State {
     }
 
     pub fn version(&self) -> Option<String> {
-        lock(&self.pending)
-            .as_ref()
-            .map(|pending| pending.version.clone())
+        match lock(&self.pending).as_ref() {
+            Some(pending) => Some(pending.version.clone()),
+            None => None,
+        }
     }
 }
 
@@ -98,7 +99,7 @@ struct Installation {
 fn enclosing_bundle(exe: &std::path::Path) -> Option<&std::path::Path> {
     let mut ancestor = exe;
     while let Some(parent) = ancestor.parent() {
-        if parent.extension().is_some_and(|ext| ext == "app") {
+        if matches!(parent.extension(), Some(extension) if extension == "app") {
             return Some(parent);
         }
         ancestor = parent;
@@ -115,11 +116,12 @@ impl Installation {
         // that gets replaced.
         #[cfg(target_os = "macos")]
         if let Some(bundle) = enclosing_bundle(&exe) {
+            let executable_within_root = match exe.strip_prefix(bundle) {
+                Ok(inside) => inside.to_path_buf(),
+                Err(_) => PathBuf::from("Contents/MacOS"),
+            };
             return Ok(Self {
-                executable_within_root: exe
-                    .strip_prefix(bundle)
-                    .unwrap_or(std::path::Path::new("Contents/MacOS"))
-                    .to_path_buf(),
+                executable_within_root,
                 root: bundle.to_path_buf(),
             });
         }
@@ -129,10 +131,10 @@ impl Installation {
             .parent()
             .ok_or_else(|| ApiError::internal("The executable has no containing directory"))?
             .to_path_buf();
-        let executable_within_root = exe
+        let name = exe
             .file_name()
-            .map(PathBuf::from)
             .ok_or_else(|| ApiError::internal("The executable has no file name"))?;
+        let executable_within_root = PathBuf::from(name);
 
         Ok(Self {
             root,

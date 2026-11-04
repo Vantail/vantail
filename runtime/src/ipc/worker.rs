@@ -29,8 +29,13 @@ fn work(rx: &Mutex<Receiver<Job>>) {
 /// `None` when the sender is gone - the runtime is shutting down - or the
 /// lock is poisoned.
 fn claim(rx: &Mutex<Receiver<Job>>) -> Option<Job> {
-    let guard = rx.lock().ok()?;
-    guard.recv().ok()
+    let Ok(guard) = rx.lock() else {
+        return None;
+    };
+    match guard.recv() {
+        Ok(job) => Some(job),
+        Err(_) => None,
+    }
 }
 
 impl Pool {

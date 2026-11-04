@@ -322,7 +322,7 @@ fn append_quit(
 ) -> Result<(), String> {
     let item = MenuItem::with_id(
         QUIT_ID,
-        quit_label(label, APP_NAME.get().map(String::as_str)),
+        quit_label(label, app_name()),
         true,
         parse(&Some("CmdOrCtrl+Q".to_string()))?,
     );
@@ -349,13 +349,20 @@ impl Container for Submenu {
 }
 
 fn parse(accelerator: &Option<String>) -> Result<Option<Accelerator>, String> {
-    accelerator
-        .as_deref()
-        .map(|text| {
-            Accelerator::from_str(&alias(text))
-                .map_err(|e| format!("Invalid accelerator `{text}`: {e}"))
-        })
-        .transpose()
+    let Some(text) = accelerator.as_deref() else {
+        return Ok(None);
+    };
+    let parsed = Accelerator::from_str(&alias(text))
+        .map_err(|e| format!("Invalid accelerator `{text}`: {e}"))?;
+    Ok(Some(parsed))
+}
+
+/// The application's name, once `remember_app_name` has been told it.
+fn app_name() -> Option<&'static str> {
+    match APP_NAME.get() {
+        Some(name) => Some(name.as_str()),
+        None => None,
+    }
 }
 
 /// Accept the names an Apple keyboard prints for keys the web platform calls

@@ -55,11 +55,10 @@ const MAX_SOCKET_PATH: usize = 100;
 /// FNV-1a, because it has to come out the same in every build that might be
 /// running at once, which `DefaultHasher` does not promise.
 fn hashed_key(identifier: &str) -> String {
-    let hash = identifier
-        .bytes()
-        .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
-            (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
-        });
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in identifier.bytes() {
+        hash = (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3);
+    }
     format!("vantail-{hash:016x}")
 }
 
@@ -124,18 +123,24 @@ fn try_handover(name: &Name<'static>, args: &[String]) -> std::io::Result<bool> 
         return Ok(false);
     };
 
+    let cwd = match std::env::current_dir() {
+        Ok(path) => path.to_string_lossy().into_owned(),
+        Err(_) => String::new(),
+    };
     let launch = Launch {
         args: args.to_vec(),
-        cwd: std::env::current_dir()
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_default(),
+        cwd,
     };
-    let mut line = serde_json::to_string(&launch).unwrap_or_else(|_| "{}".into());
+    let mut line = match serde_json::to_string(&launch) {
+        Ok(line) => line,
+        Err(_) => "{}".to_string(),
+    };
     line.push('\n');
-    if let Err(error) = stream
-        .write_all(line.as_bytes())
-        .and_then(|()| stream.flush())
-    {
+    let written = match stream.write_all(line.as_bytes()) {
+        Ok(()) => stream.flush(),
+        Err(error) => Err(error),
+    };
+    if let Err(error) = written {
         eprintln!("vantail: could not hand over to the running instance: {error}");
     }
     Ok(true)

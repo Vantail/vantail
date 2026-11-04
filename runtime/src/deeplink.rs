@@ -50,15 +50,16 @@ pub fn is_valid_scheme(scheme: &str) -> Result<(), String> {
     }
 
     let mut characters = scheme.chars();
-    let first = characters.next().unwrap_or_default();
-    if !first.is_ascii_lowercase() {
+    let starts_with_letter = match characters.next() {
+        Some(first) => first.is_ascii_lowercase(),
+        None => false,
+    };
+    if !starts_with_letter {
         return Err(format!(
             "`{scheme}` must start with a lowercase letter - protocols are matched case-insensitively"
         ));
     }
-    if !characters
-        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '+' | '-' | '.'))
-    {
+    if !rest_of_scheme_allowed(characters) {
         return Err(format!(
             "`{scheme}` may only contain lowercase letters, digits, `+`, `-` and `.`"
         ));
@@ -76,10 +77,26 @@ pub fn is_valid_scheme(scheme: &str) -> Result<(), String> {
 /// as an argument, mixed in with whatever else was on the command line - so
 /// only arguments that begin with a registered scheme are taken.
 pub fn from_args(protocols: &[String], args: &[String]) -> Vec<String> {
-    args.iter()
-        .filter(|argument| matches(protocols, argument))
-        .cloned()
-        .collect()
+    let mut links = Vec::new();
+    for argument in args {
+        if matches(protocols, argument) {
+            links.push(argument.clone());
+        }
+    }
+    links
+}
+
+/// After the first letter: lowercase letters, digits, `+`, `-` and `.`.
+fn rest_of_scheme_allowed(characters: std::str::Chars<'_>) -> bool {
+    for character in characters {
+        let allowed = character.is_ascii_lowercase()
+            || character.is_ascii_digit()
+            || matches!(character, '+' | '-' | '.');
+        if !allowed {
+            return false;
+        }
+    }
+    true
 }
 
 /// Whether a URL uses one of the application's own schemes.
@@ -91,9 +108,12 @@ pub fn matches(protocols: &[String], url: &str) -> bool {
     if rest.is_empty() {
         return false;
     }
-    protocols
-        .iter()
-        .any(|protocol| protocol.eq_ignore_ascii_case(scheme))
+    for protocol in protocols {
+        if protocol.eq_ignore_ascii_case(scheme) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Links that have arrived, and whether anyone is listening yet.

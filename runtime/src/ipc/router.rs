@@ -20,7 +20,10 @@ use crate::state::{MainCtx, Runtime};
 /// [`UserEvent::Outgoing`](crate::ipc::UserEvent::Outgoing).
 pub fn dispatch(ctx: &mut MainCtx<'_>, request: Request) -> Option<Response> {
     let Request { id, method, params } = request;
-    let namespace = method.split('.').next().unwrap_or_default().to_string();
+    let namespace = match method.split_once('.') {
+        Some((namespace, _)) => namespace.to_string(),
+        None => method.clone(),
+    };
 
     let answered = match namespace.as_str() {
         // Blocking work: hand it to the pool and answer later. A keychain read
@@ -51,7 +54,10 @@ pub fn dispatch(ctx: &mut MainCtx<'_>, request: Request) -> Option<Response> {
         _ => Some(answer_now(ctx, &namespace, &method, params)),
     };
 
-    answered.map(|result| Response::from_result(id, result))
+    match answered {
+        Some(result) => Some(Response::from_result(id, result)),
+        None => None,
+    }
 }
 
 /// Run a blocking call on the worker pool, which answers it when it is done.
