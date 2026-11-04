@@ -213,14 +213,7 @@ impl App {
 
         let main_config = rt.config.window.clone();
         let main_url = windows::resolve_url(&rt, None);
-        windows.create(
-            event_loop,
-            &rt,
-            event_loop.create_proxy(),
-            windows::MAIN,
-            &main_config,
-            &main_url,
-        )?;
+        windows.create(event_loop, &rt, windows::MAIN, &main_config, &main_url)?;
 
         if rt.is_dev() {
             eprintln!("vantail: {} -> {main_url}", rt.config.app.name);

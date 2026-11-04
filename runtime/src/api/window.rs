@@ -557,17 +557,9 @@ fn create(ctx: &mut MainCtx<'_>, params: Value) -> ApiResult {
     }
 
     let url = windows::resolve_url(ctx.rt, params.url.as_deref());
-    let proxy = ctx.proxy();
 
     ctx.windows
-        .create(
-            ctx.target,
-            ctx.rt,
-            proxy,
-            &params.label,
-            &params.window,
-            &url,
-        )
+        .create(ctx.target, ctx.rt, &params.label, &params.window, &url)
         .map_err(ApiError::internal)?;
 
     // Windows hangs the application menu off each window.

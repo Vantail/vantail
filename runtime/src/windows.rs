@@ -125,23 +125,11 @@ impl WindowEntry {
 
         #[cfg(target_os = "macos")]
         {
-            use objc2_app_kit::{NSWindow, NSWindowTitleVisibility};
             use tao::platform::macos::WindowExtMacOS;
 
             self.window.set_fullsize_content_view(hidden);
             self.window.set_titlebar_transparent(hidden);
-
-            let pointer = self.window.ns_window() as *mut NSWindow;
-            if !pointer.is_null() {
-                // Safety: the pointer belongs to the window this entry owns,
-                // and this runs on the event loop thread.
-                let ns: &NSWindow = unsafe { &*pointer };
-                ns.setTitleVisibility(if hidden {
-                    NSWindowTitleVisibility::Hidden
-                } else {
-                    NSWindowTitleVisibility::Visible
-                });
-            }
+            set_title_visible(&self.window, !hidden);
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -385,7 +373,6 @@ impl WindowManager {
         &mut self,
         target: &EventLoopWindowTarget<UserEvent>,
         rt: &Arc<Runtime>,
-        proxy: EventLoopProxy<UserEvent>,
         label: &str,
         config: &WindowConfig,
         url: &str,
@@ -395,93 +382,26 @@ impl WindowManager {
         }
 
         let window = build_window(rt, target, config)?;
-
         #[cfg(target_os = "windows")]
-        {
-            // A frameless window opens a title bar shorter than it asked for.
-            // Windows works the client area out for the first time while the
-            // window is being created, before the window procedure that says
-            // this window has no frame is reachable - so it takes a caption
-            // out of the client area, and nothing puts it back. Asking for the
-            // frame to be recalculated now that the procedure is in place is
-            // what makes the window the size the application asked for.
-            recalculate_frame(&window);
+        settle_frame(&window, config);
 
-            // The builder's size limits are only a clamp on the size the
-            // window opens at here: tao never installs them as limits, so
-            // nothing stops the window being dragged smaller than its
-            // `minWidth` afterwards. Setting them again on the window that now
-            // exists is what puts them in force. The other platforms already
-            // have them.
-            if let Some(size) = limit(config.min_width, config.min_height) {
-                window.set_min_inner_size(Some(size));
-            }
-            if let Some(size) = limit(config.max_width, config.max_height) {
-                window.set_max_inner_size(Some(size));
-            }
-        }
-
-        // Measured from the window that exists, not guessed from a constant -
-        // and only when the application is the one drawing up there.
-        // Measured before anything is moved, and kept: the numbers come off
-        // the window buttons themselves.
-        let buttons_hidden = config.title_bar_buttons == TitleBarButtons::Hidden;
-        // Taken before anything grows the bar: it cannot be measured back off
-        // a window whose title bar has already been made taller.
-        let platform_bar = titlebar::native(&window);
-        // Registered before the first shaping, so nothing AppKit does to the
-        // bar between now and the window closing goes uncorrected.
-        let title_bar_shape = titlebar::Keeper::default();
-        let title_bar_watch = titlebar::keep(&window, &title_bar_shape);
-        let height = titlebar::fit(
-            &window,
-            if config.title_bar_style == TitleBarStyle::Hidden && !buttons_hidden {
-                config.title_bar_height
-            } else {
-                None
-            },
-            platform_bar,
-            config.traffic_light_position.map(|i| (i.x, i.y)),
-            &title_bar_shape,
-        );
-        let native = titlebar::native(&window);
-        let title_bar = match config.title_bar_style {
-            TitleBarStyle::Hidden => titlebar::metrics_for(native, height, !buttons_hidden),
-            TitleBarStyle::Default => titlebar::Metrics::none(),
-        };
+        let bar = set_up_title_bar(&window, config);
         let origins = webview::Origins::new(rt);
-        let webview = build_webview(
-            rt,
-            &window,
-            proxy,
-            label,
-            url,
-            &origins,
-            Presentation {
-                title_bar,
-                background: config
-                    .background_color
-                    .as_deref()
-                    .and_then(crate::config::parse_color),
-                scroll: config.scroll,
-                corners: corner_radii(config),
-            },
-        )?;
+        let look = Presentation {
+            title_bar: bar.metrics,
+            background: config
+                .background_color
+                .as_deref()
+                .and_then(crate::config::parse_color),
+            scroll: config.scroll,
+            corners: corner_radii(config),
+        };
+        let webview = build_webview(rt, &window, label, url, &origins, look)?;
         // Again, now the webview is attached. Putting the content view in
         // makes AppKit lay the title bar out, which undoes the placement above
         // - and nothing after that undoes it again, so this is the one that
         // holds. Electron builds its buttons proxy at the same point.
-        titlebar::fit(
-            &window,
-            if config.title_bar_style == TitleBarStyle::Hidden && !buttons_hidden {
-                config.title_bar_height
-            } else {
-                None
-            },
-            platform_bar,
-            config.traffic_light_position.map(|i| (i.x, i.y)),
-            &title_bar_shape,
-        );
+        fit_title_bar(&window, config, bar.platform, &bar.shape);
         let size = window.inner_size().to_logical::<f64>(window.scale_factor());
 
         self.entries.push(WindowEntry {
@@ -496,10 +416,10 @@ impl WindowManager {
             title_bar_height: config.title_bar_height,
             traffic_lights: config.traffic_light_position.map(|i| (i.x, i.y)),
             buttons_hidden: config.title_bar_buttons == TitleBarButtons::Hidden,
-            native_title_bar: native,
-            platform_bar,
-            title_bar_shape,
-            title_bar_watch,
+            native_title_bar: bar.native,
+            platform_bar: bar.platform,
+            title_bar_shape: bar.shape,
+            title_bar_watch: bar.watch,
             decorations: config.decorations,
             animate_zoom: config.animate_zoom,
             corner_radii: corner_radii(config),
@@ -512,6 +432,111 @@ impl WindowManager {
         });
         Ok(())
     }
+}
+
+/// Make a new Windows window the size it asked for, with the limits it
+/// asked for.
+#[cfg(target_os = "windows")]
+fn settle_frame(window: &Window, config: &WindowConfig) {
+    // A frameless window opens a title bar shorter than it asked for. Windows
+    // works the client area out for the first time while the window is being
+    // created, before the window procedure that says this window has no frame
+    // is reachable - so it takes a caption out of the client area, and nothing
+    // puts it back. Asking for the frame to be recalculated now that the
+    // procedure is in place is what makes the window the size the application
+    // asked for.
+    recalculate_frame(window);
+
+    // The builder's size limits are only a clamp on the size the window opens
+    // at here: tao never installs them as limits, so nothing stops the window
+    // being dragged smaller than its `minWidth` afterwards. Setting them again
+    // on the window that now exists is what puts them in force. The other
+    // platforms already have them.
+    if let Some(size) = limit(config.min_width, config.min_height) {
+        window.set_min_inner_size(Some(size));
+    }
+    if let Some(size) = limit(config.max_width, config.max_height) {
+        window.set_max_inner_size(Some(size));
+    }
+}
+
+/// What `create` measured and set up for a new window's title bar.
+struct TitleBarSetup {
+    /// The platform's own bar, measured before anything grew it.
+    platform: titlebar::Native,
+    /// The bar as it is now, after the first shaping.
+    native: titlebar::Native,
+    shape: titlebar::Keeper,
+    watch: titlebar::Watch,
+    /// The room the bar leaves the page.
+    metrics: titlebar::Metrics,
+}
+
+fn set_up_title_bar(window: &Window, config: &WindowConfig) -> TitleBarSetup {
+    // Measured from the window that exists, not guessed from a constant - and
+    // only when the application is the one drawing up there. Measured before
+    // anything is moved, and kept: the numbers come off the window buttons
+    // themselves.
+    let buttons_hidden = config.title_bar_buttons == TitleBarButtons::Hidden;
+    // Taken before anything grows the bar: it cannot be measured back off a
+    // window whose title bar has already been made taller.
+    let platform = titlebar::native(window);
+    // Registered before the first shaping, so nothing AppKit does to the bar
+    // between now and the window closing goes uncorrected.
+    let shape = titlebar::Keeper::default();
+    let watch = titlebar::keep(window, &shape);
+    let height = fit_title_bar(window, config, platform, &shape);
+    let native = titlebar::native(window);
+    let metrics = match config.title_bar_style {
+        TitleBarStyle::Hidden => titlebar::metrics_for(native, height, !buttons_hidden),
+        TitleBarStyle::Default => titlebar::Metrics::none(),
+    };
+    TitleBarSetup {
+        platform,
+        native,
+        shape,
+        watch,
+        metrics,
+    }
+}
+
+/// Shape the title bar the way the config asks, and answer with the height
+/// it became.
+fn fit_title_bar(
+    window: &Window,
+    config: &WindowConfig,
+    platform: titlebar::Native,
+    shape: &titlebar::Keeper,
+) -> f64 {
+    let buttons_hidden = config.title_bar_buttons == TitleBarButtons::Hidden;
+    let requested = if config.title_bar_style == TitleBarStyle::Hidden && !buttons_hidden {
+        config.title_bar_height
+    } else {
+        None
+    };
+    let lights = config.traffic_light_position.map(|i| (i.x, i.y));
+    titlebar::fit(window, requested, platform, lights, shape)
+}
+
+/// macOS: show or hide the title text in the bar.
+#[cfg(target_os = "macos")]
+fn set_title_visible(window: &Window, visible: bool) {
+    use objc2_app_kit::{NSWindow, NSWindowTitleVisibility};
+    use tao::platform::macos::WindowExtMacOS;
+
+    let pointer = window.ns_window() as *mut NSWindow;
+    if pointer.is_null() {
+        return;
+    }
+    // Safety: the pointer belongs to `window`, which outlives this call, and
+    // this runs on the event loop thread.
+    let ns: &NSWindow = unsafe { &*pointer };
+    let visibility = if visible {
+        NSWindowTitleVisibility::Visible
+    } else {
+        NSWindowTitleVisibility::Hidden
+    };
+    ns.setTitleVisibility(visibility);
 }
 
 /// The URL a window should load: the dev server in development, the custom
@@ -595,22 +620,7 @@ fn build_window(
 
     #[cfg(target_os = "macos")]
     if config.title_bar_style == TitleBarStyle::Hidden {
-        use tao::platform::macos::WindowBuilderExtMacOS;
-
-        // The three together are what "no bar, but keep the buttons" means:
-        // the content view runs the full height of the window, the bar itself
-        // is transparent, and the title text is gone.
-        builder = builder
-            .with_titlebar_buttons_hidden(config.title_bar_buttons == TitleBarButtons::Hidden)
-            .with_fullsize_content_view(true)
-            .with_titlebar_transparent(true)
-            .with_title_hidden(true);
-
-        // Deliberately not `with_traffic_light_inset`. tao has its own version
-        // of this and re-applies it from the content view's `drawRect:` - a
-        // hook that never fires here, because the content view is the web
-        // view. Leaving it set would put a second actor on the same three
-        // buttons for no benefit; `chrome::titlebar` owns them.
+        builder = hide_title_bar(builder, config);
     }
 
     if let Some(icon) = window_icon(rt) {
@@ -644,6 +654,27 @@ fn build_window(
     }
 
     Ok(window)
+}
+
+/// macOS: no bar, but keep the buttons.
+///
+/// The three together are what that means: the content view runs the full
+/// height of the window, the bar itself is transparent, and the title text is
+/// gone.
+#[cfg(target_os = "macos")]
+fn hide_title_bar(builder: WindowBuilder, config: &WindowConfig) -> WindowBuilder {
+    use tao::platform::macos::WindowBuilderExtMacOS;
+
+    // Deliberately not `with_traffic_light_inset`. tao has its own version of
+    // this and re-applies it from the content view's `drawRect:` - a hook that
+    // never fires here, because the content view is the web view. Leaving it
+    // set would put a second actor on the same three buttons for no benefit;
+    // `chrome::titlebar` owns them.
+    builder
+        .with_titlebar_buttons_hidden(config.title_bar_buttons == TitleBarButtons::Hidden)
+        .with_fullsize_content_view(true)
+        .with_titlebar_transparent(true)
+        .with_title_hidden(true)
 }
 
 /// The window and taskbar icon.
@@ -699,7 +730,6 @@ struct Presentation {
 fn build_webview(
     rt: &Arc<Runtime>,
     window: &Window,
-    proxy: EventLoopProxy<UserEvent>,
     label: &str,
     url: &str,
     origins: &webview::Origins,
@@ -707,12 +737,13 @@ fn build_webview(
 ) -> Result<WebView, String> {
     let resources = webview::Resources::new(&rt.resource_dir);
     let devtools = rt.config.devtools.unwrap_or_else(|| rt.is_dev());
+    let calls_proxy = rt.proxy();
+    let load_proxy = rt.proxy();
     let source = label.to_string();
     let loaded_label = label.to_string();
-    let load_proxy = proxy.clone();
+    let popup_label = label.to_string();
     let callers = origins.clone();
     let popups = origins.clone();
-    let popup_label = label.to_string();
 
     let builder = WebViewBuilder::new()
         .with_initialization_script(webview::init_script(
@@ -738,71 +769,13 @@ fn build_webview(
             move |event| drag_drop(&rt, &label, event)
         })
         .with_ipc_handler(move |request: wry::http::Request<String>| {
-            // wry reports the page that sent the message. On macOS and
-            // Windows that is the frame itself, so a page from anywhere else
-            // never reaches the router, whatever permissions the application
-            // holds. WebKitGTK has no frame on the message and reports the
-            // top-level document instead, so on Linux this can only prove the
-            // window is on the application's own page - see the caveat in
-            // docs/permissions.md. A refused message is not answered either:
-            // the reply could only go back to the page that sent it.
-            let sender = request.uri().to_string();
-            if !callers.allows(&sender) {
-                eprintln!(
-                    "vantail: ignored a native call from {sender} in window `{source}`; \
-                     only the application's own pages can use the native API"
-                );
-                return;
-            }
-            let body = request.into_body();
-            // The label is stamped on here rather than sent by JavaScript, so
-            // a window cannot claim to be a different one.
-            let message = match serde_json::from_str::<Request>(&body) {
-                Ok(request) => UserEvent::Request {
-                    window: source.clone(),
-                    request,
-                },
-                Err(error) => UserEvent::Outgoing {
-                    window: Some(source.clone()),
-                    outgoing: crate::ipc::malformed(format!(
-                        "Could not parse an IPC message: {error}"
-                    )),
-                },
-            };
-            // A closed event loop means we are shutting down; the message has
-            // nowhere useful to go.
-            let _ = proxy.send_event(message);
+            forward_call(&calls_proxy, &callers, &source, request);
         })
-        // `target="_blank"` and `window.open` would otherwise get a bare
-        // window of the platform's making: no bridge, no title, no way for
-        // the application to manage it. A web page or a mail link goes to
-        // the user's browser or mail client instead, where it has an address
-        // bar; anything else is refused. A window of the application's own is
-        // `createWindow`.
         .with_new_window_req_handler(move |url, _features| {
-            if !popups.allows(&url) && webview::opens_externally(&url) {
-                webview::open_externally(&url);
-            } else {
-                eprintln!(
-                    "vantail: window `{popup_label}` tried to open {url} in a new window; \
-                     use `createWindow` for a window of the application's own"
-                );
-            }
-            wry::NewWindowResponse::Deny
+            refuse_new_window(&popups, &popup_label, &url)
         })
         .with_on_page_load_handler(move |event, _url| {
-            // A window exists before its page does. Announcing readiness is
-            // what lets `createWindow` resolve at a point where the new window
-            // can actually receive a message.
-            if matches!(event, wry::PageLoadEvent::Finished) {
-                let _ = load_proxy.send_event(UserEvent::Outgoing {
-                    window: None,
-                    outgoing: Outgoing::Event(crate::ipc::Event::new(
-                        "window.ready",
-                        serde_json::json!({ "label": loaded_label }),
-                    )),
-                });
-            }
+            announce_loaded(&load_proxy, &loaded_label, event);
         })
         .with_url(url);
 
@@ -817,6 +790,80 @@ fn build_webview(
     let webview = attach(builder, window)?;
     round_corners(window, &webview, look.corners, look.background);
     Ok(webview)
+}
+
+/// A message from a page in window `source`, passed on to the router as a
+/// call - if the page is one of the application's own.
+fn forward_call(
+    proxy: &EventLoopProxy<UserEvent>,
+    callers: &webview::Origins,
+    source: &str,
+    request: wry::http::Request<String>,
+) {
+    // wry reports the page that sent the message. On macOS and Windows that
+    // is the frame itself, so a page from anywhere else never reaches the
+    // router, whatever permissions the application holds. WebKitGTK has no
+    // frame on the message and reports the top-level document instead, so on
+    // Linux this can only prove the window is on the application's own page -
+    // see the caveat in docs/permissions.md. A refused message is not
+    // answered either: the reply could only go back to the page that sent it.
+    let sender = request.uri().to_string();
+    if !callers.allows(&sender) {
+        eprintln!(
+            "vantail: ignored a native call from {sender} in window `{source}`; \
+             only the application's own pages can use the native API"
+        );
+        return;
+    }
+    let body = request.into_body();
+    // The label is stamped on here rather than sent by JavaScript, so a window
+    // cannot claim to be a different one.
+    let message = match serde_json::from_str::<Request>(&body) {
+        Ok(request) => UserEvent::Request {
+            window: source.to_string(),
+            request,
+        },
+        Err(error) => UserEvent::Outgoing {
+            window: Some(source.to_string()),
+            outgoing: crate::ipc::malformed(format!("Could not parse an IPC message: {error}")),
+        },
+    };
+    // A closed event loop means we are shutting down; the message has nowhere
+    // useful to go.
+    let _ = proxy.send_event(message);
+}
+
+/// `target="_blank"` and `window.open` would otherwise get a bare window of
+/// the platform's making: no bridge, no title, no way for the application to
+/// manage it. A web page or a mail link goes to the user's browser or mail
+/// client instead, where it has an address bar; anything else is refused. A
+/// window of the application's own is `createWindow`.
+fn refuse_new_window(popups: &webview::Origins, label: &str, url: &str) -> wry::NewWindowResponse {
+    if !popups.allows(url) && webview::opens_externally(url) {
+        webview::open_externally(url);
+    } else {
+        eprintln!(
+            "vantail: window `{label}` tried to open {url} in a new window; \
+             use `createWindow` for a window of the application's own"
+        );
+    }
+    wry::NewWindowResponse::Deny
+}
+
+/// A window exists before its page does. Announcing readiness is what lets
+/// `createWindow` resolve at a point where the new window can actually
+/// receive a message.
+fn announce_loaded(proxy: &EventLoopProxy<UserEvent>, label: &str, event: wry::PageLoadEvent) {
+    if !matches!(event, wry::PageLoadEvent::Finished) {
+        return;
+    }
+    let _ = proxy.send_event(UserEvent::Outgoing {
+        window: None,
+        outgoing: Outgoing::Event(crate::ipc::Event::new(
+            "window.ready",
+            serde_json::json!({ "label": label }),
+        )),
+    });
 }
 
 /// Clip the window to its corner radii.
