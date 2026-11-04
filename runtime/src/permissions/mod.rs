@@ -728,6 +728,52 @@ impl Access {
     }
 }
 
+fn compile_shell(rules: &[ShellRule], vars: &Vars) -> Result<Vec<CompiledRule>, String> {
+    let mut shell = Vec::with_capacity(rules.len());
+    for rule in rules {
+        shell.push(CompiledRule {
+            program: rule.program.clone(),
+            args: rule
+                .args
+                .as_ref()
+                .map(|args| compile_args(args))
+                .transpose()?,
+            cwd: PathScope::compile(
+                rule.cwd.as_ref().unwrap_or(&PathScopeConfig::All(false)),
+                vars,
+            )?,
+        });
+    }
+    Ok(shell)
+}
+
+/// Settings that can never work, refused before the application starts
+/// rather than at the first call that needs them.
+fn refuse_impossible(config: &PermissionsConfig) -> Result<(), String> {
+    // Said at startup rather than discovered at the first `open`: an
+    // application whose ledger is supposed to be encrypted should not get as
+    // far as writing rows before finding out this runtime cannot.
+    if config.database.encryption() && !cfg!(feature = "database-encryption") {
+        return Err(
+            "`permissions.database.encryption` needs the `sqlcipher` runtime build, and \
+             this runtime was built without it. Install \
+             `@vantail/runtime-<platform>-<arch>-sqlcipher`, or drop the `encryption` flag."
+                .to_string(),
+        );
+    }
+
+    // Persisted state that can never be written is a config mistake, not a
+    // runtime state: fail the launch rather than the first restart.
+    if config.shared_state.persist && config.shared_state.write.is_empty() {
+        return Err(
+            "`permissions.sharedState.persist` needs at least one `permissions.sharedState.write` pattern: \
+             persisted state must be writable to be useful."
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 impl Permissions {
     pub fn compile(config: &PermissionsConfig, vars: &Vars) -> Result<Self, String> {
         let (clipboard_read, clipboard_write) = match &config.clipboard {
@@ -735,43 +781,8 @@ impl Permissions {
             ClipboardConfig::Detailed { read, write } => (*read, *write),
         };
 
-        let mut shell = Vec::with_capacity(config.shell.allow.len());
-        for rule in &config.shell.allow {
-            shell.push(CompiledRule {
-                program: rule.program.clone(),
-                args: rule
-                    .args
-                    .as_ref()
-                    .map(|args| compile_args(args))
-                    .transpose()?,
-                cwd: PathScope::compile(
-                    rule.cwd.as_ref().unwrap_or(&PathScopeConfig::All(false)),
-                    vars,
-                )?,
-            });
-        }
-
-        // Said at startup rather than discovered at the first `open`: an
-        // application whose ledger is supposed to be encrypted should not get
-        // as far as writing rows before finding out this runtime cannot.
-        if config.database.encryption() && !cfg!(feature = "database-encryption") {
-            return Err(
-                "`permissions.database.encryption` needs the `sqlcipher` runtime build, and \
-                 this runtime was built without it. Install \
-                 `@vantail/runtime-<platform>-<arch>-sqlcipher`, or drop the `encryption` flag."
-                    .to_string(),
-            );
-        }
-
-        // Persisted state that can never be written is a config mistake, not
-        // a runtime state: fail the launch rather than the first restart.
-        if config.shared_state.persist && config.shared_state.write.is_empty() {
-            return Err(
-                "`permissions.sharedState.persist` needs at least one `permissions.sharedState.write` pattern: \
-                 persisted state must be writable to be useful."
-                    .to_string(),
-            );
-        }
+        let shell = compile_shell(&config.shell.allow, vars)?;
+        refuse_impossible(config)?;
 
         Ok(Self {
             fs_read: PathScope::compile(&config.filesystem.read, vars)?,
