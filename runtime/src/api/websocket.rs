@@ -328,6 +328,14 @@ fn connect(rt: &Arc<Runtime>, params: Value) -> Result<(Socket, String, Option<S
     Ok((socket, params.url, protocol))
 }
 
+/// How a socket ended, for `network.socketClosed`.
+#[derive(Default)]
+struct Ending {
+    failure: Option<String>,
+    code: Option<u16>,
+    reason: String,
+}
+
 fn pump(
     rt: &Arc<Runtime>,
     window: &str,
@@ -340,12 +348,10 @@ fn pump(
         let _ = stream.set_read_timeout(Some(POLL));
     }
 
-    let mut failure: Option<String> = None;
-    let mut code: Option<u16> = None;
-    let mut reason = String::new();
+    let mut ending = Ending::default();
     let mut closing = false;
 
-    'pump: loop {
+    loop {
         // A cancelled request means the application let go of this socket, so
         // close it politely rather than dropping the connection on the floor.
         if cancelled.load(Ordering::SeqCst) && !closing {
@@ -353,55 +359,13 @@ fn pump(
             let _ = socket.close(None);
         }
 
-        loop {
-            match inbox.try_recv() {
-                Ok(Command::Send(message)) => {
-                    if let Err(error) = socket.send(message) {
-                        failure = Some(error.to_string());
-                        break 'pump;
-                    }
-                }
-                Ok(Command::Close(frame)) => {
-                    closing = true;
-                    // Sends the close frame; the server answers with its own,
-                    // and the read below is what sees it.
-                    let _ = socket.close(frame);
-                }
-                Err(TryRecvError::Empty) => break,
-                // Every sender is gone, which only happens at shutdown.
-                Err(TryRecvError::Disconnected) => {
-                    if !closing {
-                        closing = true;
-                        let _ = socket.close(None);
-                    }
-                    break;
-                }
-            }
+        if let Err(error) = run_commands(&mut socket, &inbox, &mut closing) {
+            ending.failure = Some(error);
+            break;
         }
 
-        match socket.read() {
-            Ok(Message::Text(text)) => emit(rt, window, id, text.as_str(), false),
-            Ok(Message::Binary(bytes)) => emit(rt, window, id, &BASE64.encode(&bytes), true),
-            Ok(Message::Close(frame)) => {
-                if let Some(frame) = frame {
-                    code = Some(frame.code.into());
-                    reason = frame.reason.to_string();
-                }
-                // The read after a close frame is what finishes the handshake
-                // and gives `ConnectionClosed`.
-            }
-            // Ping is answered by tungstenite itself, and flushed by the next
-            // send or close. Pong and raw frames are not the application's
-            // business.
-            Ok(_) => {}
-            Err(tungstenite::Error::Io(error)) if waiting(&error) => {}
-            Err(tungstenite::Error::ConnectionClosed) | Err(tungstenite::Error::AlreadyClosed) => {
-                break
-            }
-            Err(error) => {
-                failure = Some(error.to_string());
-                break;
-            }
+        if !read_next(rt, window, id, &mut socket, &mut ending) {
+            break;
         }
     }
 
@@ -412,13 +376,79 @@ fn pump(
             "network.socketClosed",
             json!({
                 "id": id,
-                "code": code,
-                "reason": reason,
-                "error": failure,
+                "code": ending.code,
+                "reason": ending.reason,
+                "error": ending.failure,
                 "cancelled": cancelled.load(Ordering::SeqCst),
             }),
         )),
     );
+}
+
+/// Carry out everything the application has asked of the socket since the
+/// last turn. An error is a send that failed, which ends the socket.
+fn run_commands(
+    socket: &mut Socket,
+    inbox: &Receiver<Command>,
+    closing: &mut bool,
+) -> Result<(), String> {
+    loop {
+        match inbox.try_recv() {
+            Ok(Command::Send(message)) => {
+                socket.send(message).map_err(|error| error.to_string())?
+            }
+            Ok(Command::Close(frame)) => {
+                *closing = true;
+                // Sends the close frame; the server answers with its own, and
+                // the read in `read_next` is what sees it.
+                let _ = socket.close(frame);
+            }
+            Err(TryRecvError::Empty) => return Ok(()),
+            // Every sender is gone, which only happens at shutdown.
+            Err(TryRecvError::Disconnected) => {
+                if !*closing {
+                    *closing = true;
+                    let _ = socket.close(None);
+                }
+                return Ok(());
+            }
+        }
+    }
+}
+
+/// Read one message and pass it to the window. `false` means the socket is
+/// finished, and `ending` says why.
+fn read_next(
+    rt: &Arc<Runtime>,
+    window: &str,
+    id: u32,
+    socket: &mut Socket,
+    ending: &mut Ending,
+) -> bool {
+    match socket.read() {
+        Ok(Message::Text(text)) => emit(rt, window, id, text.as_str(), false),
+        Ok(Message::Binary(bytes)) => emit(rt, window, id, &BASE64.encode(&bytes), true),
+        Ok(Message::Close(frame)) => {
+            if let Some(frame) = frame {
+                ending.code = Some(frame.code.into());
+                ending.reason = frame.reason.to_string();
+            }
+            // The read after a close frame is what finishes the handshake and
+            // gives `ConnectionClosed`.
+        }
+        // Ping is answered by tungstenite itself, and flushed by the next send
+        // or close. Pong and raw frames are not the application's business.
+        Ok(_) => {}
+        Err(tungstenite::Error::Io(error)) if waiting(&error) => {}
+        Err(tungstenite::Error::ConnectionClosed) | Err(tungstenite::Error::AlreadyClosed) => {
+            return false;
+        }
+        Err(error) => {
+            ending.failure = Some(error.to_string());
+            return false;
+        }
+    }
+    true
 }
 
 fn emit(rt: &Arc<Runtime>, window: &str, id: u32, data: &str, binary: bool) {
